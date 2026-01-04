@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NOC Members - Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-brand"><i class="fas fa-network-wired"></i> NOC Members</div>
+    <div class="nav-menu" id="navMenu">
+      <a href="#" class="nav-item active" data-page="home"><i class="fas fa-home"></i> Home</a>
+      <a href="#" class="nav-item" data-page="learning"><i class="fas fa-book"></i> Learning</a>
+      <div class="nav-dropdown">
+        <a href="#" class="nav-item"><i class="fas fa-info-circle"></i> Information <i class="fas fa-caret-down"></i></a>
+        <div class="dropdown-content" id="infoDropdown"></div>
+      </div>
+      <a href="#" class="nav-item" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </div>
+    <div class="nav-user"><span id="userName"></span><span class="badge" id="userRole"></span></div>
+    <button class="menu-btn" onclick="document.getElementById('navMenu').classList.toggle('show')"><i class="fas fa-bars"></i></button>
+  </nav>
+
+  <main class="main">
+    <section class="page active" id="homePage">
+      <div class="page-head"><div><h1><i class="fas fa-clipboard-list"></i> Team Updates</h1></div><button class="btn admin-only" onclick="openUpdateModal()"><i class="fas fa-plus"></i> Add</button></div>
+      <div id="updatesList"></div>
+    </section>
+
+    <section class="page" id="learningPage">
+      <div class="page-head"><div><h1><i class="fas fa-graduation-cap"></i> Learning</h1></div><div class="admin-only" style="display:flex;gap:8px"><button class="btn" onclick="openModal('folderModal')"><i class="fas fa-folder-plus"></i></button><button class="btn" onclick="openResourceModal()"><i class="fas fa-plus"></i></button></div></div>
+      <div class="folders" id="foldersList"></div>
+      <div class="grid" id="resourcesList"></div>
+    </section>
+
+    <section class="page" id="infoPage">
+      <div class="page-head"><div><h1 id="infoTitle"><i class="fas fa-info-circle"></i> Information</h1></div><button class="btn admin-only" onclick="openInfoModal()"><i class="fas fa-plus"></i> Add</button></div>
+      <div class="grid" id="infoList"></div>
+    </section>
+  </main>
+
+  <div class="modal" id="updateModal"><div class="modal-box">
+    <div class="modal-head"><h2 id="updateModalTitle">Add Update</h2><button onclick="closeModal('updateModal')">&times;</button></div>
+    <form id="updateForm"><input type="hidden" id="updateId">
+      <div class="field"><label>Topic</label><input type="text" id="updateTopic" required></div>
+      <div class="field"><label>Badge</label><select id="updateBadge"><option value="important">🔴 Important</option><option value="general" selected>🔵 General</option><option value="info">🟢 Info</option><option value="warning">🟡 Warning</option></select></div>
+      <div class="field"><label>Message</label><textarea id="updateMsg" rows="4" required></textarea></div>
+      <div class="modal-foot"><button type="button" onclick="closeModal('updateModal')">Cancel</button><button type="submit" class="primary">Save</button></div>
+    </form>
+  </div></div>
+
+  <div class="modal" id="folderModal"><div class="modal-box">
+    <div class="modal-head"><h2>Add Folder</h2><button onclick="closeModal('folderModal')">&times;</button></div>
+    <form id="folderForm"><div class="field"><label>Name</label><input type="text" id="folderName" required></div>
+      <div class="modal-foot"><button type="button" onclick="closeModal('folderModal')">Cancel</button><button type="submit" class="primary">Save</button></div>
+    </form>
+  </div></div>
+
+  <div class="modal" id="resourceModal"><div class="modal-box">
+    <div class="modal-head"><h2 id="resModalTitle">Add Resource</h2><button onclick="closeModal('resourceModal')">&times;</button></div>
+    <form id="resourceForm"><input type="hidden" id="resId">
+      <div class="field"><label>Folder</label><select id="resFolder"></select></div>
+      <div class="field"><label>Topic</label><input type="text" id="resTopic" required></div>
+      <div class="field"><label>Type</label><select id="resType" onchange="toggleResType()"><option value="pdf">PDF Link</option><option value="text">Text</option></select></div>
+      <div class="field" id="pdfField"><label>PDF URL</label><input type="url" id="resLink"></div>
+      <div class="field" id="textField" style="display:none"><label>Content</label><textarea id="resContent" rows="5"></textarea></div>
+      <div class="modal-foot"><button type="button" onclick="closeModal('resourceModal')">Cancel</button><button type="submit" class="primary">Save</button></div>
+    </form>
+  </div></div>
+
+  <div class="modal" id="textModal"><div class="modal-box lg">
+    <div class="modal-head"><h2 id="textTitle">Document</h2><button onclick="closeModal('textModal')">&times;</button></div>
+    <div class="text-content" id="textContent"></div>
+  </div></div>
+
+  <div class="modal" id="catModal"><div class="modal-box">
+    <div class="modal-head"><h2>Manage Categories</h2><button onclick="closeModal('catModal')">&times;</button></div>
+    <div id="catList" style="padding:15px;border-bottom:1px solid #e2e8f0"></div>
+    <form id="catForm" style="padding:15px"><div class="field"><label>New Category</label><input type="text" id="catName"></div><button type="submit" class="btn primary" style="width:100%">Add</button></form>
+  </div></div>
+
+  <div class="modal" id="infoModal"><div class="modal-box">
+    <div class="modal-head"><h2 id="infoModalTitle">Add Item</h2><button onclick="closeModal('infoModal')">&times;</button></div>
+    <form id="infoForm"><input type="hidden" id="infoId">
+      <div class="field"><label>Title</label><input type="text" id="infoItemTitle" required></div>
+      <div class="field"><label>Image URL</label><input type="url" id="infoImage"></div>
+      <div class="field"><label>Link URL</label><input type="url" id="infoLink" required></div>
+      <div class="modal-foot"><button type="button" onclick="closeModal('infoModal')">Cancel</button><button type="submit" class="primary">Save</button></div>
+    </form>
+  </div></div>
+
+  <div class="modal" id="adminModal"><div class="modal-box lg">
+    <div class="modal-head"><h2>Admin Panel</h2><button onclick="closeModal('adminModal')">&times;</button></div>
+    <div style="padding:15px">
+      <h3 style="margin-bottom:10px">Add User</h3>
+      <form id="userForm" class="user-form">
+        <input type="text" id="newUser" placeholder="Username" required>
+        <input type="password" id="newPass" placeholder="Password" required>
+        <input type="text" id="newName" placeholder="Display Name" required>
+        <select id="newRole"><option value="user">User</option><option value="admin">Admin</option></select>
+        <button type="submit" class="btn primary">Add</button>
+      </form>
+      <h3 style="margin:15px 0 10px">Users</h3>
+      <div id="userList"></div>
+    </div>
+  </div></div>
+
+  <button class="fab admin-only" onclick="loadUsers();openModal('adminModal')"><i class="fas fa-cog"></i></button>
+  <div class="toast" id="toast"><i class="fas fa-check-circle"></i> <span id="toastMsg"></span></div>
+  <script src="/js/app.js"></script>
+</body>
+</html>
