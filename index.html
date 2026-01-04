@@ -883,6 +883,80 @@
             localStorage.setItem('nocData', JSON.stringify(data));
         }
 
+        // ============ SESSION MANAGEMENT ============
+        const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+        
+        function createSession(user) {
+            const session = {
+                user: user,
+                loginTime: Date.now(),
+                sessionToken: Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+            };
+            localStorage.setItem('nocSession', JSON.stringify(session));
+            return session;
+        }
+        
+        function getSession() {
+            const sessionStr = localStorage.getItem('nocSession');
+            if (!sessionStr) return null;
+            
+            try {
+                const session = JSON.parse(sessionStr);
+                
+                // Check if session expired (24 hours)
+                if (Date.now() - session.loginTime > SESSION_DURATION) {
+                    clearSession();
+                    showToast('Session expired. Please login again.');
+                    return null;
+                }
+                
+                return session;
+            } catch (e) {
+                clearSession();
+                return null;
+            }
+        }
+        
+        function clearSession() {
+            localStorage.removeItem('nocSession');
+            currentUser = null;
+        }
+        
+        function validateSession() {
+            const session = getSession();
+            if (!session) return false;
+            
+            const data = getData();
+            const user = data.users.find(u => u.id === session.user.id);
+            
+            // Check if user still exists
+            if (!user) {
+                clearSession();
+                showToast('Your account has been removed.');
+                showLoginPage();
+                return false;
+            }
+            
+            // Check if password changed
+            if (user.password !== session.user.password) {
+                clearSession();
+                showToast('Your password has been changed. Please login again.');
+                showLoginPage();
+                return false;
+            }
+            
+            // Update current user with latest data
+            currentUser = user;
+            return true;
+        }
+        
+        function showLoginPage() {
+            document.getElementById('mainApp').classList.add('hidden');
+            document.getElementById('loginPage').classList.remove('hidden');
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+        }
+
         // ============ AUTHENTICATION ============
         let currentUser = null;
 
@@ -928,7 +1002,7 @@
 
             if (user) {
                 currentUser = user;
-                sessionStorage.setItem('currentUser', JSON.stringify(user));
+                createSession(user);
                 initApp();
             } else {
                 loginBox.classList.add('shake');
@@ -965,12 +1039,8 @@
         }
 
         function logout() {
-            currentUser = null;
-            sessionStorage.removeItem('currentUser');
-            document.getElementById('mainApp').classList.add('hidden');
-            document.getElementById('loginPage').classList.remove('hidden');
-            document.getElementById('username').value = '';
-            document.getElementById('password').value = '';
+            clearSession();
+            showLoginPage();
             closeMobileMenu();
         }
 
@@ -1952,6 +2022,12 @@
             closeModal('userModal');
             renderUsers();
             showToast('User saved!', 'success');
+            
+            // If editing current user's password, update session
+            if (id && parseInt(id) === currentUser.id) {
+                currentUser = data.users.find(u => u.id === parseInt(id));
+                createSession(currentUser);
+            }
         }
 
         function editUser(id) {
@@ -1969,6 +2045,20 @@
                 showToast('User deleted!', 'success');
             }
         }
+        
+        // Check session on page visibility change (when user comes back to tab)
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible' && currentUser) {
+                validateSession();
+            }
+        });
+        
+        // Check session on window focus
+        window.addEventListener('focus', function() {
+            if (currentUser) {
+                validateSession();
+            }
+        });
 
         function renderCategories() {
             const data = getData();
@@ -2080,9 +2170,10 @@
         // ============ INIT ============
         initData();
 
-        const savedUser = sessionStorage.getItem('currentUser');
-        if (savedUser) {
-            currentUser = JSON.parse(savedUser);
+        // Check for existing session
+        const session = getSession();
+        if (session && validateSession()) {
+            currentUser = session.user;
             initApp();
         }
     </script>
