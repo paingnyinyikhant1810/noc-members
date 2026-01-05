@@ -1,36 +1,3 @@
-// LOGIN
-if (path === '/login' && method === 'POST') {
-    try {
-        const { username, password } = await request.json();
-        
-        // Debug: ဘာ receive ရလဲ ကြည့်မယ်
-        console.log('Login attempt:', { username, hasPassword: !!password });
-        
-        const user = await env.DB.prepare(
-            'SELECT id, username, account_name, role FROM users WHERE username = ? AND password = ?'
-        ).bind(username, password).first();
-        
-        // Debug info ပါ return မယ်
-        return new Response(JSON.stringify({
-            success: !!user,
-            user: user || null,
-            debug: {
-                host: request.headers.get('host'),
-                receivedUsername: username,
-                hasDB: !!env.DB,
-                foundUser: !!user
-            }
-        }), { headers });
-        
-    } catch (e) {
-        return new Response(JSON.stringify({
-            success: false,
-            error: e.message
-        }), { headers });
-    }
-}
-//end test
-
 export async function onRequest(context) {
     const { request, env, params } = context;
     const url = new URL(request.url);
@@ -243,4 +210,4 @@ export async function onRequest(context) {
     } catch (error) {
         return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
     }
-}
+                    }
