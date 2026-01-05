@@ -3,37 +3,48 @@
 export const onRequest = async (context) => {
   const { request, env } = context;
   const url = new URL(request.url);
-  const path = url.pathname.slice(5); // /api/ နောက်က လမ်းကြောင်း
+  const path = url.pathname.replace('/api/', ''); 
 
-  // CORS headers ထည့်ပေးပါ (frontend က fetch လုပ်လို့ ရအောင်)
+  // CORS headers
   const corsHeaders = {
-    "Access-Control-Allow-Origin": "*", // လုံခြုံရေးအတွက် နောက်မှ သင့် domain ပဲ ထားပါ
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Origin": "*", 
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
   };
 
-  // Preflight request (OPTIONS) ကို handle လုပ်ပါ
   if (request.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Basic Auth စစ်ပါ (username:password)
-  const auth = request.headers.get("Authorization");
-  if (!auth || !auth.startsWith("Basic ")) {
+  // --- Authentication Helper ---
+  const getAuth = async () => {
+    const auth = request.headers.get("Authorization");
+    if (!auth || !auth.startsWith("Basic ")) return null;
+    try {
+      const credentials = atob(auth.split(" ")[1]);
+      const [username, password] = credentials.split(":");
+      return await env.DB.prepare("SELECT * FROM users WHERE username = ? AND password = ?")
+        .bind(username, password)
+        .first();
+    } catch (e) { return null; }
+  };
+
+  // --- 1. Login Endpoint ---
+  if (path === "login" && request.method === "POST") {
+    const user = await getAuth();
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Invalid credentials" }), { status: 401, headers: corsHeaders });
+    }
+    return new Response(JSON.stringify({ success: true, user }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+  }
+
+  // --- Authenticate other requests ---
+  const user = await getAuth();
+  if (!user) {
     return new Response("Unauthorized", { status: 401, headers: corsHeaders });
   }
 
-  const credentials = atob(auth.split(" ")[1]);
-  const [username, password] = credentials.split(":");
-  const user = await env.DB.prepare("SELECT id, accountName, role FROM users WHERE username = ? AND password = ?")
-    .bind(username, password)
-    .first();
-
-  if (!user) {
-    return new Response("Invalid credentials", { status: 401, headers: corsHeaders });
-  }
-
-  // API Endpoints
+  // --- 2. Get All Data Endpoint ---
   if (path === "getData" && request.method === "GET") {
     const data = {
       updates: await env.DB.prepare("SELECT * FROM updates ORDER BY id DESC").all().then(r => r.results),
@@ -41,33 +52,102 @@ export const onRequest = async (context) => {
       infoCards: await env.DB.prepare("SELECT * FROM info_cards").all().then(r => r.results),
       learningItems: await env.DB.prepare("SELECT * FROM learning_items").all().then(r => r.results),
       folders: await env.DB.prepare("SELECT * FROM folders").all().then(r => r.results),
-      currentUser: { id: user.id, accountName: user.accountName, role: user.role }
+      users: (user.role === 'admin') ? await env.DB.prepare("SELECT * FROM users").all().then(r => r.results) : []
     };
     return new Response(JSON.stringify(data), {
       headers: { "Content-Type": "application/json", ...corsHeaders }
     });
   }
 
-  // Save data (admin ပဲ ခွင့်ပြုပါ)
-  if (path === "saveData" && request.method === "POST" && user.role === "admin") {
+  // --- 3. CRUD Operations (Admin Only) ---
+  if (request.method === "POST" && user.role === "admin") {
     const body = await request.json();
-    // ဥပမာ updates save လုပ်တဲ့ နမူနာ (ကျန်တာတွေ အလားတူ ထည့်ပါ)
-    if (body.updates) {
-      for (const update of body.updates) {
-        if (update.id) {
-          await env.DB.prepare("UPDATE updates SET topic=?, badge=?, message=?, author=?, date=? WHERE id=?")
-            .bind(update.topic, update.badge, update.message, update.author, update.date, update.id).run();
-        } else {
-          await env.DB.prepare("INSERT INTO updates (topic, badge, message, author, date) VALUES (?, ?, ?, ?, ?)")
-            .bind(update.topic, update.badge, update.message, update.author, update.date).run();
-        }
+    const { action, table, data, id } = body;
+
+    try {
+      // DELETE
+      if (action === 'delete') {
+        if (!id || !table) throw new Error("Missing ID or table");
+        // Security check: simple allowlist
+        if (!['updates', 'categories', 'info_cards', 'learning_items', 'folders', 'users'].includes(table)) throw new Error("Invalid table");
+        
+        await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
+        return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       }
+
+      // SAVE (Insert or Update)
+      if (action === 'save') {
+        let result;
+        
+        // --- USERS ---
+        if (table === 'users') {
+          if (data.id) {
+            await env.DB.prepare("UPDATE users SET accountName=?, username=?, password=?, role=? WHERE id=?")
+              .bind(data.accountName, data.username, data.password, data.role, data.id).run();
+          } else {
+            await env.DB.prepare("INSERT INTO users (accountName, username, password, role) VALUES (?, ?, ?, ?)")
+              .bind(data.accountName, data.username, data.password, data.role).run();
+          }
+        }
+        
+        // --- UPDATES ---
+        else if (table === 'updates') {
+          if (data.id) {
+            await env.DB.prepare("UPDATE updates SET topic=?, badge=?, message=?, author=?, date=? WHERE id=?")
+              .bind(data.topic, data.badge, data.message, data.author, data.date, data.id).run();
+          } else {
+            await env.DB.prepare("INSERT INTO updates (topic, badge, message, author, date) VALUES (?, ?, ?, ?, ?)")
+              .bind(data.topic, data.badge, data.message, data.author, data.date).run();
+          }
+        }
+
+        // --- CATEGORIES ---
+        else if (table === 'categories') {
+          if (data.id) {
+             await env.DB.prepare("UPDATE categories SET name=?, icon=? WHERE id=?").bind(data.name, data.icon, data.id).run();
+          } else {
+             await env.DB.prepare("INSERT INTO categories (name, icon) VALUES (?, ?)").bind(data.name, data.icon).run();
+          }
+        }
+
+        // --- INFO CARDS ---
+        else if (table === 'info_cards') {
+          if (data.id) {
+             await env.DB.prepare("UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=? WHERE id=?")
+               .bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, data.id).run();
+          } else {
+             await env.DB.prepare("INSERT INTO info_cards (title, displayType, icon, image, link, categoryId) VALUES (?, ?, ?, ?, ?, ?)")
+               .bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId).run();
+          }
+        }
+
+        // --- FOLDERS ---
+        else if (table === 'folders') {
+           if (data.id) {
+             await env.DB.prepare("UPDATE folders SET name=?, parentId=? WHERE id=?").bind(data.name, data.parentId, data.id).run();
+           } else {
+             await env.DB.prepare("INSERT INTO folders (name, parentId) VALUES (?, ?)").bind(data.name, data.parentId).run();
+           }
+        }
+
+        // --- LEARNING ITEMS ---
+        else if (table === 'learning_items') {
+           if (data.id) {
+             await env.DB.prepare("UPDATE learning_items SET topic=?, type=?, link=?, content=?, folderId=? WHERE id=?")
+               .bind(data.topic, data.type, data.link, data.content, data.folderId, data.id).run();
+           } else {
+             await env.DB.prepare("INSERT INTO learning_items (topic, type, link, content, folderId) VALUES (?, ?, ?, ?, ?)")
+               .bind(data.topic, data.type, data.link, data.content, data.folderId).run();
+           }
+        }
+
+        return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+      }
+
+    } catch (err) {
+      return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
     }
-    // ကျန်တဲ့ tables (categories, info_cards, folders, learning_items, users) တွေ အတူတူ ထည့်ပါ
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
   }
 
   return new Response("Not Found", { status: 404, headers: corsHeaders });
 };
-
-export const config = { path: "/api/*" }; // optional, [[path]] ဆိုရင် မလိုပါ
