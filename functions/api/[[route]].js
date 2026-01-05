@@ -1,3 +1,28 @@
+// DEBUG TEST - အပေါ်ဆုံးမှာ ထည့်ပါ
+if (path === '/debug' && method === 'GET') {
+    let dbStatus = "no DB";
+    let userCount = 0;
+    
+    try {
+        if (env.DB) {
+            const result = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
+            userCount = result?.count || 0;
+            dbStatus = "DB works!";
+        }
+    } catch (e) {
+        dbStatus = "DB error: " + e.message;
+    }
+    
+    return new Response(JSON.stringify({
+        host: request.headers.get('host'),
+        url: request.url,
+        hasDB: !!env.DB,
+        dbStatus: dbStatus,
+        userCount: userCount
+    }, null, 2), { headers });
+}
+// end test//end
+
 export async function onRequest(context) {
     const { request, env, params } = context;
     const url = new URL(request.url);
