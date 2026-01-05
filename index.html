@@ -1112,44 +1112,20 @@
     });
 
     // ============ GENERIC SAVE / DELETE (API) ============
-    // Button Loading ပြောင်းပေးတဲ့ helper
-function setBtnLoading(btn, isLoading, originalText) {
-    if (!btn) return;
-    if (isLoading) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Please wait...`;
-    } else {
-        btn.disabled = false;
-        btn.innerHTML = originalText;
-    }
-}
-
-async function saveToApi(table, data) {
-    // လက်ရှိ ဖွင့်ထားတဲ့ Modal ထဲက Save button ကို ရှာတယ်
-    const activeModal = document.querySelector('.modal:not(.hidden)');
-    const saveBtn = activeModal ? activeModal.querySelector('button[onclick^="save"]') : null;
-    const originalText = saveBtn ? saveBtn.innerHTML : '';
-
-    setBtnLoading(saveBtn, true); // Loading စပြမယ်
-
-    try {
-        const res = await fetchAPI('', {
-            method: 'POST',
-            body: JSON.stringify({ action: 'save', table, data })
-        });
-        
-        if (res) {
-            await refreshData();
+    async function saveToApi(table, data) {
+        try {
+            await fetchAPI('', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'save', table, data })
+            });
+            await refreshData(); // Re-fetch to get new IDs etc
             showToast('Saved successfully!', 'success');
             return true;
+        } catch (e) {
+            showToast('Save failed: ' + e.message);
+            return false;
         }
-    } catch (e) {
-        showToast('Save failed: ' + e.message);
-    } finally {
-        setBtnLoading(saveBtn, false, originalText); // Loading ပိတ်မယ်
     }
-    return false;
-}
 
     async function deleteFromApi(table, id) {
         try {
@@ -1732,6 +1708,31 @@ async function saveToApi(table, data) {
 
     // ============ UTILS ============
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+
+// Folder create modal မှာ Enter နှိပ်ရင် save လုပ်ပြီး page reload မဖြစ်အောင်
+        document.getElementById('folderForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+        });
+
+        document.getElementById('folderForm').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                saveFolder();
+            }
+        });
+
+        // Rename modal မှာ Enter နှိပ်ရင် rename လုပ်ပြီး reload မဖြစ်အောင်
+        document.querySelector('#renameModal form').addEventListener('submit', function(e) {
+            e.preventDefault();
+        });
+
+        document.getElementById('renameInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                confirmRename();
+            }
+        });
     
     // Initial Start
     initApp();
