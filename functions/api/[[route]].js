@@ -1,27 +1,35 @@
-// DEBUG TEST - အပေါ်ဆုံးမှာ ထည့်ပါ
-if (path === '/debug' && method === 'GET') {
-    let dbStatus = "no DB";
-    let userCount = 0;
-    
+// LOGIN
+if (path === '/login' && method === 'POST') {
     try {
-        if (env.DB) {
-            const result = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
-            userCount = result?.count || 0;
-            dbStatus = "DB works!";
-        }
+        const { username, password } = await request.json();
+        
+        // Debug: ဘာ receive ရလဲ ကြည့်မယ်
+        console.log('Login attempt:', { username, hasPassword: !!password });
+        
+        const user = await env.DB.prepare(
+            'SELECT id, username, account_name, role FROM users WHERE username = ? AND password = ?'
+        ).bind(username, password).first();
+        
+        // Debug info ပါ return မယ်
+        return new Response(JSON.stringify({
+            success: !!user,
+            user: user || null,
+            debug: {
+                host: request.headers.get('host'),
+                receivedUsername: username,
+                hasDB: !!env.DB,
+                foundUser: !!user
+            }
+        }), { headers });
+        
     } catch (e) {
-        dbStatus = "DB error: " + e.message;
+        return new Response(JSON.stringify({
+            success: false,
+            error: e.message
+        }), { headers });
     }
-    
-    return new Response(JSON.stringify({
-        host: request.headers.get('host'),
-        url: request.url,
-        hasDB: !!env.DB,
-        dbStatus: dbStatus,
-        userCount: userCount
-    }, null, 2), { headers });
 }
-// end test//end
+//end test
 
 export async function onRequest(context) {
     const { request, env, params } = context;
