@@ -3,6 +3,7 @@ const API_URL = '/api';
 let currentUser = null;
 let authHeader = localStorage.getItem('authHeader');
 let isProcessing = false;
+let appInitialized = false; // Track if app has been initialized
 
 let appData = {
     users: [],
@@ -154,6 +155,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
                     currentUser = appDataResult.currentUser || foundUser || { accountName: creds[0], role: 'user' };
                 }
                 
+                appInitialized = true;
                 document.getElementById('loginPage').classList.add('hidden');
                 document.getElementById('mainApp').classList.remove('hidden');
                 document.getElementById('welcomeUser').textContent = currentUser.accountName;
@@ -184,11 +186,17 @@ async function initApp() {
         return;
     }
 
-    // Silently try to load data
+    // If already initialized, just update data silently
+    if (appInitialized) {
+        await refreshData(true);
+        return;
+    }
+
+    // First time initialization - try to load
     const data = await fetchAPI('getData', { silentFail: true });
     
     if (!data) {
-        // If failed, don't show login page, just stay as is
+        // Failed to load - stay on current page (don't show login)
         return;
     }
 
@@ -205,7 +213,10 @@ async function initApp() {
         }
     }
 
-    // Only switch pages if we're on login page
+    // Mark as initialized
+    appInitialized = true;
+
+    // Only show main app if currently on login page
     const loginPage = document.getElementById('loginPage');
     const mainApp = document.getElementById('mainApp');
     
@@ -215,7 +226,6 @@ async function initApp() {
         navigateTo('home');
     }
     
-    // Update welcome text
     document.getElementById('welcomeUser').textContent = currentUser.accountName;
     document.getElementById('mobileWelcome').textContent = currentUser.accountName;
     updateAdminUI();
@@ -233,6 +243,7 @@ function updateAdminUI() {
 }
 
 function showLoginPage() {
+    appInitialized = false;
     document.getElementById('mainApp').classList.add('hidden');
     document.getElementById('loginPage').classList.remove('hidden');
     document.getElementById('username').value = '';
@@ -243,6 +254,7 @@ function logout() {
     localStorage.removeItem('authHeader');
     authHeader = null;
     currentUser = null;
+    appInitialized = false;
     showLoginPage();
     closeMobileMenu();
 }
@@ -472,12 +484,16 @@ async function deleteUpdate(id) { if(isAdmin() && confirm('Delete?')) await dele
 
 // ============ LEARNING ============
 let contextItem = null;
+let deletedFolderIds = new Set(); // Track deleted folders on frontend
 
 function renderLearning() {
     const container = document.getElementById('learningContainer');
     renderBreadcrumb();
 
-    const folders = appData.folders.filter(f => f.parentId === currentFolderId);
+    // Filter out deleted folders
+    const folders = appData.folders.filter(f => 
+        f.parentId === currentFolderId && !deletedFolderIds.has(f.id)
+    );
     const items = appData.learningItems.filter(i => i.folderId === currentFolderId);
 
     let html = folders.map(folder => `
@@ -591,21 +607,15 @@ async function confirmRename() {
     }
 }
 
-// Helper function to check if folder exists in current data
-function folderExists(folderId) {
-    return appData.folders.some(f => f.id === folderId);
-}
-
-// Check if targetId is a descendant of parentId
 function isDescendantFolder(targetId, parentId) {
     let currentId = targetId;
-    const visited = new Set(); // Prevent infinite loops
+    const visited = new Set();
     
     while (currentId !== null && currentId !== undefined) {
-        if (visited.has(currentId)) break; // Circular reference detected
+        if (visited.has(currentId)) break;
         visited.add(currentId);
         
-        const folder = appData.folders.find(f => f.id === currentId);
+        const folder = appData.folders.find(f => f.id === currentId && !deletedFolderIds.has(f.id));
         if (!folder) break;
         
         if (folder.parentId === parentId) return true;
@@ -618,17 +628,16 @@ function moveItem() {
     if (!isAdmin() || !contextItem) return;
     const container = document.getElementById('moveFolderList');
     
-    // Get all valid folders (only existing ones)
+    // Only show active folders (not deleted)
     let validFolders = appData.folders.filter(folder => {
-        // Don't show the item itself if it's a folder
-        if (contextItem.type === 'folder' && folder.id === contextItem.id) {
-            return false;
-        }
+        // Skip deleted folders
+        if (deletedFolderIds.has(folder.id)) return false;
         
-        // Don't show descendant folders (to prevent circular references)
-        if (contextItem.type === 'folder' && isDescendantFolder(folder.id, contextItem.id)) {
-            return false;
-        }
+        // Don't show the item itself
+        if (contextItem.type === 'folder' && folder.id === contextItem.id) return false;
+        
+        // Don't show descendant folders
+        if (contextItem.type === 'folder' && isDescendantFolder(folder.id, contextItem.id)) return false;
         
         return true;
     });
@@ -650,8 +659,8 @@ function moveItem() {
 async function confirmMove(targetFolderId) {
     if (!isAdmin() || !contextItem) return;
     
-    // Validate target folder exists (if not null)
-    if (targetFolderId !== null && !folderExists(targetFolderId)) {
+    // Validate target exists if not null
+    if (targetFolderId !== null && deletedFolderIds.has(targetFolderId)) {
         showToast('Target folder does not exist!');
         closeModal('moveModal');
         return;
@@ -662,7 +671,7 @@ async function confirmMove(targetFolderId) {
     
     if (contextItem.type === 'folder') {
          const f = appData.folders.find(x => x.id === contextItem.id);
-         if (!f) {
+         if (!f || deletedFolderIds.has(f.id)) {
              showToast('Folder not found!');
              closeModal('moveModal');
              return;
@@ -686,6 +695,11 @@ async function confirmMove(targetFolderId) {
 async function deleteItem() {
     if (!isAdmin() || !contextItem) return;
     if (!confirm('Delete this item?')) return;
+    
+    // If deleting folder, mark it as deleted immediately
+    if (contextItem.type === 'folder') {
+        deletedFolderIds.add(contextItem.id);
+    }
     
     const table = contextItem.type === 'folder' ? 'folders' : 'learning_items';
     await deleteFromApi(table, contextItem.id);
@@ -1083,7 +1097,7 @@ initApp();
 
 // Visibility Check
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && authHeader) {
+    if (document.visibilityState === 'visible' && authHeader && appInitialized) {
         refreshData(true);
     }
 });
