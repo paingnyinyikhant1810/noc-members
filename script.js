@@ -81,7 +81,13 @@ async function fetchAPI(endpoint, options = {}) {
 }
 
 async function refreshData(silent = false) {
+    // silent မဟုတ်ရင် loading ပြမယ်
+    if (!silent) {
+        showLoading();
+    }
+    
     const data = await fetchAPI('getData', { silentFail: silent });
+    
     if (data) {
         appData = data;
         if (!document.getElementById('homePage').classList.contains('hidden')) renderUpdates();
@@ -96,6 +102,12 @@ async function refreshData(silent = false) {
         renderMobileInfoMenu();
         renderInfoDropdown();
     }
+    
+    // silent မဟုတ်ရင် loading ပိတ်မယ်
+    if (!silent) {
+        hideLoading();
+    }
+    
     return data;
 }
 
