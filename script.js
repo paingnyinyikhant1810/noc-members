@@ -85,6 +85,7 @@ async function refreshData(silent = false) {
     const data = await fetchAPI('getData', { silentFail: silent });
     if (data) {
         appData = data;
+        deletedFolderIds.clear();
         if (!document.getElementById('homePage').classList.contains('hidden')) renderUpdates();
         if (!document.getElementById('learningPage').classList.contains('hidden')) renderLearning();
         if (!document.getElementById('informationPage').classList.contains('hidden') && currentInfoCategory) {
@@ -97,6 +98,12 @@ async function refreshData(silent = false) {
         renderMobileInfoMenu();
         renderInfoDropdown();
     }
+function ensureMainAppVisible() {
+    if (authHeader && appInitialized) {
+        document.getElementById('loginPage').classList.add('hidden');
+        document.getElementById('mainApp').classList.remove('hidden');
+    }
+}
     return data;
 }
 
@@ -1098,6 +1105,6 @@ initApp();
 // Visibility Check
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && authHeader && appInitialized) {
-        refreshData(true);
+        refreshData(true).then(() => ensureMainAppVisible());
     }
 });
