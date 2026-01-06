@@ -2,6 +2,7 @@
 const API_URL = '/api';
 let currentUser = null;
 let authHeader = localStorage.getItem('authHeader');
+let isProcessing = false; // Prevent double submission
 
 let appData = {
     users: [],
@@ -12,12 +13,41 @@ let appData = {
     folders: []
 };
 
+// ============ LOADING OVERLAY ============
+function showLoading() {
+    // Remove existing overlay if any
+    const existing = document.getElementById('loadingOverlay');
+    if (existing) existing.remove();
+    
+    const overlay = document.createElement('div');
+    overlay.id = 'loadingOverlay';
+    overlay.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999]';
+    overlay.innerHTML = `
+        <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 animate-fadeIn">
+            <div class="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+            <p class="text-gray-700 font-semibold text-lg">Please wait...</p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+}
+
+function hideLoading() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.classList.add('animate-fadeOut');
+        setTimeout(() => overlay.remove(), 200);
+    }
+}
+
 // ============ TOAST HELPERS ============
 function showToast(message, type = 'error') {
     const container = document.getElementById('toastContainer');
     const toast = document.createElement('div');
-    toast.className = `toast px-5 py-3 rounded-xl shadow-lg ${type === 'error' ? 'bg-red-500' : type === 'info' ? 'bg-blue-500' : 'bg-green-500'} text-white font-medium text-sm`;
-    toast.textContent = message;
+    const bgColor = type === 'error' ? 'bg-red-500' : type === 'info' ? 'bg-blue-500' : 'bg-green-500';
+    const icon = type === 'error' ? 'fa-exclamation-circle' : type === 'info' ? 'fa-info-circle' : 'fa-check-circle';
+    
+    toast.className = `toast px-5 py-3 rounded-xl shadow-lg ${bgColor} text-white font-medium text-sm flex items-center gap-3`;
+    toast.innerHTML = `<i class="fas ${icon}"></i><span>${message}</span>`;
     container.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
 }
@@ -35,20 +65,25 @@ async function fetchAPI(endpoint, options = {}) {
         const res = await fetch(`${API_URL}/${endpoint}`, { ...options, headers: { ...getHeaders(), ...options.headers } });
         
         if (res.status === 401) {
-            logout(); 
+            // Only logout if not in visibility change refresh
+            if (!options.silentFail) {
+                logout();
+            }
             return null;
         }
         if (!res.ok) throw new Error('API Error');
         return endpoint === 'options' ? res : res.json();
     } catch (e) {
         console.error(e);
-        showToast('Connection Error: ' + e.message);
+        if (!options.silentFail) {
+            showToast('Connection Error: ' + e.message);
+        }
         return null;
     }
 }
 
-async function refreshData() {
-    const data = await fetchAPI('getData');
+async function refreshData(silent = false) {
+    const data = await fetchAPI('getData', { silentFail: silent });
     if (data) {
         appData = data;
         if (!document.getElementById('homePage').classList.contains('hidden')) renderUpdates();
@@ -63,6 +98,7 @@ async function refreshData() {
         renderMobileInfoMenu();
         renderInfoDropdown();
     }
+    return data;
 }
 
 // ============ AUTHENTICATION ============
@@ -84,6 +120,10 @@ document.getElementById('togglePassword').addEventListener('click', function() {
 
 document.getElementById('loginForm').addEventListener('submit', async function(e) {
     e.preventDefault();
+    
+    if (isProcessing) return;
+    isProcessing = true;
+    
     const u = document.getElementById('username').value;
     const p = document.getElementById('password').value;
     const loginBtn = document.getElementById('loginBtn');
@@ -114,6 +154,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
 
     loginBtn.innerHTML = '<span>Sign In</span><i class="fas fa-arrow-right ml-2"></i>';
     loginBtn.disabled = false;
+    isProcessing = false;
 });
 
 async function initApp() {
@@ -122,8 +163,17 @@ async function initApp() {
         return;
     }
 
+    showLoading();
     const data = await fetchAPI('getData');
-    if (!data) return;
+    hideLoading();
+    
+    if (!data) {
+        // If getData fails, clear auth and show login
+        localStorage.removeItem('authHeader');
+        authHeader = null;
+        showLoginPage();
+        return;
+    }
 
     appData = data;
     
@@ -263,33 +313,55 @@ document.addEventListener('click', function(e) {
 
 // ============ GENERIC SAVE / DELETE (API) ============
 async function saveToApi(table, data) {
-    showToast('Please wait...', 'info');
+    if (isProcessing) {
+        showToast('Please wait for current operation to complete', 'info');
+        return false;
+    }
+    
+    isProcessing = true;
+    showLoading();
+    
     try {
         await fetchAPI('', {
             method: 'POST',
             body: JSON.stringify({ action: 'save', table, data })
         });
         await refreshData();
+        hideLoading();
         showToast('Saved successfully!', 'success');
+        isProcessing = false;
         return true;
     } catch (e) {
+        hideLoading();
         showToast('Save failed: ' + e.message);
+        isProcessing = false;
         return false;
     }
 }
 
 async function deleteFromApi(table, id) {
-    showToast('Please wait...', 'info');
+    if (isProcessing) {
+        showToast('Please wait for current operation to complete', 'info');
+        return false;
+    }
+    
+    isProcessing = true;
+    showLoading();
+    
     try {
         await fetchAPI('', {
             method: 'POST',
             body: JSON.stringify({ action: 'delete', table, id })
         });
         await refreshData();
+        hideLoading();
         showToast('Deleted successfully!', 'success');
+        isProcessing = false;
         return true;
     } catch (e) {
+        hideLoading();
         showToast('Delete failed');
+        isProcessing = false;
         return false;
     }
 }
@@ -887,20 +959,10 @@ document.getElementById('renameInput').addEventListener('keydown', function(e) {
 // Initial Start
 initApp();
 
-// Visibility Check (Silent refresh)
+// Visibility Check (Silent refresh - doesn't show login on fail)
 document.addEventListener('visibilitychange', () => {
-     if (document.visibilityState === 'visible' && authHeader) {
-        fetchAPI('getData').then(data => {
-            if (data) {
-                appData = data;
-                if (!document.getElementById('homePage').classList.contains('hidden')) renderUpdates();
-                if (!document.getElementById('learningPage').classList.contains('hidden')) renderLearning();
-                if (!document.getElementById('informationPage').classList.contains('hidden') && currentInfoCategory) renderInfoCards();
-                if (!document.getElementById('adminPage').classList.contains('hidden') && currentUser?.role === 'admin') {
-                    renderUsers();
-                    renderCategories();
-                }
-            }
-        });
-     }
+    if (document.visibilityState === 'visible' && authHeader) {
+        // Silent refresh - don't logout on error
+        refreshData(true);
+    }
 });
