@@ -85,7 +85,11 @@ async function refreshData(silent = false) {
     const data = await fetchAPI('getData', { silentFail: silent });
     if (data) {
         appData = data;
+        
+        // အရေးကြီးဆုံး: refresh တိုင်း deleted folders ကို ရှင်းပစ် (backend က မပို့တော့ဘူး)
         deletedFolderIds.clear();
+
+        // လိုအပ်တဲ့ နေရာတွေမှာ ပြန်ဆွဲပြီး render လုပ်
         if (!document.getElementById('homePage').classList.contains('hidden')) renderUpdates();
         if (!document.getElementById('learningPage').classList.contains('hidden')) renderLearning();
         if (!document.getElementById('informationPage').classList.contains('hidden') && currentInfoCategory) {
@@ -97,13 +101,10 @@ async function refreshData(silent = false) {
         }
         renderMobileInfoMenu();
         renderInfoDropdown();
+
+        // refresh တိုင်း login page မပေါ်အောင် သေချာစစ်ဆေးပြီး main app ပြထား
+        ensureMainAppVisible();
     }
-function ensureMainAppVisible() {
-    if (authHeader && appInitialized) {
-        document.getElementById('loginPage').classList.add('hidden');
-        document.getElementById('mainApp').classList.remove('hidden');
-    }
-}
     return data;
 }
 
@@ -236,6 +237,7 @@ async function initApp() {
     document.getElementById('welcomeUser').textContent = currentUser.accountName;
     document.getElementById('mobileWelcome').textContent = currentUser.accountName;
     updateAdminUI();
+    ensureMainAppVisible();
 }
 
 function updateAdminUI() {
@@ -262,6 +264,7 @@ function logout() {
     authHeader = null;
     currentUser = null;
     appInitialized = false;
+    deletedFolderIds.clear();  // ထည့်ပေးပါ
     showLoginPage();
     closeMobileMenu();
 }
@@ -1105,6 +1108,8 @@ initApp();
 // Visibility Check
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && authHeader && appInitialized) {
-        refreshData(true).then(() => ensureMainAppVisible());
+        refreshData(true).then(() => {
+            ensureMainAppVisible();  // ဒီတစ်ခါလည်း သေချာပေါက် main app ပေါ်အောင်
+        });
     }
 });
