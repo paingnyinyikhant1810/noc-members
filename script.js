@@ -1049,6 +1049,6 @@ initApp();
 // Visibility Check
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && authHeader) {
-        refreshData(true);
+        refreshData(false);  // loading ပြမယ်
     }
 });
