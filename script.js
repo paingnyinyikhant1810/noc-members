@@ -3,6 +3,7 @@ const API_URL = '/api';
 let currentUser = null;
 let authHeader = localStorage.getItem('authHeader');
 let isProcessing = false;
+let isInitialLoad = true; // Track if this is first load or refresh
 
 let appData = {
     users: [],
@@ -141,7 +142,6 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
             localStorage.setItem('authHeader', authHeader);
             currentUser = data.user;
             
-            // Show loading and load app
             showLoading();
             const appDataResult = await fetchAPI('getData');
             hideLoading();
@@ -149,14 +149,12 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
             if (appDataResult) {
                 appData = appDataResult;
                 
-                // Update currentUser if needed
                 if (!currentUser || !currentUser.accountName) {
                     const creds = atob(authHeader.split(' ')[1]).split(':');
                     const foundUser = appData.users.find(u => u.username === creds[0]);
                     currentUser = appDataResult.currentUser || foundUser || { accountName: creds[0], role: 'user' };
                 }
                 
-                // Show app
                 document.getElementById('loginPage').classList.add('hidden');
                 document.getElementById('mainApp').classList.remove('hidden');
                 document.getElementById('welcomeUser').textContent = currentUser.accountName;
@@ -181,28 +179,31 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     isProcessing = false;
 });
 
-async function initApp(skipLoading = false) {
+async function initApp() {
     if (!authHeader) {
         showLoginPage();
         return;
     }
 
-    if (!skipLoading) {
+    // Only show loading on first load, not on refresh
+    if (isInitialLoad) {
         showLoading();
     }
     
-    const data = await fetchAPI('getData', { silentFail: skipLoading });
+    const data = await fetchAPI('getData', { silentFail: !isInitialLoad });
     
-    if (!skipLoading) {
+    if (isInitialLoad) {
         hideLoading();
     }
     
     if (!data) {
-        // If getData fails, clear auth and show login
-        localStorage.removeItem('authHeader');
-        authHeader = null;
-        currentUser = null;
-        showLoginPage();
+        // Only logout on initial load failure
+        if (isInitialLoad) {
+            localStorage.removeItem('authHeader');
+            authHeader = null;
+            currentUser = null;
+            showLoginPage();
+        }
         return;
     }
 
@@ -221,6 +222,8 @@ async function initApp(skipLoading = false) {
     
     updateAdminUI();
     navigateTo('home');
+    
+    isInitialLoad = false; // After first load, mark as not initial
 }
 
 function updateAdminUI() {
@@ -245,6 +248,7 @@ function logout() {
     localStorage.removeItem('authHeader');
     authHeader = null;
     currentUser = null;
+    isInitialLoad = true; // Reset on logout
     showLoginPage();
     closeMobileMenu();
 }
@@ -863,6 +867,19 @@ function togglePasswordVisibility(id) {
     renderUsers();
 }
 
+// Toggle password in edit modal
+function toggleEditPasswordVisibility() {
+    const pwdField = document.getElementById('userPassword');
+    const icon = document.querySelector('#toggleEditPassword i');
+    if (pwdField.type === 'password') {
+        pwdField.type = 'text';
+        icon.classList.replace('fa-eye', 'fa-eye-slash');
+    } else {
+        pwdField.type = 'password';
+        icon.classList.replace('fa-eye-slash', 'fa-eye');
+    }
+}
+
 function renderUsers() {
     const tbody = document.getElementById('usersTable');
     tbody.innerHTML = appData.users.map(user => `
@@ -877,13 +894,13 @@ function renderUsers() {
             <td class="px-4 sm:px-6 py-4">
                  <div class="flex items-center gap-2">
                     <span class="text-gray-500 font-mono text-sm ${visiblePasswords[user.id]?'':'password-dots'}">${visiblePasswords[user.id]?user.password:'••••'}</span>
-                    <button onclick="togglePasswordVisibility(${user.id})"><i class="fas ${visiblePasswords[user.id]?'fa-eye-slash':'fa-eye'} text-gray-400"></i></button>
+                    <button onclick="togglePasswordVisibility(${user.id})" class="icon-btn"><i class="fas ${visiblePasswords[user.id]?'fa-eye-slash':'fa-eye'} text-gray-400"></i></button>
                 </div>
             </td>
             <td class="px-4 sm:px-6 py-4">${user.role}</td>
             <td class="px-4 sm:px-6 py-4 text-right">
-                <button onclick="editUser(${user.id})" class="text-gray-400 hover:text-gray-600 mr-2"><i class="fas fa-edit"></i></button>
-                ${user.id !== currentUser.id ? `<button onclick="deleteFromApi('users', ${user.id})" class="text-gray-400 hover:text-red-600"><i class="fas fa-trash"></i></button>` : ''}
+                <button onclick="editUser(${user.id})" class="icon-btn text-gray-400 hover:text-blue-600 mr-2"><i class="fas fa-edit"></i></button>
+                ${user.id !== currentUser.id ? `<button onclick="deleteFromApi('users', ${user.id})" class="icon-btn text-gray-400 hover:text-red-600"><i class="fas fa-trash"></i></button>` : ''}
             </td>
         </tr>
     `).join('');
@@ -907,9 +924,9 @@ function renderCategories() {
                 <div class="category-icon w-10 h-10 bg-blue-100 rounded-xl flex justify-center items-center"><i class="fas ${cat.icon} text-blue-600"></i></div>
                 <span class="font-medium">${cat.name}</span>
             </div>
-            <div>
-                 <button onclick="openCategoryModal(${cat.id})" class="text-blue-500 mr-2"><i class="fas fa-edit"></i></button>
-                 <button onclick="deleteFromApi('categories', ${cat.id})" class="text-red-500"><i class="fas fa-trash"></i></button>
+            <div class="flex gap-2">
+                 <button onclick="openCategoryModal(${cat.id})" class="icon-btn text-gray-400 hover:text-blue-600"><i class="fas fa-edit"></i></button>
+                 <button onclick="deleteFromApi('categories', ${cat.id})" class="icon-btn text-gray-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
             </div>
         </div>
     `).join('');
@@ -938,13 +955,25 @@ async function saveCategory() {
 function openUserModal(id = null) {
     document.getElementById('userModal').classList.remove('hidden');
     document.getElementById('userId').value = id || '';
+    
+    // Reset password field to type password
+    const pwdField = document.getElementById('userPassword');
+    pwdField.type = 'password';
+    const icon = document.querySelector('#toggleEditPassword i');
+    if (icon) {
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+    }
+    
     if(id) {
         const u = appData.users.find(x => x.id === id);
         document.getElementById('userAccountName').value = u.accountName;
         document.getElementById('userUsername').value = u.username;
         document.getElementById('userPassword').value = u.password;
         document.getElementById('userRole').value = u.role;
-    } else document.getElementById('userForm').reset();
+    } else {
+        document.getElementById('userForm').reset();
+    }
 }
 
 async function saveUser() {
