@@ -157,21 +157,15 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     isProcessing = false;
 });
 
-async function initApp(skipLoading = false) {
+async function initApp() {
     if (!authHeader) {
         showLoginPage();
         return;
     }
 
-    if (!skipLoading) {
-        showLoading();
-    }
-    
+    showLoading();
     const data = await fetchAPI('getData');
-    
-    if (!skipLoading) {
-        hideLoading();
-    }
+    hideLoading();
     
     if (!data) {
         // If getData fails, clear auth and show login
@@ -965,18 +959,10 @@ document.getElementById('renameInput').addEventListener('keydown', function(e) {
 // Initial Start
 initApp();
 
-// Visibility Check (Silent refresh without loading overlay)
+// Visibility Check (Silent refresh - doesn't show login on fail)
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && authHeader) {
-        // Silent refresh - no loading screen
+        // Silent refresh - don't logout on error
         refreshData(true);
-    }
-});
-
-// Handle page refresh - check auth and load silently
-window.addEventListener('load', () => {
-    if (authHeader && document.getElementById('mainApp').classList.contains('hidden')) {
-        // Page was refreshed, reload app without loading screen
-        initApp(true);
     }
 });
