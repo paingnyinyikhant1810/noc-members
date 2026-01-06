@@ -184,33 +184,41 @@ async function initApp() {
         return;
     }
 
+    // Silently try to load data
     const data = await fetchAPI('getData', { silentFail: true });
     
     if (!data) {
+        // If failed, don't show login page, just stay as is
         return;
     }
 
     appData = data;
     
     if (!currentUser) {
-        const creds = atob(authHeader.split(' ')[1]).split(':');
-        const foundUser = appData.users.find(u => u.username === creds[0]);
-        currentUser = data.currentUser || foundUser || { accountName: creds[0], role: 'user' };
+        try {
+            const creds = atob(authHeader.split(' ')[1]).split(':');
+            const foundUser = appData.users.find(u => u.username === creds[0]);
+            currentUser = data.currentUser || foundUser || { accountName: creds[0], role: 'user' };
+        } catch (e) {
+            console.error('Failed to decode auth header', e);
+            return;
+        }
     }
 
-    if (!document.getElementById('loginPage').classList.contains('hidden')) {
-        document.getElementById('loginPage').classList.add('hidden');
-        document.getElementById('mainApp').classList.remove('hidden');
-        document.getElementById('welcomeUser').textContent = currentUser.accountName;
-        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
-        
-        updateAdminUI();
+    // Only switch pages if we're on login page
+    const loginPage = document.getElementById('loginPage');
+    const mainApp = document.getElementById('mainApp');
+    
+    if (!loginPage.classList.contains('hidden')) {
+        loginPage.classList.add('hidden');
+        mainApp.classList.remove('hidden');
         navigateTo('home');
-    } else {
-        document.getElementById('welcomeUser').textContent = currentUser.accountName;
-        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
-        updateAdminUI();
     }
+    
+    // Update welcome text
+    document.getElementById('welcomeUser').textContent = currentUser.accountName;
+    document.getElementById('mobileWelcome').textContent = currentUser.accountName;
+    updateAdminUI();
 }
 
 function updateAdminUI() {
@@ -583,51 +591,90 @@ async function confirmRename() {
     }
 }
 
-function moveItem() {
-    if (!isAdmin() || !contextItem) return;
-    const container = document.getElementById('moveFolderList');
-    
-    // Only show folders that are NOT the current item (if it's a folder) and are active
-    let availableFolders = appData.folders.filter(folder => {
-        // Don't show the item itself
-        if (contextItem.type === 'folder' && folder.id === contextItem.id) return false;
-        // Don't show child folders of the current folder (prevent circular references)
-        if (contextItem.type === 'folder' && isChildFolder(folder.id, contextItem.id)) return false;
-        return true;
-    });
-    
-    let html = `<button onclick="confirmMove(null)" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 transition text-left"><i class="fas fa-home text-gray-400"></i> Root</button>`;
-    
-    availableFolders.forEach(folder => {
-        html += `<button onclick="confirmMove(${folder.id})" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 transition text-left"><i class="fas fa-folder text-amber-500"></i> ${folder.name}</button>`;
-    });
-    
-    container.innerHTML = html;
-    document.getElementById('moveModal').classList.remove('hidden');
+// Helper function to check if folder exists in current data
+function folderExists(folderId) {
+    return appData.folders.some(f => f.id === folderId);
 }
 
-// Check if targetId is a child of parentId (prevent circular folder structures)
-function isChildFolder(targetId, parentId) {
+// Check if targetId is a descendant of parentId
+function isDescendantFolder(targetId, parentId) {
     let currentId = targetId;
-    while (currentId) {
+    const visited = new Set(); // Prevent infinite loops
+    
+    while (currentId !== null && currentId !== undefined) {
+        if (visited.has(currentId)) break; // Circular reference detected
+        visited.add(currentId);
+        
         const folder = appData.folders.find(f => f.id === currentId);
         if (!folder) break;
+        
         if (folder.parentId === parentId) return true;
         currentId = folder.parentId;
     }
     return false;
 }
 
+function moveItem() {
+    if (!isAdmin() || !contextItem) return;
+    const container = document.getElementById('moveFolderList');
+    
+    // Get all valid folders (only existing ones)
+    let validFolders = appData.folders.filter(folder => {
+        // Don't show the item itself if it's a folder
+        if (contextItem.type === 'folder' && folder.id === contextItem.id) {
+            return false;
+        }
+        
+        // Don't show descendant folders (to prevent circular references)
+        if (contextItem.type === 'folder' && isDescendantFolder(folder.id, contextItem.id)) {
+            return false;
+        }
+        
+        return true;
+    });
+    
+    let html = `<button onclick="confirmMove(null)" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 transition text-left">
+        <i class="fas fa-home text-gray-400"></i> Root
+    </button>`;
+    
+    validFolders.forEach(folder => {
+        html += `<button onclick="confirmMove(${folder.id})" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 transition text-left">
+            <i class="fas fa-folder text-amber-500"></i> ${folder.name}
+        </button>`;
+    });
+    
+    container.innerHTML = html;
+    document.getElementById('moveModal').classList.remove('hidden');
+}
+
 async function confirmMove(targetFolderId) {
     if (!isAdmin() || !contextItem) return;
+    
+    // Validate target folder exists (if not null)
+    if (targetFolderId !== null && !folderExists(targetFolderId)) {
+        showToast('Target folder does not exist!');
+        closeModal('moveModal');
+        return;
+    }
+    
     let table = contextItem.type === 'folder' ? 'folders' : 'learning_items';
     let data = { id: contextItem.id };
     
     if (contextItem.type === 'folder') {
          const f = appData.folders.find(x => x.id === contextItem.id);
+         if (!f) {
+             showToast('Folder not found!');
+             closeModal('moveModal');
+             return;
+         }
          data = { ...f, parentId: targetFolderId };
     } else {
          const i = appData.learningItems.find(x => x.id === contextItem.id);
+         if (!i) {
+             showToast('Item not found!');
+             closeModal('moveModal');
+             return;
+         }
          data = { ...i, folderId: targetFolderId };
     }
     
