@@ -3,7 +3,6 @@ const API_URL = '/api';
 let currentUser = null;
 let authHeader = localStorage.getItem('authHeader');
 let isProcessing = false;
-let isInitialLoad = true; // Track if this is first load or refresh
 
 let appData = {
     users: [],
@@ -185,25 +184,9 @@ async function initApp() {
         return;
     }
 
-    // Only show loading on first load, not on refresh
-    if (isInitialLoad) {
-        showLoading();
-    }
-    
-    const data = await fetchAPI('getData', { silentFail: !isInitialLoad });
-    
-    if (isInitialLoad) {
-        hideLoading();
-    }
+    const data = await fetchAPI('getData', { silentFail: true });
     
     if (!data) {
-        // Only logout on initial load failure
-        if (isInitialLoad) {
-            localStorage.removeItem('authHeader');
-            authHeader = null;
-            currentUser = null;
-            showLoginPage();
-        }
         return;
     }
 
@@ -215,15 +198,19 @@ async function initApp() {
         currentUser = data.currentUser || foundUser || { accountName: creds[0], role: 'user' };
     }
 
-    document.getElementById('loginPage').classList.add('hidden');
-    document.getElementById('mainApp').classList.remove('hidden');
-    document.getElementById('welcomeUser').textContent = currentUser.accountName;
-    document.getElementById('mobileWelcome').textContent = currentUser.accountName;
-    
-    updateAdminUI();
-    navigateTo('home');
-    
-    isInitialLoad = false; // After first load, mark as not initial
+    if (!document.getElementById('loginPage').classList.contains('hidden')) {
+        document.getElementById('loginPage').classList.add('hidden');
+        document.getElementById('mainApp').classList.remove('hidden');
+        document.getElementById('welcomeUser').textContent = currentUser.accountName;
+        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
+        
+        updateAdminUI();
+        navigateTo('home');
+    } else {
+        document.getElementById('welcomeUser').textContent = currentUser.accountName;
+        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
+        updateAdminUI();
+    }
 }
 
 function updateAdminUI() {
@@ -248,7 +235,6 @@ function logout() {
     localStorage.removeItem('authHeader');
     authHeader = null;
     currentUser = null;
-    isInitialLoad = true; // Reset on logout
     showLoginPage();
     closeMobileMenu();
 }
@@ -600,13 +586,36 @@ async function confirmRename() {
 function moveItem() {
     if (!isAdmin() || !contextItem) return;
     const container = document.getElementById('moveFolderList');
+    
+    // Only show folders that are NOT the current item (if it's a folder) and are active
+    let availableFolders = appData.folders.filter(folder => {
+        // Don't show the item itself
+        if (contextItem.type === 'folder' && folder.id === contextItem.id) return false;
+        // Don't show child folders of the current folder (prevent circular references)
+        if (contextItem.type === 'folder' && isChildFolder(folder.id, contextItem.id)) return false;
+        return true;
+    });
+    
     let html = `<button onclick="confirmMove(null)" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 transition text-left"><i class="fas fa-home text-gray-400"></i> Root</button>`;
-    appData.folders.forEach(folder => {
-        if (contextItem.type === 'folder' && folder.id === contextItem.id) return;
+    
+    availableFolders.forEach(folder => {
         html += `<button onclick="confirmMove(${folder.id})" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 transition text-left"><i class="fas fa-folder text-amber-500"></i> ${folder.name}</button>`;
     });
+    
     container.innerHTML = html;
     document.getElementById('moveModal').classList.remove('hidden');
+}
+
+// Check if targetId is a child of parentId (prevent circular folder structures)
+function isChildFolder(targetId, parentId) {
+    let currentId = targetId;
+    while (currentId) {
+        const folder = appData.folders.find(f => f.id === currentId);
+        if (!folder) break;
+        if (folder.parentId === parentId) return true;
+        currentId = folder.parentId;
+    }
+    return false;
 }
 
 async function confirmMove(targetFolderId) {
@@ -867,16 +876,21 @@ function togglePasswordVisibility(id) {
     renderUsers();
 }
 
-// Toggle password in edit modal
 function toggleEditPasswordVisibility() {
     const pwdField = document.getElementById('userPassword');
-    const icon = document.querySelector('#toggleEditPassword i');
+    const toggleBtn = document.getElementById('toggleEditPassword');
+    if (!toggleBtn) return;
+    
+    const icon = toggleBtn.querySelector('i');
+    
     if (pwdField.type === 'password') {
         pwdField.type = 'text';
-        icon.classList.replace('fa-eye', 'fa-eye-slash');
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
     } else {
         pwdField.type = 'password';
-        icon.classList.replace('fa-eye-slash', 'fa-eye');
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
     }
 }
 
@@ -956,13 +970,15 @@ function openUserModal(id = null) {
     document.getElementById('userModal').classList.remove('hidden');
     document.getElementById('userId').value = id || '';
     
-    // Reset password field to type password
     const pwdField = document.getElementById('userPassword');
     pwdField.type = 'password';
-    const icon = document.querySelector('#toggleEditPassword i');
-    if (icon) {
-        icon.classList.remove('fa-eye-slash');
-        icon.classList.add('fa-eye');
+    const toggleBtn = document.getElementById('toggleEditPassword');
+    if (toggleBtn) {
+        const icon = toggleBtn.querySelector('i');
+        if (icon) {
+            icon.classList.remove('fa-eye-slash');
+            icon.classList.add('fa-eye');
+        }
     }
     
     if(id) {
@@ -993,7 +1009,6 @@ function editUser(id) { openUserModal(id); }
 // ============ UTILS ============
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
-// Form submit handlers
 document.getElementById('folderForm').addEventListener('submit', function(e) {
     e.preventDefault();
 });
@@ -1019,7 +1034,7 @@ document.getElementById('renameInput').addEventListener('keydown', function(e) {
 // Initial Start
 initApp();
 
-// Visibility Check (Silent refresh without loading overlay)
+// Visibility Check
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && authHeader) {
         refreshData(true);
