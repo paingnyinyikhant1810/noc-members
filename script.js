@@ -568,36 +568,56 @@ function renderLearning() {
     const container = document.getElementById('learningContainer');
     renderBreadcrumb();
 
-    const folders = appData.folders.filter(f => f.parentId === currentFolderId);
-    const items = appData.learningItems.filter(i => i.folderId === currentFolderId);
+    // Current folder ထဲက folders နဲ့ items တွေကို ယူမယ်
+    let folders = appData.folders
+        .filter(f => f.parentId === currentFolderId)
+        .sort((a, b) => a.name.localeCompare(b.name)); // A-Z
 
-    let html = folders.map(folder => `
-        <div class="file-card bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:border-amber-200 cursor-pointer group" 
-             onclick="openFolder(${folder.id})" 
-             ${isAdmin() ? `oncontextmenu="showContext(event, 'folder', ${folder.id})"` : ''}>
-            <div class="flex flex-col items-center text-center">
-                <div class="file-icon w-14 h-14 bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl flex items-center justify-center mb-3 group-hover:from-amber-100 group-hover:to-amber-200">
-                    <i class="fas fa-folder folder-icon text-amber-400 text-2xl"></i>
+    let items = appData.learningItems
+        .filter(i => i.folderId === currentFolderId)
+        .sort((a, b) => a.topic.localeCompare(b.topic)); // A-Z
+
+    // HTML တည်ဆောက်မယ် - အရင် folders အားလုံး၊ နောက် items အားလုံး
+    let html = '';
+
+    // Folders တွေ
+    folders.forEach(folder => {
+        html += `
+            <div class="file-card bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:border-amber-200 cursor-pointer group" 
+                 onclick="openFolder(${folder.id})" 
+                 ${isAdmin() ? `oncontextmenu="showContext(event, 'folder', ${folder.id})"` : ''}>
+                <div class="flex flex-col items-center text-center">
+                    <div class="file-icon w-14 h-14 bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl flex items-center justify-center mb-3 group-hover:from-amber-100 group-hover:to-amber-200">
+                        <i class="fas fa-folder folder-icon text-amber-400 text-2xl"></i>
+                    </div>
+                    <span class="font-medium text-gray-700 text-sm line-clamp-2 group-hover:text-amber-700 transition-colors">${folder.name}</span>
                 </div>
-                <span class="font-medium text-gray-700 text-sm line-clamp-2 group-hover:text-amber-700 transition-colors">${folder.name}</span>
             </div>
-        </div>
-    `).join('');
+        `;
+    });
 
-    html += items.map(item => `
-        <div class="file-card bg-white rounded-2xl p-4 shadow-sm border border-gray-100 ${item.type === 'pdf' ? 'hover:border-red-200' : 'hover:border-blue-200'} cursor-pointer group" 
-             onclick="openLearningItem(${item.id})"
-             ${isAdmin() ? `oncontextmenu="showContext(event, 'item', ${item.id})"` : ''}>
-            <div class="flex flex-col items-center text-center">
-                <div class="file-icon w-14 h-14 ${item.type === 'pdf' ? 'bg-gradient-to-br from-red-50 to-red-100 group-hover:from-red-100 group-hover:to-red-200' : 'bg-gradient-to-br from-blue-50 to-blue-100 group-hover:from-blue-100 group-hover:to-blue-200'} rounded-xl flex items-center justify-center mb-3">
-                    <i class="fas ${item.type === 'pdf' ? 'fa-file-pdf pdf-icon text-red-400' : 'fa-file-alt text-icon text-blue-400'} text-2xl"></i>
+    // Items (files) တွေ
+    items.forEach(item => {
+        html += `
+            <div class="file-card bg-white rounded-2xl p-4 shadow-sm border border-gray-100 ${item.type === 'pdf' ? 'hover:border-red-200' : 'hover:border-blue-200'} cursor-pointer group" 
+                 onclick="openLearningItem(${item.id})"
+                 ${isAdmin() ? `oncontextmenu="showContext(event, 'item', ${item.id})"` : ''}>
+                <div class="flex flex-col items-center text-center">
+                    <div class="file-icon w-14 h-14 ${item.type === 'pdf' ? 'bg-gradient-to-br from-red-50 to-red-100 group-hover:from-red-100 group-hover:to-red-200' : 'bg-gradient-to-br from-blue-50 to-blue-100 group-hover:from-blue-100 group-hover:to-blue-200'} rounded-xl flex items-center justify-center mb-3">
+                        <i class="fas ${item.type === 'pdf' ? 'fa-file-pdf pdf-icon text-red-400' : 'fa-file-alt text-icon text-blue-400'} text-2xl"></i>
+                    </div>
+                    <span class="font-medium text-gray-700 text-sm line-clamp-2 ${item.type === 'pdf' ? 'group-hover:text-red-700' : 'group-hover:text-blue-700'} transition-colors">${item.topic}</span>
                 </div>
-                <span class="font-medium text-gray-700 text-sm line-clamp-2 ${item.type === 'pdf' ? 'group-hover:text-red-700' : 'group-hover:text-blue-700'} transition-colors">${item.topic}</span>
             </div>
-        </div>
-    `).join('');
+        `;
+    });
 
-    container.innerHTML = html || '<div class="col-span-full text-center text-gray-400 py-16 bg-white rounded-2xl border border-gray-100"><i class="fas fa-folder-open text-4xl mb-3 text-gray-300"></i><p>Empty folder</p></div>';
+    // Empty state
+    if (folders.length === 0 && items.length === 0) {
+        html = '<div class="col-span-full text-center text-gray-400 py-16 bg-white rounded-2xl border border-gray-100"><i class="fas fa-folder-open text-4xl mb-3 text-gray-300"></i><p>Empty folder</p></div>';
+    }
+
+    container.innerHTML = html;
 }
 
 function renderBreadcrumb() {
