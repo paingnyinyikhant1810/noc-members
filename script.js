@@ -13,21 +13,54 @@ let appData = {
     folders: []
 };
 
-// ============ LOADING OVERLAY ============
-function showLoading() {
+// ============ LOADING OVERLAY WITH PROGRESS BAR ============
+function showLoading(showProgress = false) {
     const existing = document.getElementById('loadingOverlay');
     if (existing) existing.remove();
     
     const overlay = document.createElement('div');
     overlay.id = 'loadingOverlay';
     overlay.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999]';
-    overlay.innerHTML = `
-        <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 animate-fadeIn">
-            <div class="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-            <p class="text-gray-700 font-semibold text-lg">Please wait...</p>
-        </div>
-    `;
+    
+    if (showProgress) {
+        overlay.innerHTML = `
+            <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-5 animate-fadeIn min-w-[280px]">
+                <div class="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                <div class="text-center">
+                    <p class="text-gray-700 font-semibold text-lg mb-1">Please wait...</p>
+                    <p class="text-gray-400 text-sm" id="loadingStatus">Loading data</p>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                    <div id="progressBar" class="bg-gradient-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+                </div>
+                <p class="text-gray-500 text-xs" id="progressPercent">0%</p>
+            </div>
+        `;
+    } else {
+        overlay.innerHTML = `
+            <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 animate-fadeIn">
+                <div class="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                <p class="text-gray-700 font-semibold text-lg">Please wait...</p>
+            </div>
+        `;
+    }
     document.body.appendChild(overlay);
+}
+
+function updateProgress(percent, status = '') {
+    const progressBar = document.getElementById('progressBar');
+    const progressPercent = document.getElementById('progressPercent');
+    const loadingStatus = document.getElementById('loadingStatus');
+    
+    if (progressBar) {
+        progressBar.style.width = `${percent}%`;
+    }
+    if (progressPercent) {
+        progressPercent.textContent = `${Math.round(percent)}%`;
+    }
+    if (loadingStatus && status) {
+        loadingStatus.textContent = status;
+    }
 }
 
 function hideLoading() {
@@ -81,7 +114,6 @@ async function fetchAPI(endpoint, options = {}) {
 }
 
 async function refreshData(silent = false) {
-    // silent မဟုတ်ရင် loading ပြမယ်
     if (!silent) {
         showLoading();
     }
@@ -103,7 +135,6 @@ async function refreshData(silent = false) {
         renderInfoDropdown();
     }
     
-    // silent မဟုတ်ရင် loading ပိတ်မယ်
     if (!silent) {
         hideLoading();
     }
@@ -153,9 +184,14 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
             localStorage.setItem('authHeader', authHeader);
             currentUser = data.user;
             
-            showLoading();
+            // Show progress bar loading for login
+            showLoading(true);
+            updateProgress(10, 'Authenticating...');
+            
+            await simulateProgress(30, 'Loading user data...');
             const appDataResult = await fetchAPI('getData');
-            hideLoading();
+            
+            await simulateProgress(70, 'Preparing interface...');
             
             if (appDataResult) {
                 appData = appDataResult;
@@ -166,6 +202,8 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
                     currentUser = appDataResult.currentUser || foundUser || { accountName: creds[0], role: 'user' };
                 }
                 
+                await simulateProgress(90, 'Almost done...');
+                
                 document.getElementById('loginPage').classList.add('hidden');
                 document.getElementById('mainApp').classList.remove('hidden');
                 document.getElementById('welcomeUser').textContent = currentUser.accountName;
@@ -173,6 +211,10 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
                 
                 updateAdminUI();
                 navigateTo('home');
+                
+                updateProgress(100, 'Complete!');
+                await delay(300);
+                hideLoading();
             } else {
                 throw new Error('Failed to load data');
             }
@@ -180,6 +222,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
             throw new Error('Invalid Credentials');
         }
     } catch (err) {
+        hideLoading();
         loginBox.classList.add('shake');
         showToast('Wrong username or password!');
         setTimeout(() => loginBox.classList.remove('shake'), 500);
@@ -190,18 +233,43 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     isProcessing = false;
 });
 
+// Helper functions for progress simulation
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function simulateProgress(targetPercent, status) {
+    updateProgress(targetPercent, status);
+    await delay(200);
+}
+
 async function initApp() {
     if (!authHeader) {
         showLoginPage();
         return;
     }
 
+    // Show progress bar loading on page refresh
+    showLoading(true);
+    updateProgress(10, 'Initializing...');
+    
+    await delay(200);
+    updateProgress(25, 'Checking authentication...');
+    
     const data = await fetchAPI('getData', { silentFail: true });
     
+    updateProgress(60, 'Loading data...');
+    await delay(200);
+    
     if (!data) {
+        hideLoading();
+        showLoginPage();
         return;
     }
 
+    updateProgress(80, 'Preparing interface...');
+    await delay(150);
+    
     appData = data;
     
     if (!currentUser) {
@@ -209,6 +277,9 @@ async function initApp() {
         const foundUser = appData.users.find(u => u.username === creds[0]);
         currentUser = data.currentUser || foundUser || { accountName: creds[0], role: 'user' };
     }
+
+    updateProgress(95, 'Almost ready...');
+    await delay(150);
 
     if (!document.getElementById('loginPage').classList.contains('hidden')) {
         document.getElementById('loginPage').classList.add('hidden');
@@ -223,6 +294,10 @@ async function initApp() {
         document.getElementById('mobileWelcome').textContent = currentUser.accountName;
         updateAdminUI();
     }
+    
+    updateProgress(100, 'Complete!');
+    await delay(300);
+    hideLoading();
 }
 
 function updateAdminUI() {
@@ -352,14 +427,20 @@ async function saveToApi(table, data) {
     }
     
     isProcessing = true;
-    showLoading();
+    showLoading(true);
+    updateProgress(20, 'Saving data...');
     
     try {
         await fetchAPI('', {
             method: 'POST',
             body: JSON.stringify({ action: 'save', table, data })
         });
-        await refreshData();
+        
+        updateProgress(50, 'Refreshing...');
+        await refreshData(true); // silent refresh, we're handling loading ourselves
+        
+        updateProgress(100, 'Saved!');
+        await delay(300);
         hideLoading();
         showToast('Saved successfully!', 'success');
         isProcessing = false;
@@ -379,14 +460,20 @@ async function deleteFromApi(table, id) {
     }
     
     isProcessing = true;
-    showLoading();
+    showLoading(true);
+    updateProgress(20, 'Deleting...');
     
     try {
         await fetchAPI('', {
             method: 'POST',
             body: JSON.stringify({ action: 'delete', table, id })
         });
-        await refreshData();
+        
+        updateProgress(50, 'Refreshing...');
+        await refreshData(true);
+        
+        updateProgress(100, 'Deleted!');
+        await delay(300);
         hideLoading();
         showToast('Deleted successfully!', 'success');
         isProcessing = false;
@@ -599,11 +686,8 @@ function moveItem() {
     if (!isAdmin() || !contextItem) return;
     const container = document.getElementById('moveFolderList');
     
-    // Only show folders that are NOT the current item (if it's a folder) and are active
     let availableFolders = appData.folders.filter(folder => {
-        // Don't show the item itself
         if (contextItem.type === 'folder' && folder.id === contextItem.id) return false;
-        // Don't show child folders of the current folder (prevent circular references)
         if (contextItem.type === 'folder' && isChildFolder(folder.id, contextItem.id)) return false;
         return true;
     });
@@ -618,7 +702,6 @@ function moveItem() {
     document.getElementById('moveModal').classList.remove('hidden');
 }
 
-// Check if targetId is a child of parentId (prevent circular folder structures)
 function isChildFolder(targetId, parentId) {
     let currentId = targetId;
     while (currentId) {
@@ -1049,6 +1132,6 @@ initApp();
 // Visibility Check
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && authHeader) {
-        refreshData(false);  // loading ပြမယ်
+        refreshData(true);
     }
 });
