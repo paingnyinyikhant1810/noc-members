@@ -2,7 +2,7 @@
 const API_URL = '/api';
 let currentUser = null;
 let authHeader = localStorage.getItem('authHeader');
-let isProcessing = false; // Prevent double submission
+let isProcessing = false;
 
 let appData = {
     users: [],
@@ -15,7 +15,6 @@ let appData = {
 
 // ============ LOADING OVERLAY ============
 function showLoading() {
-    // Remove existing overlay if any
     const existing = document.getElementById('loadingOverlay');
     if (existing) existing.remove();
     
@@ -65,7 +64,6 @@ async function fetchAPI(endpoint, options = {}) {
         const res = await fetch(`${API_URL}/${endpoint}`, { ...options, headers: { ...getHeaders(), ...options.headers } });
         
         if (res.status === 401) {
-            // Only logout if not in visibility change refresh
             if (!options.silentFail) {
                 logout();
             }
@@ -142,7 +140,33 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
             authHeader = tempAuth;
             localStorage.setItem('authHeader', authHeader);
             currentUser = data.user;
-            await initApp();
+            
+            // Show loading and load app
+            showLoading();
+            const appDataResult = await fetchAPI('getData');
+            hideLoading();
+            
+            if (appDataResult) {
+                appData = appDataResult;
+                
+                // Update currentUser if needed
+                if (!currentUser || !currentUser.accountName) {
+                    const creds = atob(authHeader.split(' ')[1]).split(':');
+                    const foundUser = appData.users.find(u => u.username === creds[0]);
+                    currentUser = appDataResult.currentUser || foundUser || { accountName: creds[0], role: 'user' };
+                }
+                
+                // Show app
+                document.getElementById('loginPage').classList.add('hidden');
+                document.getElementById('mainApp').classList.remove('hidden');
+                document.getElementById('welcomeUser').textContent = currentUser.accountName;
+                document.getElementById('mobileWelcome').textContent = currentUser.accountName;
+                
+                updateAdminUI();
+                navigateTo('home');
+            } else {
+                throw new Error('Failed to load data');
+            }
         } else {
             throw new Error('Invalid Credentials');
         }
@@ -157,20 +181,27 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     isProcessing = false;
 });
 
-async function initApp() {
+async function initApp(skipLoading = false) {
     if (!authHeader) {
         showLoginPage();
         return;
     }
 
-    showLoading();
-    const data = await fetchAPI('getData');
-    hideLoading();
+    if (!skipLoading) {
+        showLoading();
+    }
+    
+    const data = await fetchAPI('getData', { silentFail: skipLoading });
+    
+    if (!skipLoading) {
+        hideLoading();
+    }
     
     if (!data) {
         // If getData fails, clear auth and show login
         localStorage.removeItem('authHeader');
         authHeader = null;
+        currentUser = null;
         showLoginPage();
         return;
     }
@@ -959,10 +990,9 @@ document.getElementById('renameInput').addEventListener('keydown', function(e) {
 // Initial Start
 initApp();
 
-// Visibility Check (Silent refresh - doesn't show login on fail)
+// Visibility Check (Silent refresh without loading overlay)
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && authHeader) {
-        // Silent refresh - don't logout on error
         refreshData(true);
     }
 });
