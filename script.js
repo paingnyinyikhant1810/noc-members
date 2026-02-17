@@ -984,47 +984,6 @@ async function saveInfoCard() {
 
 function editInfoCard(e, id) { e.preventDefault(); e.stopPropagation(); openInfoCardModal(id); }
 
-// --- Dark Mode Logic ---
-function toggleDarkMode() {
-    const isDark = document.documentElement.classList.toggle('dark');
-    const icon = document.getElementById('darkIcon');
-    icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-}
-
-// Initial Theme Check (Run this when page loads)
-if (localStorage.getItem('theme') === 'dark') {
-    document.documentElement.classList.add('dark');
-    if(document.getElementById('darkIcon')) {
-        document.getElementById('darkIcon').className = 'fas fa-sun';
-    }
-}
-
-function filterLearningItems() {
-    // Get the search text
-    const query = document.getElementById('learningSearch').value.toLowerCase();
-    
-    // Get all items (folders and files) inside the container
-    const items = document.querySelectorAll('#learningContainer > div');
-
-    items.forEach(item => {
-        // Find the title text (usually inside an <h3> or <span> depending on your render function)
-        const title = item.innerText.toLowerCase();
-        
-        if (title.includes(query)) {
-            // Show item if it matches
-            item.style.display = 'flex'; 
-            // Note: Use 'flex' or 'block' depending on your card's original CSS
-        } else {
-            // Hide item if it doesn't match
-            item.style.display = 'none';
-        }
-    });
-
-    // Optional: Show "No items found" message if all items are hidden
-    checkEmptySearch();
-}
-
 // ============ ADMIN ============
 let visiblePasswords = {};
 function togglePasswordVisibility(id) {
@@ -1196,5 +1155,3 @@ document.addEventListener('visibilitychange', () => {
         refreshData(true);
     }
 });
-
-
