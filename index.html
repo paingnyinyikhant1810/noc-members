@@ -105,12 +105,16 @@
                     <p class="px-4 py-2 text-xs font-medium text-gray-400 uppercase">Information</p>
                     <div id="mobileInfoMenu" class="space-y-1"></div>
                 </div>
+
+                <button onclick="toggleDarkMode()" class="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition text-gray-600 dark:text-gray-400">
+    <i id="darkIcon" class="fas fa-moon"></i>
+</button>
+
+<button onclick="logout()" class="px-4 py-2 rounded-xl text-red-600 hover:bg-red-50 transition font-medium">
+    <i class="fas fa-sign-out-alt mr-2"></i>Logout
+</button>
             </nav>
-            <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-100">
-                <button onclick="logout()" class="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition">
-                    <i class="fas fa-sign-out-alt"></i> Logout
-                </button>
-            </div>
+        
         </div>
 
         <!-- Navigation -->
