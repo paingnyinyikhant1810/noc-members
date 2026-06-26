@@ -17,7 +17,6 @@ export const onRequest = async (context) => {
 
   const db = env ? (env.DB || env.DATABASE || env.D1 || env.NOC_DB || env.DB_BINDING || env.db || env.database || env.d1 || null) : null;
 
-  // Universal case-insensitive SQLite column property extractors
   const getRole = (u) => {
     if (!u) return 'admin';
     const r = u.role || u.Role || u.ROLE || u.user_role || u.type || u.tier || u.level || u.userType || 'admin';
@@ -58,7 +57,6 @@ export const onRequest = async (context) => {
       const password = credentials.slice(idx + 1);
       if (!username || !password || !db) return null;
       const tUsers = await resolveTable('users', 'user');
-      // Query case-insensitively on username just in case
       const uRes = await db.prepare(`SELECT * FROM ${tUsers} WHERE username = ? AND password = ?`).bind(username, password).first();
       if (uRes) return uRes;
       return await db.prepare(`SELECT * FROM ${tUsers} WHERE lower(username) = lower(?) AND password = ?`).bind(username, password).first();
@@ -80,15 +78,24 @@ export const onRequest = async (context) => {
     return new Response("Unauthorized", { status: 401, headers: corsHeaders });
   }
 
-  // Self-Healing Schema: Automatically add permissions column if missing in D1
+  // Self-Healing Schema: Automatically add missing columns (icon, permissions, image) across D1 tables
   const ensureSchema = async () => {
     if (!db) return;
-    const pairs = [['folders','folder'], ['learning_items','learning_item'], ['info_cards','info_card']];
-    for (const [pl, sg] of pairs) {
-      const t = await resolveTable(pl, sg);
-      try { await db.prepare(`SELECT permissions FROM ${t} LIMIT 1`).all(); }
+    const cols = [
+      ['folders', 'permissions', "TEXT DEFAULT '[\"intern\",\"member\",\"leader\",\"admin\"]'"],
+      ['learning_items', 'permissions', "TEXT DEFAULT '[\"intern\",\"member\",\"leader\",\"admin\"]'"],
+      ['info_cards', 'permissions', "TEXT DEFAULT '[\"intern\",\"member\",\"leader\",\"admin\"]'"],
+      ['categories', 'icon', "TEXT DEFAULT 'fa-tag'"],
+      ['info_cards', 'icon', "TEXT DEFAULT 'fa-link'"],
+      ['info_cards', 'image', "TEXT"],
+      ['info_cards', 'displayType', "TEXT DEFAULT 'icon'"],
+      ['updates', 'badge', "TEXT DEFAULT 'general'"]
+    ];
+    for (const [pl, colName, colDef] of cols) {
+      const t = await resolveTable(pl, pl.slice(0, -1));
+      try { await db.prepare(`SELECT ${colName} FROM ${t} LIMIT 1`).all(); }
       catch(e) {
-        try { await db.prepare(`ALTER TABLE ${t} ADD COLUMN permissions TEXT DEFAULT '["intern","member","leader","admin"]'`).run(); } catch(err2) {}
+        try { await db.prepare(`ALTER TABLE ${t} ADD COLUMN ${colName} ${colDef}`).run(); } catch(err2) {}
       }
     }
   };
@@ -101,7 +108,7 @@ export const onRequest = async (context) => {
       if (rawP) {
         try { p = typeof rawP === 'string' ? JSON.parse(rawP) : rawP; } catch(e){}
       }
-      return { ...x, permissions: p };
+      return { ...x, permissions: p, icon: x.icon || x.Icon || x.ICON || 'fa-tag' };
     });
   };
 
@@ -120,7 +127,7 @@ export const onRequest = async (context) => {
 
     const [updatesArr, categoriesArr, infoCardsArr, learningItemsArr, foldersArr, usersArr] = await Promise.all([
       safeSelect('updates', 'update', 'ORDER BY id DESC'),
-      safeSelect('categories', 'category'),
+      safeSelect('categories', 'category').then(r => r.map(c => ({ ...c, icon: c.icon || c.Icon || c.ICON || 'fa-tag' }))),
       safeSelect('info_cards', 'info_card').then(r => parsePerms(r)),
       safeSelect('learning_items', 'learning_item').then(r => parsePerms(r)),
       safeSelect('folders', 'folder').then(r => parsePerms(r)),
