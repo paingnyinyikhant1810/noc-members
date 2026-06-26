@@ -1,5 +1,5 @@
 // ============ CONFIG & STATE ============
-const STORAGE_KEY = 'noc_portal_cache_v6';
+const STORAGE_KEY = 'noc_portal_cache_v7';
 const API_URL = '/api';
 let currentUser = null;
 let authHeader = localStorage.getItem('authHeader');
@@ -166,16 +166,15 @@ async function refreshData(silent = false) {
     try {
         const res = await fetch(`${API_URL}/getData`, { headers: getHeaders() });
         if (res.status === 401) {
-            if (!silent) logout();
+            logout();
             return null;
         }
         if (res.ok) {
             const data = await res.json();
             if (data) {
-                // Safely merge arrays so empty tables in D1 do not erase default mock cache
-                const mergeArr = (def, srv) => (srv && srv.length > 0) ? srv : def;
+                const mergeArr = (def, srv) => (srv && Array.isArray(srv)) ? srv : def;
                 appData = {
-                    users: mergeArr(appData.users, data.users),
+                    users: mergeArr(appData.users || defaultData.users, data.users),
                     updates: mergeArr(defaultData.updates, data.updates),
                     categories: mergeArr(defaultData.categories, data.categories),
                     infoCards: mergeArr(defaultData.infoCards, data.infoCards),
@@ -184,6 +183,17 @@ async function refreshData(silent = false) {
                 };
                 fetchedFromServer = true;
                 saveLocalCache();
+
+                if (currentUser && appData.users) {
+                    const u = appData.users.find(x => x.username === currentUser.username);
+                    if (u) {
+                        currentUser = u;
+                        localStorage.setItem('noc_current_user', JSON.stringify(u));
+                        document.getElementById('welcomeUser').textContent = currentUser.accountName;
+                        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
+                        updateAdminUI();
+                    }
+                }
             }
         }
     } catch (e) {}
@@ -206,33 +216,22 @@ function showLoading(showProgress = false) {
     
     if (showProgress) {
         overlay.innerHTML = `
-            <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-5 animate-fadeIn min-w-[280px] border border-gray-100">
-                <div class="w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin"></div>
+            <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 animate-fadeIn min-w-[260px] border border-gray-100">
+                <div class="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin"></div>
                 <div class="text-center">
-                    <p class="text-gray-900 font-bold text-sm mb-1">Authenticating...</p>
-                    <p class="text-gray-400 text-xs" id="loadingStatus">Connecting to Cloudflare D1</p>
-                </div>
-                <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden border border-gray-200/60">
-                    <div id="progressBar" class="bg-gray-900 h-1.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+                    <p class="text-gray-900 font-bold text-sm">Synchronizing workspace...</p>
                 </div>
             </div>
         `;
     } else {
         overlay.innerHTML = `
             <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 animate-fadeIn border border-gray-100">
-                <div class="w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin"></div>
+                <div class="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin"></div>
                 <p class="text-gray-900 font-bold text-sm">Please wait...</p>
             </div>
         `;
     }
     document.body.appendChild(overlay);
-}
-
-function updateProgress(percent, status = '') {
-    const pBar = document.getElementById('progressBar');
-    const lStatus = document.getElementById('loadingStatus');
-    if (pBar) pBar.style.width = `${percent}%`;
-    if (lStatus && status) lStatus.textContent = status;
 }
 
 function hideLoading() {
@@ -350,49 +349,41 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
             const data = await res.json();
             authHeader = tempAuth;
             localStorage.setItem('authHeader', authHeader);
-            currentUser = data.user;
+            currentUser = data.user || { username: u, accountName: u, role: 'member' };
+            localStorage.setItem('noc_current_user', JSON.stringify(currentUser));
             loggedIn = true;
+        } else if (res.status === 401) {
+            loggedIn = false;
         }
     } catch (err) {}
 
-    if (!loggedIn) {
+    if (!loggedIn && !authHeader) {
         loadLocalCache();
-        const user = appData.users.find(x => x.username === u && x.password === p);
+        const user = appData.users?.find(x => x.username === u && x.password === p);
         if (user) {
             authHeader = tempAuth;
             localStorage.setItem('authHeader', authHeader);
             currentUser = user;
+            localStorage.setItem('noc_current_user', JSON.stringify(currentUser));
             loggedIn = true;
         }
     }
 
     if (loggedIn) {
         showLoading(true);
-        updateProgress(30, 'Verifying workspace...');
-        await delay(80);
+        await delay(50);
 
-        // Crucial Order Fix: Unhide main workspace BEFORE refreshing UI views
+        // Crucial Fix: Unhide main workspace immediately before rendering data
         document.getElementById('loginPage').classList.add('hidden');
         document.getElementById('mainApp').classList.remove('hidden');
-        document.getElementById('welcomeUser').textContent = currentUser.accountName;
-        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
+        document.getElementById('welcomeUser').textContent = currentUser.accountName || u;
+        document.getElementById('mobileWelcome').textContent = currentUser.accountName || u;
         updateAdminUI();
 
-        updateProgress(65, 'Fetching Cloudflare database...');
         await refreshData(true);
 
-        if (!currentUser || !currentUser.accountName) {
-            const creds = atob(authHeader.split(' ')[1]).split(':');
-            const foundUser = appData.users.find(u => u.username === creds[0]);
-            currentUser = foundUser || { accountName: creds[0], username: creds[0], role: 'member' };
-            document.getElementById('welcomeUser').textContent = currentUser.accountName;
-            document.getElementById('mobileWelcome').textContent = currentUser.accountName;
-            updateAdminUI();
-        }
-
         navigateTo('home');
-        updateProgress(100, 'Welcome!');
-        await delay(120);
+        await delay(50);
         hideLoading();
     } else {
         loginBox?.classList.add('shake');
@@ -400,7 +391,7 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
         setTimeout(() => loginBox?.classList.remove('shake'), 500);
     }
 
-    loginBtn.innerHTML = '<span>Sign In</span><i class="fas fa-arrow-right text-[10px]"></i>';
+    loginBtn.innerHTML = '<span>Sign In</span><i class="fas fa-arrow-right text-[10px] ml-2"></i>';
     loginBtn.disabled = false;
     isProcessing = false;
 });
@@ -414,32 +405,41 @@ async function initApp() {
     }
 
     showLoading(true);
-    updateProgress(30, 'Resuming session...');
-    await delay(80);
-    
+    await delay(50);
+
+    // Immediately restore workspace from local session
+    document.getElementById('loginPage').classList.add('hidden');
+    document.getElementById('mainApp').classList.remove('hidden');
+
     try {
         const creds = atob(authHeader.split(' ')[1]).split(':');
-        
-        document.getElementById('loginPage').classList.add('hidden');
-        document.getElementById('mainApp').classList.remove('hidden');
-
-        await refreshData(true);
-        
-        const foundUser = appData.users.find(u => u.username === creds[0] && u.password === creds[1]);
-        if (!foundUser) {
-            logout();
-            hideLoading();
-            return;
+        const savedUserStr = localStorage.getItem('noc_current_user');
+        if (savedUserStr) {
+            try { currentUser = JSON.parse(savedUserStr); } catch(e){}
+        }
+        if (!currentUser) {
+            currentUser = { username: creds[0], accountName: creds[0], role: 'member' };
         }
 
-        currentUser = foundUser;
-        document.getElementById('welcomeUser').textContent = currentUser.accountName;
-        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
+        document.getElementById('welcomeUser').textContent = currentUser.accountName || creds[0];
+        document.getElementById('mobileWelcome').textContent = currentUser.accountName || creds[0];
         updateAdminUI();
+
+        // Fetch latest Cloudflare D1 records in parallel
+        const data = await refreshData(true);
+        if (data && data.users) {
+            const u = data.users.find(x => x.username === creds[0]);
+            if (u) {
+                currentUser = u;
+                localStorage.setItem('noc_current_user', JSON.stringify(u));
+                document.getElementById('welcomeUser').textContent = currentUser.accountName;
+                document.getElementById('mobileWelcome').textContent = currentUser.accountName;
+                updateAdminUI();
+            }
+        }
+
         navigateTo('home');
-        
-        updateProgress(100, 'Ready!');
-        await delay(120);
+        await delay(50);
         hideLoading();
     } catch (err) {
         logout();
@@ -456,6 +456,7 @@ function showLoginPage() {
 
 function logout() {
     localStorage.removeItem('authHeader');
+    localStorage.removeItem('noc_current_user');
     authHeader = null;
     currentUser = null;
     showLoginPage();
@@ -525,8 +526,6 @@ async function saveUserPassword(event) {
     if (newP.length < 3) return showToast('Must be at least 3 characters!', 'error');
 
     showLoading(true);
-    updateProgress(35, 'Updating Cloudflare record...');
-
     let savedOnCloudflare = false;
     try {
         const res = await fetch(`${API_URL}/`, {
@@ -547,10 +546,9 @@ async function saveUserPassword(event) {
 
     authHeader = 'Basic ' + btoa(currentUser.username + ':' + newP);
     localStorage.setItem('authHeader', authHeader);
+    localStorage.setItem('noc_current_user', JSON.stringify(currentUser));
     saveLocalCache();
 
-    updateProgress(100, 'Complete!');
-    await delay(120);
     hideLoading();
     closeModal('settingsModal');
     showToast(savedOnCloudflare ? 'Cloudflare database password updated!' : 'Password updated locally!', 'success');
@@ -704,7 +702,6 @@ async function saveToApi(table, data) {
     if (isProcessing) return false;
     isProcessing = true;
     showLoading(true);
-    updateProgress(35, 'Saving to Cloudflare D1...');
 
     let savedOnServer = false;
     try {
@@ -730,6 +727,7 @@ async function saveToApi(table, data) {
 
     if (key === 'users' && currentUser && data.id === currentUser.id) {
         currentUser = { ...currentUser, ...data };
+        localStorage.setItem('noc_current_user', JSON.stringify(currentUser));
         document.getElementById('welcomeUser').textContent = currentUser.accountName;
         document.getElementById('mobileWelcome').textContent = currentUser.accountName;
         updateAdminUI();
@@ -738,12 +736,9 @@ async function saveToApi(table, data) {
     saveLocalCache();
 
     if (savedOnServer) {
-        updateProgress(75, 'Refreshing Cloudflare database...');
         await refreshData(true);
     }
 
-    updateProgress(100, 'Saved successfully!');
-    await delay(120);
     hideLoading();
     showToast('Saved successfully!', 'success');
     refreshUI();
@@ -755,7 +750,6 @@ async function deleteFromApi(table, id) {
     if (isProcessing) return false;
     isProcessing = true;
     showLoading(true);
-    updateProgress(35, 'Deleting from Cloudflare D1...');
 
     let deletedOnServer = false;
     try {
@@ -791,12 +785,9 @@ async function deleteFromApi(table, id) {
     saveLocalCache();
 
     if (deletedOnServer) {
-        updateProgress(75, 'Refreshing Cloudflare database...');
         await refreshData(true);
     }
 
-    updateProgress(100, 'Deleted!');
-    await delay(120);
     hideLoading();
     showToast('Deleted successfully!', 'success');
     refreshUI();
@@ -930,7 +921,7 @@ document.addEventListener('click', function(e) {
     if (contextM && !contextM.contains(e.target)) contextM.classList.add('hidden');
 });
 
-// ============ CATEGORIES SETTING MODAL (MOVED FROM ADMIN PANEL) ============
+// ============ CATEGORIES SETTING MODAL ============
 function openCategoriesManageModal() {
     document.getElementById('infoDropdown')?.classList.add('hidden');
     document.getElementById('categoriesManageModal').classList.remove('hidden');
