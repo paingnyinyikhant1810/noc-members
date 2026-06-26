@@ -23,8 +23,9 @@ export const onRequest = async (context) => {
     try {
       const credentials = atob(auth.split(" ")[1]);
       const [username, password] = credentials.split(":");
+      if (!username || !password) return null;
       return await env.DB.prepare("SELECT * FROM users WHERE username = ? AND password = ?")
-        .bind(username, password)
+        .bind(username.trim(), password)
         .first();
     } catch (e) { return null; }
   };
@@ -74,7 +75,10 @@ export const onRequest = async (context) => {
 
   // --- 2. Get All Data Endpoint (Parallel Execution) ---
   if (path === "getData" && request.method === "GET") {
-    await ensureSchema();
+    try { await ensureSchema(); } catch(e) {}
+
+    const userRole = user.role ? String(user.role).toLowerCase().trim() : '';
+    const isAdmin = userRole === 'admin' || userRole === 'administrator';
 
     const [updatesRes, categoriesRes, infoCardsRes, learningItemsRes, foldersRes, usersRes] = await Promise.all([
       env.DB.prepare("SELECT * FROM updates ORDER BY id DESC").all().catch(() => ({ results: [] })),
@@ -82,7 +86,7 @@ export const onRequest = async (context) => {
       env.DB.prepare("SELECT * FROM info_cards").all().catch(() => ({ results: [] })),
       env.DB.prepare("SELECT * FROM learning_items").all().catch(() => ({ results: [] })),
       env.DB.prepare("SELECT * FROM folders").all().catch(() => ({ results: [] })),
-      (user.role === 'admin') ? env.DB.prepare("SELECT * FROM users").all().catch(() => ({ results: [user] })) : Promise.resolve({ results: [user] })
+      isAdmin ? env.DB.prepare("SELECT * FROM users").all().catch(() => ({ results: [user] })) : Promise.resolve({ results: [user] })
     ]);
 
     const data = {
@@ -113,8 +117,9 @@ export const onRequest = async (context) => {
         return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       }
 
-      const isContentManager = user.role === 'admin' || user.role === 'leader';
-      const isAdmin = user.role === 'admin';
+      const userRole = user.role ? String(user.role).toLowerCase().trim() : '';
+      const isContentManager = userRole === 'admin' || userRole === 'administrator' || userRole === 'leader' || userRole === 'team leader';
+      const isAdmin = userRole === 'admin' || userRole === 'administrator';
       const contentTables = ['updates', 'info_cards', 'learning_items', 'folders'];
       const adminTables = ['users', 'categories'];
 
@@ -130,7 +135,7 @@ export const onRequest = async (context) => {
         return new Response("Forbidden: Requires Admin role", { status: 403, headers: corsHeaders });
       }
 
-      await ensureSchema();
+      try { await ensureSchema(); } catch(e) {}
 
       // DELETE
       if (action === 'delete') {
