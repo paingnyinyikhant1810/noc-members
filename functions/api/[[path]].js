@@ -16,8 +16,19 @@ export const onRequest = async (context) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Safe database resolution supporting common Cloudflare Pages D1 binding names
-  const db = env.DB || env.DATABASE || env.D1 || env.NOC_DB || env.DB_BINDING || null;
+  // Dynamic D1 Resolution: Find any bound Cloudflare D1 database object in env
+  let db = null;
+  if (env) {
+    db = env.DB || env.DATABASE || env.D1 || env.NOC_DB || env.DB_BINDING || env.db || env.database || env.d1 || null;
+    if (!db) {
+      for (const key of Object.keys(env)) {
+        if (env[key] && typeof env[key].prepare === 'function') {
+          db = env[key];
+          break;
+        }
+      }
+    }
+  }
 
   // --- Authentication Helper ---
   const getAuth = async () => {
@@ -25,11 +36,13 @@ export const onRequest = async (context) => {
     if (!auth || !auth.startsWith("Basic ")) return null;
     try {
       const credentials = atob(auth.split(" ")[1]);
-      const [username, password] = credentials.split(":");
-      if (!username || !password) return null;
-      if (!db) return null;
+      const idx = credentials.indexOf(":");
+      if (idx === -1) return null;
+      const username = credentials.slice(0, idx).trim();
+      const password = credentials.slice(idx + 1);
+      if (!username || !password || !db) return null;
       return await db.prepare("SELECT * FROM users WHERE username = ? AND password = ?")
-        .bind(username.trim(), password)
+        .bind(username, password)
         .first();
     } catch (e) { return null; }
   };
@@ -38,7 +51,7 @@ export const onRequest = async (context) => {
   if (path === "login" && request.method === "POST") {
     const user = await getAuth();
     if (!user) {
-      return new Response(JSON.stringify({ error: "Invalid credentials or unbound database" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Invalid credentials or unbound D1 database" }), { status: 401, headers: corsHeaders });
     }
     return new Response(JSON.stringify({ success: true, user }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
   }
@@ -163,7 +176,7 @@ export const onRequest = async (context) => {
         }
         else if (table === 'info_cards') {
           if (data.id) await db.prepare("UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, permissions=? WHERE id=?").bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr, data.id).run();
-          else await db.prepare("INSERT INTO info_cards (title, displayType, icon, image, link, categoryId, permissions) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr).run();
+          else await db.prepare("INSERT INTO info_cards (title, displayType, icon, image, link, categoryId, permissions) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(data.title, displayType, data.icon, data.image, data.link, data.categoryId, permsStr).run();
         }
         else if (table === 'folders') {
           if (data.id) await db.prepare("UPDATE folders SET name=?, parentId=?, permissions=? WHERE id=?").bind(data.name, data.parentId, permsStr, data.id).run();
