@@ -1,5 +1,5 @@
 // ============ CONFIG & STATE ============
-const STORAGE_KEY = 'noc_portal_cache_v5';
+const STORAGE_KEY = 'noc_portal_cache_v6';
 const API_URL = '/api';
 let currentUser = null;
 let authHeader = localStorage.getItem('authHeader');
@@ -119,18 +119,23 @@ function setPortalFontSize(size) {
     updateAppearanceButtonsUI();
 }
 
-// ============ LIVE UTC CLOCK ============
-updateUtcClock();
-setInterval(updateUtcClock, 1000);
+// ============ LIVE MMT CLOCK (MYANMAR TIME) ============
+updateMmtClock();
+setInterval(updateMmtClock, 1000);
 
-function updateUtcClock() {
-    const el = document.getElementById('liveUtcClock');
+function updateMmtClock() {
+    const el = document.getElementById('liveMmtClock');
     if (el) {
-        const now = new Date();
-        const hrs = String(now.getUTCHours()).padStart(2, '0');
-        const mins = String(now.getUTCMinutes()).padStart(2, '0');
-        const secs = String(now.getUTCSeconds()).padStart(2, '0');
-        el.textContent = `UTC: ${hrs}:${mins}:${secs}`;
+        try {
+            const timeStr = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Yangon', hour12: false });
+            el.textContent = `MMT: ${timeStr}`;
+        } catch(e) {
+            const now = new Date();
+            const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const mmt = new Date(utcMs + (6.5 * 3600000));
+            const p2 = (n) => String(n).padStart(2, '0');
+            el.textContent = `MMT: ${p2(mmt.getHours())}:${p2(mmt.getMinutes())}:${p2(mmt.getSeconds())}`;
+        }
     }
 }
 
@@ -166,9 +171,17 @@ async function refreshData(silent = false) {
         }
         if (res.ok) {
             const data = await res.json();
-            if (data && (data.folders || data.learningItems || data.updates)) {
-                if (data.users && data.users.length > 0) appData = { ...defaultData, ...data };
-                else appData = { ...defaultData, ...data, users: appData.users };
+            if (data) {
+                // Safely merge arrays so empty tables in D1 do not erase default mock cache
+                const mergeArr = (def, srv) => (srv && srv.length > 0) ? srv : def;
+                appData = {
+                    users: mergeArr(appData.users, data.users),
+                    updates: mergeArr(defaultData.updates, data.updates),
+                    categories: mergeArr(defaultData.categories, data.categories),
+                    infoCards: mergeArr(defaultData.infoCards, data.infoCards),
+                    folders: mergeArr(defaultData.folders, data.folders),
+                    learningItems: mergeArr(defaultData.learningItems, data.learningItems)
+                };
                 fetchedFromServer = true;
                 saveLocalCache();
             }
@@ -196,7 +209,7 @@ function showLoading(showProgress = false) {
             <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-5 animate-fadeIn min-w-[280px] border border-gray-100">
                 <div class="w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin"></div>
                 <div class="text-center">
-                    <p class="text-gray-900 font-bold text-base mb-1">Authenticating...</p>
+                    <p class="text-gray-900 font-bold text-sm mb-1">Authenticating...</p>
                     <p class="text-gray-400 text-xs" id="loadingStatus">Connecting to Cloudflare D1</p>
                 </div>
                 <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden border border-gray-200/60">
@@ -246,15 +259,25 @@ function showToast(message, type = 'error') {
     setTimeout(() => toast.remove(), 3200);
 }
 
-// ============ STRICT PERMISSIONS & HIERARCHY CHECKS ============
-function isAdmin() { return currentUser?.role === 'admin'; }
-function canManageContent() { return currentUser?.role === 'admin' || currentUser?.role === 'leader'; }
+// ============ STRICT CASE-INSENSITIVE PERMISSIONS & CHECKS ============
+function isAdmin() {
+    if (!currentUser) return false;
+    const r = String(currentUser.role).toLowerCase().trim();
+    return r === 'admin' || r === 'administrator';
+}
+
+function canManageContent() {
+    if (!currentUser) return false;
+    const r = String(currentUser.role).toLowerCase().trim();
+    return r === 'admin' || r === 'administrator' || r === 'leader' || r === 'team leader';
+}
 
 function hasPermission(item) {
     if (!currentUser) return false;
-    if (currentUser.role === 'admin') return true;
+    const r = String(currentUser.role).toLowerCase().trim();
+    if (r === 'admin' || r === 'administrator') return true;
     if (!item.permissions || !Array.isArray(item.permissions) || item.permissions.length === 0) return true;
-    return item.permissions.includes(currentUser.role);
+    return item.permissions.map(x => String(x).toLowerCase().trim()).includes(r);
 }
 
 function canViewFolder(folder) {
@@ -282,6 +305,17 @@ function canViewLearningItem(item) {
     }
     return true;
 }
+
+// ============ EYE TOGGLE HELPER ============
+function toggleInputEye(inputId, btnEl) {
+    const f = document.getElementById(inputId);
+    if (!f || !btnEl) return;
+    const i = btnEl.querySelector('i');
+    if (f.type === 'password') { f.type = 'text'; i?.classList.replace('fa-eye', 'fa-eye-slash'); }
+    else { f.type = 'password'; i?.classList.replace('fa-eye-slash', 'fa-eye'); }
+}
+
+function togglePasswordVisibility(id) { visiblePasswords[id] = !visiblePasswords[id]; renderUsers(); }
 
 // ============ AUTHENTICATION & LOGIN FLOW ============
 document.getElementById('togglePassword')?.addEventListener('click', function() {
@@ -334,8 +368,8 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
 
     if (loggedIn) {
         showLoading(true);
-        updateProgress(30, 'Verifying identity...');
-        await delay(100);
+        updateProgress(30, 'Verifying workspace...');
+        await delay(80);
 
         // Crucial Order Fix: Unhide main workspace BEFORE refreshing UI views
         document.getElementById('loginPage').classList.add('hidden');
@@ -344,7 +378,7 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
         document.getElementById('mobileWelcome').textContent = currentUser.accountName;
         updateAdminUI();
 
-        updateProgress(60, 'Fetching Cloudflare database...');
+        updateProgress(65, 'Fetching Cloudflare database...');
         await refreshData(true);
 
         if (!currentUser || !currentUser.accountName) {
@@ -358,7 +392,7 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
 
         navigateTo('home');
         updateProgress(100, 'Welcome!');
-        await delay(150);
+        await delay(120);
         hideLoading();
     } else {
         loginBox?.classList.add('shake');
@@ -381,7 +415,7 @@ async function initApp() {
 
     showLoading(true);
     updateProgress(30, 'Resuming session...');
-    await delay(100);
+    await delay(80);
     
     try {
         const creds = atob(authHeader.split(' ')[1]).split(':');
@@ -405,7 +439,7 @@ async function initApp() {
         navigateTo('home');
         
         updateProgress(100, 'Ready!');
-        await delay(150);
+        await delay(120);
         hideLoading();
     } catch (err) {
         logout();
@@ -432,13 +466,14 @@ function updateAdminUI() {
     const badgeEl = document.getElementById('currentUserRoleBadge');
     if (badgeEl && currentUser) {
         badgeEl.textContent = currentUser.role;
+        const r = String(currentUser.role).toLowerCase().trim();
         const colors = {
             admin: 'bg-purple-600 text-white shadow-2xs border border-purple-500',
             leader: 'bg-blue-600 text-white shadow-2xs border border-blue-500',
             member: 'bg-emerald-600 text-white shadow-2xs border border-emerald-500',
             intern: 'bg-amber-600 text-white shadow-2xs border border-amber-500'
         };
-        badgeEl.className = `text-[10px] px-2.5 py-0.5 rounded font-bold uppercase tracking-wider ${colors[currentUser.role] || 'bg-white/10 text-white'}`;
+        badgeEl.className = `text-[10px] px-2.5 py-0.5 rounded font-bold uppercase tracking-wider ${colors[r] || 'bg-white/10 text-white'}`;
     }
 
     const adminOnlyEls = ['adminBtn', 'mobileAdminBtn', 'addUpdateBtn'];
@@ -515,34 +550,99 @@ async function saveUserPassword(event) {
     saveLocalCache();
 
     updateProgress(100, 'Complete!');
-    await delay(150);
+    await delay(120);
     hideLoading();
     closeModal('settingsModal');
     showToast(savedOnCloudflare ? 'Cloudflare database password updated!' : 'Password updated locally!', 'success');
 }
 
-// ============ NOC UTILITIES ============
+// ============ NOC UTILITIES (TIME CONVERTER, SUBNET, SCRATCHPAD) ============
 function openToolsModal() {
     document.getElementById('toolsModal').classList.remove('hidden');
     const note = localStorage.getItem('noc_scratchpad_data') || '';
     const textEl = document.getElementById('nocScratchpadText');
     if (textEl) textEl.value = note;
     calculateSubnet();
+    setConverterLive();
 }
 
 function switchToolsTab(tab) {
+    document.getElementById('toolSectionConverter').classList.toggle('hidden', tab !== 'converter');
     document.getElementById('toolSectionSubnet').classList.toggle('hidden', tab !== 'subnet');
     document.getElementById('toolSectionScratchpad').classList.toggle('hidden', tab !== 'scratchpad');
     
+    const convBtn = document.getElementById('toolTabConverter');
     const subBtn = document.getElementById('toolTabSubnet');
     const padBtn = document.getElementById('toolTabScratchpad');
-    if (tab === 'subnet') {
-        subBtn.className = 'tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-blue-600 text-blue-600 flex items-center gap-2 cursor-pointer';
-        padBtn.className = 'tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-transparent text-gray-400 hover:text-gray-600 flex items-center gap-2 cursor-pointer';
-    } else {
-        padBtn.className = 'tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-blue-600 text-blue-600 flex items-center gap-2 cursor-pointer';
-        subBtn.className = 'tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-transparent text-gray-400 hover:text-gray-600 flex items-center gap-2 cursor-pointer';
-    }
+    
+    const activeCls = 'tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-blue-600 text-blue-600 flex items-center gap-2 cursor-pointer';
+    const inactiveCls = 'tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-transparent text-gray-400 hover:text-gray-600 flex items-center gap-2 cursor-pointer';
+    
+    if (convBtn) convBtn.className = tab === 'converter' ? activeCls : inactiveCls;
+    if (subBtn) subBtn.className = tab === 'subnet' ? activeCls : inactiveCls;
+    if (padBtn) padBtn.className = tab === 'scratchpad' ? activeCls : inactiveCls;
+}
+
+function runTimeConverter() {
+    const zone = document.getElementById('convZone')?.value || 'MMT';
+    let h = parseInt(document.getElementById('convHour')?.value, 10);
+    const m = parseInt(document.getElementById('convMinute')?.value, 10);
+    const ampm = document.getElementById('convAmPm')?.value || 'AM';
+
+    if (isNaN(h) || h < 1) h = 12;
+    if (h > 12) h = 12;
+    let mClean = isNaN(m) ? 0 : m;
+    if (mClean < 0) mClean = 0;
+    if (mClean > 59) mClean = 59;
+
+    let h24 = h % 12;
+    if (ampm === 'PM') h24 += 12;
+
+    const offsets = { UMT: 0, IST: 5.5, MMT: 6.5, ICT: 7.0, SGT: 8.0 };
+    const srcOff = offsets[zone] !== undefined ? offsets[zone] : 6.5;
+
+    let totalUtcMins = Math.round((h24 * 60 + mClean) - (srcOff * 60));
+    totalUtcMins = ((totalUtcMins % 1440) + 1440) % 1440;
+
+    const formatZoneTime = (targetOff) => {
+        let tMins = Math.round(totalUtcMins + (targetOff * 60));
+        tMins = ((tMins % 1440) + 1440) % 1440;
+        const th24 = Math.floor(tMins / 60);
+        const tm = tMins % 60;
+        const th12 = th24 % 12 || 12;
+        const tampm = th24 >= 12 ? 'PM' : 'AM';
+        const p2Str = (n) => String(n).padStart(2, '0');
+        return `${p2Str(th12)}:${p2Str(tm)} ${tampm} (${p2Str(th24)}:${p2Str(tm)})`;
+    };
+
+    const ids = { resUMT: 0, resIST: 5.5, resMMT: 6.5, resICT: 7.0, resSGT: 8.0 };
+    Object.entries(ids).forEach(([id, off]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = formatZoneTime(off);
+    });
+}
+
+function setConverterLive() {
+    const now = new Date();
+    const utcMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const zone = document.getElementById('convZone')?.value || 'MMT';
+    const offsets = { UMT: 0, IST: 5.5, MMT: 6.5, ICT: 7.0, SGT: 8.0 };
+    const off = offsets[zone] !== undefined ? offsets[zone] : 6.5;
+
+    let zMins = Math.round(utcMins + (off * 60));
+    zMins = ((zMins % 1440) + 1440) % 1440;
+    const zh24 = Math.floor(zMins / 60);
+    const zm = zMins % 60;
+    const zh12 = zh24 % 12 || 12;
+    const zampm = zh24 >= 12 ? 'PM' : 'AM';
+
+    const hEl = document.getElementById('convHour');
+    const mEl = document.getElementById('convMinute');
+    const pEl = document.getElementById('convAmPm');
+    if (hEl) hEl.value = zh12;
+    if (mEl) mEl.value = zm;
+    if (pEl) pEl.value = zampm;
+    runTimeConverter();
 }
 
 function calculateSubnet() {
@@ -570,7 +670,7 @@ function calculateSubnet() {
     document.getElementById('calcBcast').textContent = numToIp(bcastNum);
 
     if (cidr >= 31) {
-        document.getElementById('calcRange').textContent = 'Point-to-Point';
+        document.getElementById('calcRange').textContent = 'Point-to-Point Link';
         document.getElementById('calcHosts').textContent = cidr === 31 ? '2' : '1';
     } else {
         const minNum = netNum + 1;
@@ -586,7 +686,7 @@ function saveScratchpad() {
 }
 
 function clearScratchpad() {
-    if (confirm('Clear scratchpad notes?')) {
+    if (confirm('Clear shift scratchpad notes?')) {
         localStorage.removeItem('noc_scratchpad_data');
         const textEl = document.getElementById('nocScratchpadText');
         if (textEl) textEl.value = '';
@@ -643,7 +743,7 @@ async function saveToApi(table, data) {
     }
 
     updateProgress(100, 'Saved successfully!');
-    await delay(150);
+    await delay(120);
     hideLoading();
     showToast('Saved successfully!', 'success');
     refreshUI();
@@ -696,7 +796,7 @@ async function deleteFromApi(table, id) {
     }
 
     updateProgress(100, 'Deleted!');
-    await delay(150);
+    await delay(120);
     hideLoading();
     showToast('Deleted successfully!', 'success');
     refreshUI();
@@ -711,8 +811,7 @@ function refreshUI() {
         renderInfoCards();
     }
     if (!document.getElementById('adminPage').classList.contains('hidden') && isAdmin()) {
-        const activeTab = document.querySelector('.admin-tab.bg-white')?.getAttribute('data-tab') || 'users';
-        showAdminTab(activeTab);
+        renderUsers();
     }
     renderMobileInfoMenu();
     renderInfoDropdown();
@@ -737,11 +836,23 @@ function closeMobileMenu() {
 function renderMobileInfoMenu() {
     const container = document.getElementById('mobileInfoMenu');
     if (!container) return;
-    container.innerHTML = appData.categories.map(cat => `
-        <button onclick="showInfoCategory(${cat.id}, '${cat.name}'); closeMobileMenu();" class="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-xs font-semibold">
-            <i class="fas ${cat.icon} w-4 text-gray-400 text-center"></i> ${cat.name}
-        </button>
-    `).join('');
+    let html = appData.categories.map(cat => {
+        const iconCls = (cat.icon && cat.icon.startsWith('fa-')) ? cat.icon : 'fa-tag';
+        return `
+            <button onclick="showInfoCategory(${cat.id}, '${cat.name}'); closeMobileMenu();" class="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-xs font-semibold cursor-pointer">
+                <i class="fas ${iconCls} w-4 text-gray-400 text-center"></i> ${cat.name}
+            </button>
+        `;
+    }).join('');
+
+    if (isAdmin()) {
+        html += `
+            <button onclick="openCategoriesManageModal(); closeMobileMenu();" class="w-full flex items-center gap-3 px-4 py-2.5 mt-2 pt-2 border-t border-gray-100 text-blue-600 hover:bg-blue-50 transition text-xs font-bold uppercase tracking-wider cursor-pointer">
+                <i class="fas fa-tags w-4 text-center"></i> Categories Setting
+            </button>
+        `;
+    }
+    container.innerHTML = html;
 }
 
 function navigateTo(page) {
@@ -761,7 +872,7 @@ function navigateTo(page) {
     } else if (page === 'admin') {
         if (!isAdmin()) return;
         document.getElementById('adminPage').classList.remove('hidden');
-        showAdminTab('users');
+        renderUsers();
     }
     
     document.querySelectorAll(`[data-page="${page}"]`).forEach(b => {
@@ -779,11 +890,25 @@ function toggleInfoDropdown() {
 function renderInfoDropdown() {
     const container = document.getElementById('infoDropdown');
     if (!container) return;
-    container.innerHTML = appData.categories.map(cat => `
-        <button onclick="showInfoCategory(${cat.id}, '${cat.name}')" class="dropdown-item w-full text-left px-4 py-2.5 text-gray-700 flex items-center gap-3 text-xs font-bold">
-            <i class="fas ${cat.icon} text-gray-400 w-4 text-center"></i> ${cat.name}
-        </button>
-    `).join('');
+    let html = `<div class="py-1">` + appData.categories.map(cat => {
+        const iconCls = (cat.icon && cat.icon.startsWith('fa-')) ? cat.icon : 'fa-tag';
+        return `
+            <button onclick="showInfoCategory(${cat.id}, '${cat.name}')" class="dropdown-item w-full text-left px-4 py-2.5 text-gray-700 flex items-center gap-3 text-xs font-bold cursor-pointer">
+                <i class="fas ${iconCls} text-gray-400 w-4 text-center"></i> ${cat.name}
+            </button>
+        `;
+    }).join('') + `</div>`;
+
+    if (isAdmin()) {
+        html += `
+            <div class="py-1 bg-gray-50/80">
+                <button onclick="openCategoriesManageModal()" class="dropdown-item w-full text-left px-4 py-2.5 text-blue-600 flex items-center gap-3 text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-blue-50">
+                    <i class="fas fa-tags text-blue-500 w-4 text-center"></i> Categories Setting
+                </button>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
 }
 
 function showInfoCategory(catId, catName) {
@@ -805,161 +930,31 @@ document.addEventListener('click', function(e) {
     if (contextM && !contextM.contains(e.target)) contextM.classList.add('hidden');
 });
 
-// ============ TEAM UPDATES ============
-function renderUpdates() {
-    const container = document.getElementById('updatesContainer');
+// ============ CATEGORIES SETTING MODAL (MOVED FROM ADMIN PANEL) ============
+function openCategoriesManageModal() {
+    document.getElementById('infoDropdown')?.classList.add('hidden');
+    document.getElementById('categoriesManageModal').classList.remove('hidden');
+    renderCategoriesManageList();
+}
+
+function renderCategoriesManageList() {
+    const container = document.getElementById('categoriesManageList');
     if (!container) return;
-    const badgeStyles = {
-        important: 'bg-red-50 text-red-700 border-red-200',
-        general: 'bg-blue-50 text-blue-700 border-blue-200',
-        announcement: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-        reminder: 'bg-amber-50 text-amber-700 border-amber-200'
-    };
-    const badgeIcons = {
-        important: '<i class="fas fa-circle text-[6px] text-red-500 mr-1.5"></i>',
-        general: '<i class="fas fa-circle text-[6px] text-blue-500 mr-1.5"></i>',
-        announcement: '<i class="fas fa-circle text-[6px] text-emerald-500 mr-1.5"></i>',
-        reminder: '<i class="fas fa-circle text-[6px] text-amber-500 mr-1.5"></i>'
-    };
-
-    container.innerHTML = appData.updates.map(update => `
-        <div class="update-card bg-white rounded-2xl p-6 shadow-xs border border-gray-100 hover:border-blue-200 transition">
-            <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
-                <h3 class="font-bold text-base text-gray-900">${update.topic}</h3>
-                <div class="flex items-center gap-2 flex-shrink-0">
-                    <span class="px-2.5 py-1 rounded text-[11px] font-bold border ${badgeStyles[update.badge]} cursor-default flex items-center capitalize">
-                        ${badgeIcons[update.badge]} ${update.badge}
-                    </span>
-                    ${isAdmin() ? `
-                        <button onclick="editUpdate(${update.id})" class="icon-btn w-7 h-7 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50" title="Edit"><i class="fas fa-pen text-[10px]"></i></button>
-                        <button onclick="deleteUpdate(${update.id})" class="icon-btn w-7 h-7 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-red-600 hover:bg-red-50" title="Delete"><i class="fas fa-trash text-[10px]"></i></button>
-                    ` : ''}
+    container.innerHTML = appData.categories.map(cat => {
+        const iconCls = (cat.icon && cat.icon.startsWith('fa-')) ? cat.icon : 'fa-tag';
+        return `
+            <div class="p-3.5 bg-gray-50 border border-gray-200/80 rounded-xl flex items-center justify-between">
+                <div class="flex items-center gap-3 truncate">
+                    <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-gray-200 text-blue-600 shadow-2xs flex-shrink-0"><i class="fas ${iconCls} text-xs"></i></div>
+                    <span class="font-bold text-gray-800 text-xs truncate">${cat.name}</span>
+                </div>
+                <div class="flex gap-1.5 flex-shrink-0">
+                     <button type="button" onclick="openCategoryModal(${cat.id})" class="icon-btn p-2 text-gray-400 hover:text-blue-600 cursor-pointer" title="Edit"><i class="fas fa-pen text-xs"></i></button>
+                     <button type="button" onclick="deleteFromApi('categories', ${cat.id})" class="icon-btn p-2 text-gray-400 hover:text-red-600 cursor-pointer" title="Delete"><i class="fas fa-trash text-xs"></i></button>
                 </div>
             </div>
-            <div class="card-link text-gray-600 mb-4 leading-relaxed text-sm font-sans">${linkify(update.message)}</div>
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-gray-400 pt-3 border-t border-gray-100 font-mono">
-                <span class="flex items-center gap-1.5"><i class="fas fa-user-circle text-gray-400"></i>${update.author}</span>
-                <span class="flex items-center gap-1.5"><i class="fas fa-calendar text-gray-400"></i>${update.date}</span>
-            </div>
-        </div>
-    `).join('') || '<div class="text-center text-gray-400 py-16 bg-white rounded-2xl border border-gray-100"><i class="fas fa-inbox text-2xl mb-2 text-gray-300"></i><p class="text-xs font-semibold uppercase tracking-wider">No team updates posted</p></div>';
-}
-
-function linkify(text) {
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener" class="text-blue-600 underline font-mono">$1</a>').replace(/\n/g, '<br>');
-}
-
-function openUpdateModal(id = null) {
-    if (!isAdmin()) return;
-    document.getElementById('updateModal').classList.remove('hidden');
-    document.getElementById('updateModalTitle').textContent = id ? 'Edit Update' : 'Add Update';
-    document.getElementById('updateId').value = id || '';
-    if (id) {
-        const u = appData.updates.find(x => x.id === id);
-        if (u) {
-            document.getElementById('updateTopic').value = u.topic;
-            document.getElementById('updateBadge').value = u.badge;
-            document.getElementById('updateMessage').value = u.message;
-        }
-    } else document.getElementById('updateForm').reset();
-}
-
-async function saveUpdate(event) {
-    if (event && event.preventDefault) event.preventDefault();
-    if (!isAdmin()) return;
-    const id = document.getElementById('updateId').value;
-    const topic = document.getElementById('updateTopic').value.trim();
-    const message = document.getElementById('updateMessage').value.trim();
-    if (!topic || !message) return showToast('Topic and message required');
-
-    const update = {
-        id: id ? parseInt(id) : null,
-        topic,
-        badge: document.getElementById('updateBadge').value,
-        message,
-        author: currentUser.accountName,
-        date: new Date().toISOString().slice(0, 10)
-    };
-    if (await saveToApi('updates', update)) closeModal('updateModal');
-}
-
-function editUpdate(id) { if (isAdmin()) openUpdateModal(id); }
-async function deleteUpdate(id) { if (isAdmin() && confirm('Delete update?')) await deleteFromApi('updates', id); }
-
-// ============ ADMIN PANEL OPERATORS & CATEGORIES ============
-function getRoleBadge(role) {
-    const badges = {
-        admin: '<span class="px-2 py-0.5 bg-purple-50 text-purple-700 font-bold rounded text-[11px] border border-purple-200 uppercase tracking-wider"><i class="fas fa-shield-halved mr-1"></i> Admin</span>',
-        leader: '<span class="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold rounded text-[11px] border border-blue-200 uppercase tracking-wider"><i class="fas fa-star mr-1"></i> Leader</span>',
-        member: '<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold rounded text-[11px] border border-emerald-200 uppercase tracking-wider"><i class="fas fa-user mr-1"></i> Member</span>',
-        intern: '<span class="px-2 py-0.5 bg-amber-50 text-amber-700 font-bold rounded text-[11px] border border-amber-200 uppercase tracking-wider"><i class="fas fa-seedling mr-1"></i> Intern</span>'
-    };
-    return badges[role] || role;
-}
-
-function renderUsers() {
-    const tbody = document.getElementById('usersTable');
-    if (!tbody) return;
-    tbody.innerHTML = appData.users.map(user => `
-        <tr class="hover:bg-gray-50/80 transition border-b border-gray-100">
-            <td class="px-4 sm:px-6 py-3.5">
-                <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500 border border-gray-200/60"><i class="fas fa-user text-xs"></i></div>
-                    <span class="font-bold text-gray-900 text-xs">${user.accountName}</span>
-                </div>
-            </td>
-            <td class="px-4 sm:px-6 py-3.5 hidden sm:table-cell font-mono text-xs text-gray-500">${user.username}</td>
-            <td class="px-4 sm:px-6 py-3.5">
-                 <div class="flex items-center gap-2">
-                    <span class="text-gray-600 font-mono text-xs ${visiblePasswords[user.id] ? '' : 'password-dots'}">${visiblePasswords[user.id] ? user.password : '••••'}</span>
-                    <button type="button" onclick="togglePasswordVisibility(${user.id})" class="icon-btn text-gray-400 hover:text-gray-600"><i class="fas ${visiblePasswords[user.id] ? 'fa-eye-slash' : 'fa-eye'} text-xs"></i></button>
-                </div>
-            </td>
-            <td class="px-4 sm:px-6 py-3.5">${getRoleBadge(user.role)}</td>
-            <td class="px-4 sm:px-6 py-3.5 text-right">
-                <button type="button" onclick="editUser(${user.id})" class="icon-btn text-gray-400 hover:text-blue-600 mr-2" title="Edit"><i class="fas fa-pen text-xs"></i></button>
-                ${user.id !== currentUser?.id ? `<button type="button" onclick="deleteFromApi('users', ${user.id})" class="icon-btn text-gray-400 hover:text-red-600" title="Delete"><i class="fas fa-trash text-xs"></i></button>` : ''}
-            </td>
-        </tr>
-    `).join('');
-}
-
-function renderRolesSummary() {
-    const counts = { admin: 0, leader: 0, member: 0, intern: 0 };
-    appData.users.forEach(u => { if (counts[u.role] !== undefined) counts[u.role]++; });
-    ['admin', 'leader', 'member', 'intern'].forEach(r => {
-        const el = document.getElementById(`roleCount${r.charAt(0).toUpperCase() + r.slice(1)}`);
-        if (el) el.textContent = counts[r];
-    });
-}
-
-function showAdminTab(tab) {
-    if (!isAdmin()) return;
-    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('bg-white', 'shadow-2xs', 'text-gray-900'));
-    document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.add('hidden'));
-    document.querySelector(`[data-tab="${tab}"]`)?.classList.add('bg-white', 'shadow-2xs', 'text-gray-900');
-    document.getElementById(`${tab}Tab`)?.classList.remove('hidden');
-    if (tab === 'users') renderUsers();
-    if (tab === 'roles') renderRolesSummary();
-    if (tab === 'categories') renderCategories();
-}
-
-function renderCategories() {
-    const container = document.getElementById('categoriesList');
-    if (!container) return;
-    container.innerHTML = appData.categories.map(cat => `
-        <div class="category-card bg-white rounded-xl p-4 shadow-xs border border-gray-100 flex items-center justify-between transition">
-            <div class="flex items-center gap-3">
-                <div class="category-icon w-8 h-8 bg-blue-50 rounded-xl flex justify-center items-center border border-blue-100"><i class="fas ${cat.icon} text-blue-600 text-xs"></i></div>
-                <span class="font-bold text-gray-900 text-xs">${cat.name}</span>
-            </div>
-            <div class="flex gap-2">
-                 <button type="button" onclick="openCategoryModal(${cat.id})" class="icon-btn text-gray-400 hover:text-blue-600"><i class="fas fa-pen text-xs"></i></button>
-                 <button type="button" onclick="deleteFromApi('categories', ${cat.id})" class="icon-btn text-gray-400 hover:text-red-600"><i class="fas fa-trash text-xs"></i></button>
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function openCategoryModal(id = null) {
@@ -969,7 +964,7 @@ function openCategoryModal(id = null) {
         const c = appData.categories.find(x => x.id === id);
         if (c) {
             document.getElementById('categoryName').value = c.name;
-            document.getElementById('categoryIcon').value = c.icon;
+            document.getElementById('categoryIcon').value = c.icon || 'fa-users';
         }
     } else document.getElementById('categoryForm').reset();
 }
@@ -981,50 +976,11 @@ async function saveCategory(event) {
     if (!name) return showToast('Category name required');
 
     const data = { id: id ? parseInt(id) : null, name, icon: document.getElementById('categoryIcon').value };
-    if (await saveToApi('categories', data)) closeModal('categoryModal');
-}
-
-function openUserModal(id = null) {
-    document.getElementById('userModal').classList.remove('hidden');
-    document.getElementById('userId').value = id || '';
-    document.getElementById('userModalTitle').textContent = id ? 'Edit Operator' : 'Add Operator';
-    
-    const pwdField = document.getElementById('userPassword');
-    if (pwdField) pwdField.type = 'password';
-    document.getElementById('toggleEditPassword')?.querySelector('i')?.classList.replace('fa-eye-slash', 'fa-eye');
-    
-    if (id) {
-        const u = appData.users.find(x => x.id === id);
-        if (u) {
-            document.getElementById('userAccountName').value = u.accountName;
-            document.getElementById('userUsername').value = u.username;
-            document.getElementById('userPassword').value = u.password;
-            document.getElementById('userRole').value = u.role;
-        }
-    } else {
-        document.getElementById('userForm').reset();
-        document.getElementById('userRole').value = 'member';
+    if (await saveToApi('categories', data)) {
+        closeModal('categoryModal');
+        renderCategoriesManageList();
     }
 }
-
-async function saveUser(event) {
-    if (event && event.preventDefault) event.preventDefault();
-    const id = document.getElementById('userId').value;
-    const accountName = document.getElementById('userAccountName').value.trim();
-    const username = document.getElementById('userUsername').value.trim();
-    const password = document.getElementById('userPassword').value;
-    const role = document.getElementById('userRole').value;
-
-    if (!accountName || !username || !password) return showToast('All fields required');
-
-    const existing = appData.users.find(u => u.username === username && u.id !== (id ? parseInt(id) : -1));
-    if (existing) return showToast('Username already taken', 'error');
-
-    const data = { id: id ? parseInt(id) : null, accountName, username, password, role };
-    if (await saveToApi('users', data)) closeModal('userModal');
-}
-
-function editUser(id) { openUserModal(id); }
 
 // ============ UTILS ============
 function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
