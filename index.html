@@ -8,31 +8,31 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-gray-50 min-h-screen transition-colors duration-200 antialiased text-gray-800">
+<body class="bg-gray-50 min-h-screen transition-colors duration-200 antialiased text-gray-800 selection:bg-blue-600 selection:text-white">
     <!-- Toast Container -->
     <div id="toastContainer" class="fixed top-4 right-4 z-[100] space-y-2"></div>
 
     <!-- Context Menu -->
     <div id="contextMenu" class="hidden fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[90] context-menu min-w-[160px]">
-        <button onclick="editContextItem()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3 text-sm font-medium">
+        <button onclick="editContextItem()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3 text-sm font-medium cursor-pointer">
             <i class="fas fa-pen text-gray-400 w-4"></i> Edit
         </button>
-        <button onclick="moveItem()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3 text-sm font-medium">
+        <button onclick="moveItem()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3 text-sm font-medium cursor-pointer">
             <i class="fas fa-folder-tree text-gray-400 w-4"></i> Move
         </button>
         <hr class="my-2 border-gray-100">
-        <button onclick="deleteItem()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm font-medium">
+        <button onclick="deleteItem()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm font-medium cursor-pointer">
             <i class="fas fa-trash w-4"></i> Delete
         </button>
     </div>
 
     <!-- Info Card Context Menu -->
     <div id="infoCardContextMenu" class="hidden fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[90] info-card-context-menu min-w-[160px]">
-        <button onclick="editInfoCardFromContext()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3 text-sm font-medium">
+        <button onclick="editInfoCardFromContext()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3 text-sm font-medium cursor-pointer">
             <i class="fas fa-edit text-gray-400 w-4"></i> Edit
         </button>
         <hr class="my-2 border-gray-100">
-        <button onclick="deleteInfoCardFromContext()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm font-medium">
+        <button onclick="deleteInfoCardFromContext()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm font-medium cursor-pointer">
             <i class="fas fa-trash w-4"></i> Delete
         </button>
     </div>
@@ -60,13 +60,13 @@
                     <div class="relative">
                         <i class="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
                         <input type="password" id="password" class="login-input w-full pl-10 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition text-sm font-medium" placeholder="••••••••" required>
-                        <button type="button" id="togglePassword" class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition">
+                        <button type="button" id="togglePassword" class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition cursor-pointer">
                             <i class="fas fa-eye text-xs"></i>
                         </button>
                     </div>
                 </div>
                 <div class="pt-2">
-                    <button type="submit" id="loginBtn" class="w-full bg-gray-900 text-white py-3.5 rounded-xl font-bold text-sm hover:bg-gray-800 transition shadow-sm flex items-center justify-center gap-2">
+                    <button type="submit" id="loginBtn" class="w-full bg-gray-900 text-white py-3.5 rounded-xl font-bold text-sm hover:bg-gray-800 transition shadow-sm flex items-center justify-center gap-2 cursor-pointer">
                         <span>Sign In</span>
                         <i class="fas fa-arrow-right text-[10px]"></i>
                     </button>
@@ -130,7 +130,7 @@
             <div class="max-w-7xl mx-auto px-4">
                 <div class="flex items-center justify-between h-16">
                     <div class="flex items-center gap-3">
-                        <button onclick="openMobileMenu()" class="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 transition text-gray-600">
+                        <button onclick="openMobileMenu()" class="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 transition text-gray-600 cursor-pointer">
                             <i class="fas fa-bars"></i>
                         </button>
                         <div class="w-9 h-9 bg-gray-900 rounded-xl flex items-center justify-center text-white shadow-xs">
@@ -141,29 +141,29 @@
                     
                     <!-- Desktop Navigation Links -->
                     <div class="hidden lg:flex items-center gap-1.5">
-                        <button onclick="navigateTo('home')" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center" data-page="home">
+                        <button onclick="navigateTo('home')" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center cursor-pointer" data-page="home">
                             <i class="fas fa-home mr-2 text-gray-400"></i>Home
                         </button>
-                        <button onclick="navigateTo('learning')" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center" data-page="learning">
+                        <button onclick="navigateTo('learning')" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center cursor-pointer" data-page="learning">
                             <i class="fas fa-book mr-2 text-gray-400"></i>Learning
                         </button>
                         <div class="relative">
-                            <button onclick="toggleInfoDropdown()" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center" data-page="information">
+                            <button onclick="toggleInfoDropdown()" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center cursor-pointer" data-page="information">
                                 <i class="fas fa-circle-info mr-2 text-gray-400"></i>Information
                                 <i class="fas fa-chevron-down ml-1.5 text-[10px] text-gray-400"></i>
                             </button>
-                            <div id="infoDropdown" class="hidden absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50"></div>
+                            <div id="infoDropdown" class="hidden absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 divide-y divide-gray-100"></div>
                         </div>
-                        <button onclick="openToolsModal()" class="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center" title="Subnet Calc & Scratchpad">
+                        <button onclick="openToolsModal()" class="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center cursor-pointer" title="Time Converter, Subnet Calc & Scratchpad">
                             <i class="fas fa-toolbox mr-2 text-blue-500"></i>Utilities
                         </button>
-                        <button id="adminBtn" onclick="navigateTo('admin')" class="hidden nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center" data-page="admin">
+                        <button id="adminBtn" onclick="navigateTo('admin')" class="hidden nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center cursor-pointer" data-page="admin">
                             <i class="fas fa-shield-halved mr-2 text-purple-600"></i>Admin Panel
                         </button>
-                        <button onclick="openSettingsModal()" class="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center" title="Portal Theme, Dark Mode & Password">
+                        <button onclick="openSettingsModal()" class="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold flex items-center cursor-pointer" title="Portal Theme, Dark Mode & Password">
                             <i class="fas fa-sliders mr-2 text-gray-500"></i>Settings
                         </button>
-                        <button onclick="logout()" class="px-4 py-2 rounded-xl text-red-600 hover:bg-red-50 transition text-sm font-semibold flex items-center">
+                        <button onclick="logout()" class="px-4 py-2 rounded-xl text-red-600 hover:bg-red-50 transition text-sm font-semibold flex items-center cursor-pointer">
                             <i class="fas fa-sign-out-alt mr-1.5"></i>Logout
                         </button>
                     </div>
@@ -171,7 +171,7 @@
             </div>
         </nav>
 
-        <!-- Header Banner with Live UTC Time -->
+        <!-- Header Banner with Live MMT Time -->
         <div class="bg-gray-900 text-white shadow-sm transition-all duration-300 border-b border-gray-800" id="headerBanner">
             <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div class="flex items-center gap-3">
@@ -179,7 +179,7 @@
                     <span id="currentUserRoleBadge" class="text-[10px] px-2.5 py-0.5 rounded font-bold uppercase tracking-wider"></span>
                 </div>
                 <div class="flex items-center gap-2 text-xs font-mono text-gray-300 bg-black/40 px-3 py-1.5 rounded-lg border border-white/10 w-fit shadow-inner">
-                    <i class="fas fa-globe text-blue-400 text-[11px]"></i> <span id="liveUtcClock">UTC: 00:00:00</span>
+                    <i class="fas fa-clock text-amber-400 text-[11px]"></i> <span id="liveMmtClock">MMT: 00:00:00</span>
                 </div>
             </div>
         </div>
@@ -193,7 +193,7 @@
                     </div>
                     Team Updates
                 </h2>
-                <button id="addUpdateBtn" onclick="openUpdateModal()" class="hidden btn-primary bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 font-bold text-xs uppercase tracking-wider shadow-sm transition">
+                <button id="addUpdateBtn" onclick="openUpdateModal()" class="hidden btn-primary bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 font-bold text-xs uppercase tracking-wider shadow-sm transition cursor-pointer">
                     <i class="fas fa-plus mr-1.5"></i>Add Update
                 </button>
             </div>
@@ -216,17 +216,17 @@
                         <div class="relative">
                             <i class="fas fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
                             <input type="text" id="learningSearchInput" oninput="handleLearningSearch()" class="w-full pl-10 pr-10 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 focus:border-transparent outline-none transition text-sm shadow-2xs placeholder-gray-400 font-medium" placeholder="Search folders or notes...">
-                            <button type="button" id="clearLearningSearchBtn" onclick="clearLearningSearch()" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition">
+                            <button type="button" id="clearLearningSearchBtn" onclick="clearLearningSearch()" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition cursor-pointer">
                                 <i class="fas fa-circle-xmark"></i>
                             </button>
                         </div>
                     </div>
 
                     <div id="learningAdminBtns" class="hidden flex gap-2 flex-shrink-0">
-                        <button onclick="openFolderModal()" class="btn-secondary bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-gray-50 transition shadow-2xs">
+                        <button onclick="openFolderModal()" class="btn-secondary bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-gray-50 transition shadow-2xs cursor-pointer">
                             <i class="fas fa-folder-plus mr-1.5 text-amber-500"></i>New Folder
                         </button>
-                        <button onclick="openLearningItemModal()" class="btn-primary bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-800 font-bold text-xs uppercase tracking-wider shadow-sm transition">
+                        <button onclick="openLearningItemModal()" class="btn-primary bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-800 font-bold text-xs uppercase tracking-wider shadow-sm transition cursor-pointer">
                             <i class="fas fa-plus mr-1.5"></i>Add Item
                         </button>
                     </div>
@@ -245,121 +245,42 @@
                     </div>
                     <span id="infoTitleText">Information</span>
                 </h2>
-                <button id="addInfoCardBtn" onclick="openInfoCardModal()" class="hidden btn-primary bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 font-bold text-xs uppercase tracking-wider shadow-sm">
+                <button id="addInfoCardBtn" onclick="openInfoCardModal()" class="hidden btn-primary bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 font-bold text-xs uppercase tracking-wider shadow-sm cursor-pointer">
                     <i class="fas fa-plus mr-1.5"></i>Add Item
                 </button>
             </div>
             <div id="infoCardsContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"></div>
         </div>
 
-        <!-- Admin Page -->
+        <!-- Admin Page (Users Management Only) -->
         <div id="adminPage" class="page hidden max-w-7xl mx-auto px-4 py-6 sm:py-8">
-            <h2 class="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-3 mb-6 tracking-tight">
-                <div class="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600 border border-purple-100">
-                    <i class="fas fa-shield-halved text-sm"></i>
-                </div>
-                Admin Panel
-            </h2>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <h2 class="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-3 tracking-tight">
+                    <div class="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600 border border-purple-100">
+                        <i class="fas fa-shield-halved text-sm"></i>
+                    </div>
+                    System Operator Accounts
+                </h2>
+                <button onclick="openUserModal()" class="bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-800 transition font-bold text-xs uppercase tracking-wider shadow-sm cursor-pointer">
+                    <i class="fas fa-user-plus mr-1.5"></i>Add Operator
+                </button>
+            </div>
             
-            <div class="flex gap-1 mb-6 bg-gray-200/50 p-1 rounded-xl w-fit flex-wrap border border-gray-200/40">
-                <button onclick="showAdminTab('users')" class="admin-tab px-4 py-2 font-bold text-xs uppercase tracking-wider text-gray-600 rounded-lg transition" data-tab="users">
-                    <i class="fas fa-users mr-1.5 text-gray-400"></i>Users
-                </button>
-                <button onclick="showAdminTab('roles')" class="admin-tab px-4 py-2 font-bold text-xs uppercase tracking-wider text-gray-600 rounded-lg transition" data-tab="roles">
-                    <i class="fas fa-user-shield mr-1.5 text-gray-400"></i>Roles Overview
-                </button>
-                <button onclick="showAdminTab('categories')" class="admin-tab px-4 py-2 font-bold text-xs uppercase tracking-wider text-gray-600 rounded-lg transition" data-tab="categories">
-                    <i class="fas fa-tags mr-1.5 text-gray-400"></i>Categories
-                </button>
-            </div>
-
-            <!-- Users Tab -->
-            <div id="usersTab" class="admin-tab-content">
-                <div class="flex justify-between items-center mb-4">
-                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">System Operators & Permissions</p>
-                    <button onclick="openUserModal()" class="bg-gray-900 text-white px-4 py-2 rounded-xl hover:bg-gray-800 transition font-bold text-xs uppercase tracking-wider shadow-sm">
-                        <i class="fas fa-user-plus mr-1.5"></i>Add Operator
-                    </button>
+            <div class="bg-white rounded-2xl shadow-xs border border-gray-100 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-50/80 border-b border-gray-100">
+                            <tr>
+                                <th class="px-4 sm:px-6 py-3.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider">Operator Name</th>
+                                <th class="px-4 sm:px-6 py-3.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider hidden sm:table-cell">Login ID</th>
+                                <th class="px-4 sm:px-6 py-3.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider">Password</th>
+                                <th class="px-4 sm:px-6 py-3.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider">Access Tier</th>
+                                <th class="px-4 sm:px-6 py-3.5 text-right text-[10px] font-bold text-gray-400 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTable" class="divide-y divide-gray-100 text-sm"></tbody>
+                    </table>
                 </div>
-                <div class="bg-white rounded-2xl shadow-xs border border-gray-100 overflow-hidden">
-                    <div class="overflow-x-auto">
-                        <table class="w-full">
-                            <thead class="bg-gray-50/80 border-b border-gray-100">
-                                <tr>
-                                    <th class="px-4 sm:px-6 py-3.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider">Operator Name</th>
-                                    <th class="px-4 sm:px-6 py-3.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider hidden sm:table-cell">Login ID</th>
-                                    <th class="px-4 sm:px-6 py-3.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider">Password</th>
-                                    <th class="px-4 sm:px-6 py-3.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider">Access Tier</th>
-                                    <th class="px-4 sm:px-6 py-3.5 text-right text-[10px] font-bold text-gray-400 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="usersTable" class="divide-y divide-gray-100 text-sm"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Roles Tab -->
-            <div id="rolesTab" class="admin-tab-content hidden">
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-1 h-full bg-purple-600"></div>
-                        <div>
-                            <div class="flex items-center justify-between mb-3 pl-2">
-                                <span class="text-xs font-bold text-purple-700 uppercase tracking-wider"><i class="fas fa-shield-halved mr-1"></i> Admin</span>
-                                <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-md font-mono" id="roleCountAdmin">0</span>
-                            </div>
-                            <h4 class="font-bold text-gray-800 text-sm mb-1 pl-2">Administrator</h4>
-                            <p class="text-xs text-gray-500 leading-relaxed pl-2">Full system privileges. Manage operators, create/edit database categories, and full control over all files and notes.</p>
-                        </div>
-                    </div>
-
-                    <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-1 h-full bg-blue-600"></div>
-                        <div>
-                            <div class="flex items-center justify-between mb-3 pl-2">
-                                <span class="text-xs font-bold text-blue-700 uppercase tracking-wider"><i class="fas fa-star mr-1"></i> Leader</span>
-                                <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-md font-mono" id="roleCountLeader">0</span>
-                            </div>
-                            <h4 class="font-bold text-gray-800 text-sm mb-1 pl-2">Team Leader</h4>
-                            <p class="text-xs text-gray-500 leading-relaxed pl-2">Content manager. Create, edit, rename, and move directories and files based on set permissions. Cannot manage operator accounts.</p>
-                        </div>
-                    </div>
-
-                    <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-1 h-full bg-emerald-600"></div>
-                        <div>
-                            <div class="flex items-center justify-between mb-3 pl-2">
-                                <span class="text-xs font-bold text-emerald-700 uppercase tracking-wider"><i class="fas fa-user mr-1"></i> Member</span>
-                                <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-md font-mono" id="roleCountMember">0</span>
-                            </div>
-                            <h4 class="font-bold text-gray-800 text-sm mb-1 pl-2">Team Member</h4>
-                            <p class="text-xs text-gray-500 leading-relaxed pl-2">Standard NOC operator. Browse permitted documentation and charts. Can update personal password in Settings.</p>
-                        </div>
-                    </div>
-
-                    <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-1 h-full bg-amber-600"></div>
-                        <div>
-                            <div class="flex items-center justify-between mb-3 pl-2">
-                                <span class="text-xs font-bold text-amber-700 uppercase tracking-wider"><i class="fas fa-seedling mr-1"></i> Intern</span>
-                                <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-md font-mono" id="roleCountIntern">0</span>
-                            </div>
-                            <h4 class="font-bold text-gray-800 text-sm mb-1 pl-2">Trainee / Intern</h4>
-                            <p class="text-xs text-gray-500 leading-relaxed pl-2">Restricted onboarding access. Exclusively views items authorized for interns. Unpermitted materials are completely blocked.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Categories Tab -->
-            <div id="categoriesTab" class="admin-tab-content hidden">
-                <div class="flex justify-end mb-4">
-                    <button onclick="openCategoryModal()" class="bg-gray-900 text-white px-4 py-2 rounded-xl hover:bg-gray-800 transition font-bold text-xs uppercase tracking-wider shadow-sm">
-                        <i class="fas fa-plus mr-1.5"></i>Add Category
-                    </button>
-                </div>
-                <div id="categoriesList" class="grid gap-3"></div>
             </div>
         </div>
     </div>
@@ -373,7 +294,7 @@
                 <h3 class="text-base font-bold text-gray-800 flex items-center gap-2.5">
                     <i class="fas fa-sliders text-gray-600"></i> Portal Settings
                 </h3>
-                <button onclick="closeModal('settingsModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 hover:text-gray-600 transition">
+                <button onclick="closeModal('settingsModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 hover:text-gray-600 transition cursor-pointer">
                     <i class="fas fa-times text-xs"></i>
                 </button>
             </div>
@@ -452,7 +373,7 @@
                     </div>
                 </div>
 
-                <!-- Password Change Tab -->
+                <!-- Password Change Tab (With Eye Icons) -->
                 <div id="settingsSectionSecurity" class="hidden space-y-4">
                     <div class="bg-blue-50 border border-blue-100 p-3.5 rounded-xl text-xs text-blue-900 flex items-start gap-2.5">
                         <i class="fas fa-circle-info text-blue-600 mt-0.5"></i>
@@ -464,18 +385,27 @@
                     <form id="changePasswordForm" class="space-y-4 pt-1" onsubmit="saveUserPassword(event)">
                         <div>
                             <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Current Password</label>
-                            <input type="password" id="currentPasswordInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition text-sm font-mono" placeholder="••••••••" required>
+                            <div class="relative">
+                                <input type="password" id="currentPasswordInput" class="w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition text-sm font-mono" placeholder="••••••••" required>
+                                <button type="button" onclick="toggleInputEye('currentPasswordInput', this)" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fas fa-eye text-xs"></i></button>
+                            </div>
                         </div>
                         <div>
                             <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">New Password</label>
-                            <input type="password" id="newPasswordInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition text-sm font-mono" placeholder="••••••••" required>
+                            <div class="relative">
+                                <input type="password" id="newPasswordInput" class="w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition text-sm font-mono" placeholder="••••••••" required>
+                                <button type="button" onclick="toggleInputEye('newPasswordInput', this)" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fas fa-eye text-xs"></i></button>
+                            </div>
                         </div>
                         <div>
                             <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Confirm New Password</label>
-                            <input type="password" id="confirmPasswordInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition text-sm font-mono" placeholder="••••••••" required>
+                            <div class="relative">
+                                <input type="password" id="confirmPasswordInput" class="w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition text-sm font-mono" placeholder="••••••••" required>
+                                <button type="button" onclick="toggleInputEye('confirmPasswordInput', this)" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fas fa-eye text-xs"></i></button>
+                            </div>
                         </div>
                         <div class="pt-2 flex justify-end">
-                            <button type="submit" class="btn-primary px-6 py-2.5 bg-gray-900 text-white rounded-xl font-bold text-xs uppercase tracking-wider shadow-sm hover:bg-gray-800 transition">
+                            <button type="submit" class="btn-primary px-6 py-2.5 bg-gray-900 text-white rounded-xl font-bold text-xs uppercase tracking-wider shadow-sm hover:bg-gray-800 transition cursor-pointer">
                                 Update Password
                             </button>
                         </div>
@@ -485,30 +415,87 @@
         </div>
     </div>
 
-    <!-- NOC Tools & Utilities Modal -->
+    <!-- NOC Tools & Utilities Modal (Time Converter, Subnet, Scratchpad) -->
     <div id="toolsModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-fadeIn border border-gray-100 transition-colors">
             <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
                 <h3 class="text-base font-bold text-gray-800 flex items-center gap-2.5">
                     <i class="fas fa-toolbox text-blue-600"></i> NOC Engineer Utilities
                 </h3>
-                <button onclick="closeModal('toolsModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 hover:text-gray-600 transition">
+                <button onclick="closeModal('toolsModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 hover:text-gray-600 transition cursor-pointer">
                     <i class="fas fa-times text-xs"></i>
                 </button>
             </div>
             
             <div class="flex border-b border-gray-100 px-5 pt-3 bg-gray-50/30 gap-6">
-                <button onclick="switchToolsTab('subnet')" id="toolTabSubnet" class="tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-blue-600 text-blue-600 flex items-center gap-2 cursor-pointer">
-                    <i class="fas fa-network-wired"></i> Subnet Calculator
+                <button onclick="switchToolsTab('converter')" id="toolTabConverter" class="tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-blue-600 text-blue-600 flex items-center gap-2 cursor-pointer">
+                    <i class="fas fa-clock"></i> Time Converter
+                </button>
+                <button onclick="switchToolsTab('subnet')" id="toolTabSubnet" class="tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-transparent text-gray-400 hover:text-gray-600 flex items-center gap-2 cursor-pointer">
+                    <i class="fas fa-network-wired"></i> Subnet Calc
                 </button>
                 <button onclick="switchToolsTab('scratchpad')" id="toolTabScratchpad" class="tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-transparent text-gray-400 hover:text-gray-600 flex items-center gap-2 cursor-pointer">
-                    <i class="fas fa-clipboard"></i> Shift Scratchpad
+                    <i class="fas fa-clipboard"></i> Shift Notes
                 </button>
             </div>
 
             <div class="p-6 overflow-y-auto flex-1 space-y-6">
+                <!-- Time Converter Tab -->
+                <div id="toolSectionConverter" class="space-y-5">
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200/80 space-y-3">
+                        <div class="flex justify-between items-center">
+                            <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider">Source Timezone & Time</label>
+                            <button type="button" onclick="setConverterLive()" class="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"><i class="fas fa-rotate mr-1"></i>Set Live Now</button>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                            <select id="convZone" onchange="runTimeConverter()" class="sm:col-span-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:ring-2 focus:ring-blue-600">
+                                <option value="MMT">MMT (Myanmar / UTC+6:30)</option>
+                                <option value="UMT">UMT / UTC (Universal / UTC+0)</option>
+                                <option value="IST">IST (India / UTC+5:30)</option>
+                                <option value="ICT">ICT (Indochina / UTC+7)</option>
+                                <option value="SGT">SGT (Singapore / UTC+8)</option>
+                            </select>
+                            <div class="flex gap-1.5 sm:col-span-2">
+                                <input type="number" id="convHour" min="1" max="12" value="10" oninput="runTimeConverter()" class="w-14 px-2 py-2 bg-white border border-gray-200 rounded-xl text-xs font-mono font-bold text-center outline-none focus:ring-2 focus:ring-blue-600" title="Hour">
+                                <span class="my-auto font-bold text-gray-400">:</span>
+                                <input type="number" id="convMinute" min="0" max="59" value="30" oninput="runTimeConverter()" class="w-14 px-2 py-2 bg-white border border-gray-200 rounded-xl text-xs font-mono font-bold text-center outline-none focus:ring-2 focus:ring-blue-600" title="Minute">
+                                <select id="convAmPm" onchange="runTimeConverter()" class="flex-1 px-2 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-600">
+                                    <option value="AM">AM</option>
+                                    <option value="PM">PM</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Instant Converted Timezones</label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="convResults">
+                            <div class="p-3.5 bg-gray-50 border border-gray-200/80 rounded-xl flex justify-between items-center">
+                                <span class="text-xs font-bold text-gray-500"><i class="fas fa-globe text-gray-400 mr-1.5"></i>UMT / UTC</span>
+                                <span id="resUMT" class="font-mono font-bold text-sm text-gray-800">--:-- --</span>
+                            </div>
+                            <div class="p-3.5 bg-gray-50 border border-gray-200/80 rounded-xl flex justify-between items-center">
+                                <span class="text-xs font-bold text-gray-500"><i class="fas fa-clock text-amber-500 mr-1.5"></i>MMT (Myanmar)</span>
+                                <span id="resMMT" class="font-mono font-bold text-sm text-amber-600">--:-- --</span>
+                            </div>
+                            <div class="p-3.5 bg-gray-50 border border-gray-200/80 rounded-xl flex justify-between items-center">
+                                <span class="text-xs font-bold text-gray-500"><i class="fas fa-clock text-purple-500 mr-1.5"></i>IST (India)</span>
+                                <span id="resIST" class="font-mono font-bold text-sm text-purple-600">--:-- --</span>
+                            </div>
+                            <div class="p-3.5 bg-gray-50 border border-gray-200/80 rounded-xl flex justify-between items-center">
+                                <span class="text-xs font-bold text-gray-500"><i class="fas fa-clock text-emerald-500 mr-1.5"></i>ICT (Indochina)</span>
+                                <span id="resICT" class="font-mono font-bold text-sm text-emerald-600">--:-- --</span>
+                            </div>
+                            <div class="p-3.5 bg-gray-50 border border-gray-200/80 rounded-xl flex justify-between items-center sm:col-span-2">
+                                <span class="text-xs font-bold text-gray-500"><i class="fas fa-clock text-blue-500 mr-1.5"></i>SGT (Singapore)</span>
+                                <span id="resSGT" class="font-mono font-bold text-sm text-blue-600">--:-- --</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Subnet Tab -->
-                <div id="toolSectionSubnet" class="space-y-4">
+                <div id="toolSectionSubnet" class="hidden space-y-4">
                     <div>
                         <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Enter IPv4 Prefix (e.g. 192.168.10.1/24)</label>
                         <div class="flex gap-2">
@@ -540,12 +527,33 @@
         </div>
     </div>
 
+    <!-- Categories Setting Modal (Moved from Admin Panel) -->
+    <div id="categoriesManageModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col shadow-2xl animate-fadeIn border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/60 flex-shrink-0">
+                <h3 class="text-base font-bold text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-tags text-blue-600"></i> Categories Setting
+                </h3>
+                <button onclick="closeModal('categoriesManageModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 hover:text-gray-600 transition cursor-pointer">
+                    <i class="fas fa-times text-xs"></i>
+                </button>
+            </div>
+            <div class="p-5 overflow-y-auto flex-1 space-y-3" id="categoriesManageList"></div>
+            <div class="p-4 border-t border-gray-100 flex justify-between items-center bg-gray-50/80 flex-shrink-0">
+                <span class="text-xs text-gray-400">Manage info drop bar tabs</span>
+                <button onclick="openCategoryModal()" class="btn-primary bg-gray-900 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider shadow-sm transition cursor-pointer">
+                    <i class="fas fa-plus mr-1"></i> New Category
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Update Modal -->
     <div id="updateModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-gray-100 transition-colors">
             <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
                 <h3 id="updateModalTitle" class="text-base font-bold text-gray-800">Add Update</h3>
-                <button onclick="closeModal('updateModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
+                <button onclick="closeModal('updateModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 cursor-pointer">
                     <i class="fas fa-times text-xs"></i>
                 </button>
             </div>
@@ -569,8 +577,8 @@
                     <textarea id="updateMessage" rows="4" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition text-sm resize-none" required></textarea>
                 </div>
                 <div class="pt-2 flex justify-end gap-3">
-                    <button type="button" onclick="closeModal('updateModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider">Cancel</button>
-                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm">Save Update</button>
+                    <button type="button" onclick="closeModal('updateModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm cursor-pointer">Save Update</button>
                 </div>
             </form>
         </div>
@@ -581,7 +589,7 @@
         <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-gray-100 transition-colors">
             <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
                 <h3 id="userModalTitle" class="text-base font-bold text-gray-800">Add Operator</h3>
-                <button onclick="closeModal('userModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
+                <button onclick="closeModal('userModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 cursor-pointer">
                     <i class="fas fa-times text-xs"></i>
                 </button>
             </div>
@@ -598,10 +606,8 @@
                 <div>
                     <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Password</label>
                     <div class="relative">
-                        <input type="password" id="userPassword" class="w-full pl-4 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition font-mono text-sm" required>
-                        <button type="button" id="toggleEditPassword" onclick="toggleEditPasswordVisibility()" class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition">
-                            <i class="fas fa-eye text-xs"></i>
-                        </button>
+                        <input type="password" id="userPassword" class="w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition font-mono text-sm" required>
+                        <button type="button" onclick="toggleInputEye('userPassword', this)" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fas fa-eye text-xs"></i></button>
                     </div>
                 </div>
                 <div>
@@ -614,8 +620,8 @@
                     </select>
                 </div>
                 <div class="pt-2 flex justify-end gap-3">
-                    <button type="button" onclick="closeModal('userModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider">Cancel</button>
-                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm">Save Operator</button>
+                    <button type="button" onclick="closeModal('userModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm cursor-pointer">Save Operator</button>
                 </div>
             </form>
         </div>
@@ -626,7 +632,7 @@
         <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-gray-100 transition-colors">
             <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
                 <h3 id="categoryModalTitle" class="text-base font-bold text-gray-800">Add Category</h3>
-                <button onclick="closeModal('categoryModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
+                <button onclick="closeModal('categoryModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 cursor-pointer">
                     <i class="fas fa-times text-xs"></i>
                 </button>
             </div>
@@ -650,8 +656,8 @@
                     </select>
                 </div>
                 <div class="pt-2 flex justify-end gap-3">
-                    <button type="button" onclick="closeModal('categoryModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider">Cancel</button>
-                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm">Save Category</button>
+                    <button type="button" onclick="closeModal('categoryModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm cursor-pointer">Save Category</button>
                 </div>
             </form>
         </div>
@@ -662,7 +668,7 @@
         <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-gray-100 transition-colors">
             <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
                 <h3 id="folderModalTitle" class="text-base font-bold text-gray-800">Create Directory</h3>
-                <button onclick="closeModal('folderModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
+                <button onclick="closeModal('folderModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 cursor-pointer">
                     <i class="fas fa-times text-xs"></i>
                 </button>
             </div>
@@ -688,8 +694,8 @@
                     </div>
                 </div>
                 <div class="pt-2 flex justify-end gap-3">
-                    <button type="button" onclick="closeModal('folderModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider">Cancel</button>
-                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm">Save Directory</button>
+                    <button type="button" onclick="closeModal('folderModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm cursor-pointer">Save Directory</button>
                 </div>
             </form>
         </div>
@@ -700,7 +706,7 @@
         <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-gray-100 transition-colors">
             <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
                 <h3 id="learningItemModalTitle" class="text-base font-bold text-gray-800">Add Item</h3>
-                <button onclick="closeModal('learningItemModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
+                <button onclick="closeModal('learningItemModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 cursor-pointer">
                     <i class="fas fa-times text-xs"></i>
                 </button>
             </div>
@@ -741,8 +747,8 @@
                     </div>
                 </div>
                 <div class="pt-2 flex justify-end gap-3">
-                    <button type="button" onclick="closeModal('learningItemModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider">Cancel</button>
-                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm">Save Item</button>
+                    <button type="button" onclick="closeModal('learningItemModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm cursor-pointer">Save Item</button>
                 </div>
             </form>
         </div>
@@ -753,7 +759,7 @@
         <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-gray-100 transition-colors">
             <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
                 <h3 id="textViewTitle" class="text-base font-bold text-gray-800"></h3>
-                <button onclick="closeModal('textViewModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
+                <button onclick="closeModal('textViewModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 cursor-pointer">
                     <i class="fas fa-times text-xs"></i>
                 </button>
             </div>
@@ -768,14 +774,14 @@
                 <h3 class="text-base font-bold text-gray-800 flex items-center gap-2">
                     <i class="fas fa-folder-tree text-amber-500"></i> Move Item
                 </h3>
-                <button onclick="closeModal('moveModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
+                <button onclick="closeModal('moveModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 cursor-pointer">
                     <i class="fas fa-times text-xs"></i>
                 </button>
             </div>
             <div class="px-5 pt-4 pb-2 text-[11px] font-bold text-gray-400 flex-shrink-0 uppercase tracking-wider">Select destination directory:</div>
             <div id="moveFolderList" class="p-5 pt-0 space-y-2 overflow-y-auto flex-1"></div>
             <div class="p-4 border-t border-gray-100 flex justify-end flex-shrink-0 bg-gray-50/80">
-                <button type="button" onclick="closeModal('moveModal')" class="px-5 py-2 text-gray-600 hover:bg-gray-200 rounded-xl transition text-xs font-bold uppercase tracking-wider">Cancel</button>
+                <button type="button" onclick="closeModal('moveModal')" class="px-5 py-2 text-gray-600 hover:bg-gray-200 rounded-xl transition text-xs font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
             </div>
         </div>
     </div>
@@ -785,7 +791,7 @@
         <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-gray-100 transition-colors">
             <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
                 <h3 id="infoCardModalTitle" class="text-base font-bold text-gray-800">Add Item</h3>
-                <button onclick="closeModal('infoCardModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
+                <button onclick="closeModal('infoCardModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 cursor-pointer">
                     <i class="fas fa-times text-xs"></i>
                 </button>
             </div>
@@ -861,14 +867,14 @@
                     </div>
                 </div>
                 <div class="pt-2 flex justify-end gap-3">
-                    <button type="button" onclick="closeModal('infoCardModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider">Cancel</button>
-                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm">Save Card</button>
+                    <button type="button" onclick="closeModal('infoCardModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-xs font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-xs font-bold uppercase tracking-wider shadow-sm cursor-pointer">Save Card</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Backup Legacy Rename Modal -->
+    <!-- Legacy Backup Rename Modal -->
     <div id="renameModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl w-full max-w-lg p-5 space-y-4 border border-gray-100 shadow-xl">
             <h3 class="text-base font-bold">Rename</h3>
@@ -878,5 +884,5 @@
     </div>
 
     <script src="script.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a11d5755c9733f88',t:'MTc4MjQ4ODc0OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a11d703a8e23ce3d',t:'MTc4MjQ4OTc2OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
