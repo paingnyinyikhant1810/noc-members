@@ -1,5 +1,5 @@
 // ============ CONFIG & STATE ============
-const STORAGE_KEY = 'noc_portal_cache_v7';
+const STORAGE_KEY = 'noc_portal_cache_v8';
 const API_URL = '/api';
 let currentUser = null;
 let authHeader = localStorage.getItem('authHeader');
@@ -119,7 +119,7 @@ function setPortalFontSize(size) {
     updateAppearanceButtonsUI();
 }
 
-// ============ LIVE MMT CLOCK (MYANMAR TIME) ============
+// ============ LIVE MMT CLOCK ============
 updateMmtClock();
 setInterval(updateMmtClock, 1000);
 
@@ -159,12 +159,21 @@ function getHeaders() {
     return { 'Authorization': authHeader || '', 'Content-Type': 'application/json' };
 }
 
-async function refreshData(silent = false) {
-    if (!silent) showLoading();
-    
+// ZERO-BLOCKING NO-OP LOADING HANDLERS TO GUARANTEE NO FREEZE TRAPS
+function showLoading() {}
+function hideLoading() {
+    const el = document.getElementById('loadingOverlay');
+    if (el) el.remove();
+}
+
+async function refreshData() {
     let fetchedFromServer = false;
     try {
-        const res = await fetch(`${API_URL}/getData`, { headers: getHeaders() });
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 4500); // 4.5s safety timeout
+        const res = await fetch(`${API_URL}/getData`, { headers: getHeaders(), signal: controller.signal });
+        clearTimeout(tid);
+
         if (res.status === 401) {
             logout();
             return null;
@@ -172,7 +181,7 @@ async function refreshData(silent = false) {
         if (res.ok) {
             const data = await res.json();
             if (data) {
-                const mergeArr = (def, srv) => (srv && Array.isArray(srv)) ? srv : def;
+                const mergeArr = (def, srv) => (srv && Array.isArray(srv) && srv.length > 0) ? srv : def;
                 appData = {
                     users: mergeArr(appData.users || defaultData.users, data.users),
                     updates: mergeArr(defaultData.updates, data.updates),
@@ -199,50 +208,9 @@ async function refreshData(silent = false) {
     } catch (e) {}
 
     if (!fetchedFromServer) loadLocalCache();
-
     refreshUI();
-    if (!silent) hideLoading();
     return appData;
 }
-
-// ============ LOADING OVERLAY ============
-function showLoading(showProgress = false) {
-    const existing = document.getElementById('loadingOverlay');
-    if (existing) existing.remove();
-    
-    const overlay = document.createElement('div');
-    overlay.id = 'loadingOverlay';
-    overlay.className = 'fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[9999]';
-    
-    if (showProgress) {
-        overlay.innerHTML = `
-            <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 animate-fadeIn min-w-[260px] border border-gray-100">
-                <div class="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin"></div>
-                <div class="text-center">
-                    <p class="text-gray-900 font-bold text-sm">Synchronizing workspace...</p>
-                </div>
-            </div>
-        `;
-    } else {
-        overlay.innerHTML = `
-            <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 animate-fadeIn border border-gray-100">
-                <div class="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin"></div>
-                <p class="text-gray-900 font-bold text-sm">Please wait...</p>
-            </div>
-        `;
-    }
-    document.body.appendChild(overlay);
-}
-
-function hideLoading() {
-    const overlay = document.getElementById('loadingOverlay');
-    if (overlay) {
-        overlay.classList.add('animate-fadeOut');
-        setTimeout(() => overlay.remove(), 200);
-    }
-}
-
-function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ============ TOAST HELPERS ============
 function showToast(message, type = 'error') {
@@ -334,57 +302,58 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
     const loginBtn = document.getElementById('loginBtn');
     const loginBox = document.getElementById('loginBox');
 
-    loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Connecting...';
+    loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Signing in...';
     loginBtn.disabled = true;
 
     const tempAuth = 'Basic ' + btoa(u + ':' + p);
 
     let loggedIn = false;
+    let srvUser = null;
+
     try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 4000);
         const res = await fetch(`${API_URL}/login`, {
             method: 'POST',
-            headers: { 'Authorization': tempAuth, 'Content-Type': 'application/json' }
+            headers: { 'Authorization': tempAuth, 'Content-Type': 'application/json' },
+            signal: controller.signal
         });
+        clearTimeout(tid);
         if (res.ok) {
             const data = await res.json();
-            authHeader = tempAuth;
-            localStorage.setItem('authHeader', authHeader);
-            currentUser = data.user || { username: u, accountName: u, role: 'member' };
-            localStorage.setItem('noc_current_user', JSON.stringify(currentUser));
+            srvUser = data.user;
             loggedIn = true;
         } else if (res.status === 401) {
             loggedIn = false;
         }
     } catch (err) {}
 
-    if (!loggedIn && !authHeader) {
+    if (!loggedIn) {
         loadLocalCache();
         const user = appData.users?.find(x => x.username === u && x.password === p);
         if (user) {
-            authHeader = tempAuth;
-            localStorage.setItem('authHeader', authHeader);
-            currentUser = user;
-            localStorage.setItem('noc_current_user', JSON.stringify(currentUser));
+            srvUser = user;
             loggedIn = true;
         }
     }
 
     if (loggedIn) {
-        showLoading(true);
-        await delay(50);
+        authHeader = tempAuth;
+        localStorage.setItem('authHeader', authHeader);
+        currentUser = srvUser || { username: u, accountName: u, role: 'member' };
+        localStorage.setItem('noc_current_user', JSON.stringify(currentUser));
 
-        // Crucial Fix: Unhide main workspace immediately before rendering data
+        // ZERO FREEZE: Immediately switch views
         document.getElementById('loginPage').classList.add('hidden');
         document.getElementById('mainApp').classList.remove('hidden');
         document.getElementById('welcomeUser').textContent = currentUser.accountName || u;
         document.getElementById('mobileWelcome').textContent = currentUser.accountName || u;
         updateAdminUI();
 
-        await refreshData(true);
-
         navigateTo('home');
-        await delay(50);
-        hideLoading();
+
+        // Fetch latest Cloudflare records silently in background
+        refreshData();
     } else {
         loginBox?.classList.add('shake');
         showToast('Invalid username or password!', 'error');
@@ -404,10 +373,7 @@ async function initApp() {
         return;
     }
 
-    showLoading(true);
-    await delay(50);
-
-    // Immediately restore workspace from local session
+    // ZERO FREEZE: Instantly restore workspace
     document.getElementById('loginPage').classList.add('hidden');
     document.getElementById('mainApp').classList.remove('hidden');
 
@@ -425,25 +391,12 @@ async function initApp() {
         document.getElementById('mobileWelcome').textContent = currentUser.accountName || creds[0];
         updateAdminUI();
 
-        // Fetch latest Cloudflare D1 records in parallel
-        const data = await refreshData(true);
-        if (data && data.users) {
-            const u = data.users.find(x => x.username === creds[0]);
-            if (u) {
-                currentUser = u;
-                localStorage.setItem('noc_current_user', JSON.stringify(u));
-                document.getElementById('welcomeUser').textContent = currentUser.accountName;
-                document.getElementById('mobileWelcome').textContent = currentUser.accountName;
-                updateAdminUI();
-            }
-        }
-
         navigateTo('home');
-        await delay(50);
-        hideLoading();
+
+        // Fetch latest D1 records silently in background
+        refreshData();
     } catch (err) {
         logout();
-        hideLoading();
     }
 }
 
@@ -525,7 +478,6 @@ async function saveUserPassword(event) {
     if (newP !== confP) return showToast('New passwords do not match!', 'error');
     if (newP.length < 3) return showToast('Must be at least 3 characters!', 'error');
 
-    showLoading(true);
     let savedOnCloudflare = false;
     try {
         const res = await fetch(`${API_URL}/`, {
@@ -549,7 +501,6 @@ async function saveUserPassword(event) {
     localStorage.setItem('noc_current_user', JSON.stringify(currentUser));
     saveLocalCache();
 
-    hideLoading();
     closeModal('settingsModal');
     showToast(savedOnCloudflare ? 'Cloudflare database password updated!' : 'Password updated locally!', 'success');
 }
@@ -701,7 +652,6 @@ function getTableKey(table) {
 async function saveToApi(table, data) {
     if (isProcessing) return false;
     isProcessing = true;
-    showLoading(true);
 
     let savedOnServer = false;
     try {
@@ -736,10 +686,9 @@ async function saveToApi(table, data) {
     saveLocalCache();
 
     if (savedOnServer) {
-        await refreshData(true);
+        refreshData();
     }
 
-    hideLoading();
     showToast('Saved successfully!', 'success');
     refreshUI();
     isProcessing = false;
@@ -749,7 +698,6 @@ async function saveToApi(table, data) {
 async function deleteFromApi(table, id) {
     if (isProcessing) return false;
     isProcessing = true;
-    showLoading(true);
 
     let deletedOnServer = false;
     try {
@@ -785,10 +733,9 @@ async function deleteFromApi(table, id) {
     saveLocalCache();
 
     if (deletedOnServer) {
-        await refreshData(true);
+        refreshData();
     }
 
-    hideLoading();
     showToast('Deleted successfully!', 'success');
     refreshUI();
     isProcessing = false;
