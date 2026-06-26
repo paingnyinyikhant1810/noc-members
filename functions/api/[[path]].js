@@ -30,6 +30,28 @@ export const onRequest = async (context) => {
     }
   }
 
+  // Helper to resolve table names (supporting both singular and plural table conventions in D1)
+  const resolveTable = async (plural, singular) => {
+    if (!db) return plural;
+    try { await db.prepare(`SELECT 1 FROM ${plural} LIMIT 1`).all(); return plural; }
+    catch(e) {
+      if (singular) {
+        try { await db.prepare(`SELECT 1 FROM ${singular} LIMIT 1`).all(); return singular; }
+        catch(e2){}
+      }
+      return plural;
+    }
+  };
+
+  const queryTable = async (plural, singular, orderClause = "") => {
+    if (!db) return [];
+    const tName = await resolveTable(plural, singular);
+    try {
+      const r = await db.prepare(`SELECT * FROM ${tName} ${orderClause}`).all();
+      return r.results || [];
+    } catch(e) { return []; }
+  };
+
   // --- Authentication Helper ---
   const getAuth = async () => {
     const auth = request.headers.get("Authorization");
@@ -41,7 +63,8 @@ export const onRequest = async (context) => {
       const username = credentials.slice(0, idx).trim();
       const password = credentials.slice(idx + 1);
       if (!username || !password || !db) return null;
-      return await db.prepare("SELECT * FROM users WHERE username = ? AND password = ?")
+      const tUsers = await resolveTable('users', 'user');
+      return await db.prepare(`SELECT * FROM ${tUsers} WHERE username = ? AND password = ?`)
         .bind(username, password)
         .first();
     } catch (e) { return null; }
@@ -65,8 +88,9 @@ export const onRequest = async (context) => {
   // Self-Healing Schema: Automatically add permissions column if missing in D1
   const ensureSchema = async () => {
     if (!db) return;
-    const contentTables = ['folders', 'learning_items', 'info_cards'];
-    for (const t of contentTables) {
+    const pairs = [['folders','folder'], ['learning_items','learning_item'], ['info_cards','info_card']];
+    for (const [pl, sg] of pairs) {
+      const t = await resolveTable(pl, sg);
       try {
         await db.prepare(`SELECT permissions FROM ${t} LIMIT 1`).all();
       } catch(e) {
@@ -105,21 +129,21 @@ export const onRequest = async (context) => {
     }
 
     const [updatesRes, categoriesRes, infoCardsRes, learningItemsRes, foldersRes, usersRes] = await Promise.all([
-      db.prepare("SELECT * FROM updates ORDER BY id DESC").all().catch(() => ({ results: [] })),
-      db.prepare("SELECT * FROM categories").all().catch(() => ({ results: [] })),
-      db.prepare("SELECT * FROM info_cards").all().catch(() => ({ results: [] })),
-      db.prepare("SELECT * FROM learning_items").all().catch(() => ({ results: [] })),
-      db.prepare("SELECT * FROM folders").all().catch(() => ({ results: [] })),
-      isAdmin ? db.prepare("SELECT * FROM users").all().catch(() => ({ results: [user] })) : Promise.resolve({ results: [user] })
+      queryTable('updates', 'update', 'ORDER BY id DESC'),
+      queryTable('categories', 'category'),
+      queryTable('info_cards', 'info_card').then(r => parsePerms(r)),
+      queryTable('learning_items', 'learning_item').then(r => parsePerms(r)),
+      queryTable('folders', 'folder').then(r => parsePerms(r)),
+      isAdmin ? queryTable('users', 'user') : Promise.resolve([user])
     ]);
 
     const data = {
-      updates: updatesRes.results || [],
-      categories: categoriesRes.results || [],
-      infoCards: parsePerms(infoCardsRes.results || []),
-      learningItems: parsePerms(learningItemsRes.results || []),
-      folders: parsePerms(foldersRes.results || []),
-      users: usersRes.results || [user]
+      updates: updatesRes,
+      categories: categoriesRes,
+      infoCards: infoCardsRes,
+      learningItems: learningItemsRes,
+      folders: foldersRes,
+      users: usersRes
     };
 
     return new Response(JSON.stringify(data), {
@@ -134,57 +158,69 @@ export const onRequest = async (context) => {
     const { action, table, data, id } = body;
 
     try {
-      if (action === 'changePassword' || (action === 'save' && table === 'users' && data && data.id === user.id)) {
+      const tUsers = await resolveTable('users', 'user');
+
+      if (action === 'changePassword' || (action === 'save' && (table === 'users' || table === 'user') && data && data.id === user.id)) {
         const newPwd = data ? data.password : body.newPassword;
         if (!newPwd) throw new Error("Password required");
-        await db.prepare("UPDATE users SET password=? WHERE id=?").bind(newPwd, user.id).run();
+        await db.prepare(`UPDATE ${tUsers} SET password=? WHERE id=?`).bind(newPwd, user.id).run();
         return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       }
 
       const userRole = user.role ? String(user.role).toLowerCase().trim() : '';
       const isContentManager = userRole === 'admin' || userRole === 'administrator' || userRole === 'leader' || userRole === 'team leader';
       const isAdmin = userRole === 'admin' || userRole === 'administrator';
-      const contentTables = ['updates', 'info_cards', 'learning_items', 'folders'];
-      const adminTables = ['users', 'categories'];
+      
+      const contentTargets = ['updates', 'update', 'info_cards', 'info_card', 'learning_items', 'learning_item', 'folders', 'folder'];
+      const adminTargets = ['users', 'user', 'categories', 'category'];
 
-      if (!contentTables.includes(table) && !adminTables.includes(table)) throw new Error("Invalid table target");
-      if (contentTables.includes(table) && !isContentManager) return new Response("Forbidden: Requires Leader or Admin", { status: 403, headers: corsHeaders });
-      if (adminTables.includes(table) && !isAdmin) return new Response("Forbidden: Requires Admin", { status: 403, headers: corsHeaders });
+      if (!contentTargets.includes(table) && !adminTargets.includes(table)) throw new Error("Invalid table target");
+      if (contentTargets.includes(table) && !isContentManager) return new Response("Forbidden: Requires Leader or Admin", { status: 403, headers: corsHeaders });
+      if (adminTargets.includes(table) && !isAdmin) return new Response("Forbidden: Requires Admin", { status: 403, headers: corsHeaders });
 
       try { await ensureSchema(); } catch(e) {}
 
+      // Resolve actual table name in D1
+      let targetT = table;
+      if (table === 'updates' || table === 'update') targetT = await resolveTable('updates', 'update');
+      else if (table === 'categories' || table === 'category') targetT = await resolveTable('categories', 'category');
+      else if (table === 'info_cards' || table === 'info_card') targetT = await resolveTable('info_cards', 'info_card');
+      else if (table === 'folders' || table === 'folder') targetT = await resolveTable('folders', 'folder');
+      else if (table === 'learning_items' || table === 'learning_item') targetT = await resolveTable('learning_items', 'learning_item');
+      else if (table === 'users' || table === 'user') targetT = tUsers;
+
       if (action === 'delete') {
-        if (!id || !table) throw new Error("Missing ID or table");
-        await db.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
+        if (!id || !targetT) throw new Error("Missing ID or table");
+        await db.prepare(`DELETE FROM ${targetT} WHERE id = ?`).bind(id).run();
         return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       }
 
       if (action === 'save') {
         const permsStr = data.permissions ? JSON.stringify(data.permissions) : '["intern","member","leader","admin"]';
 
-        if (table === 'users') {
-          if (data.id) await db.prepare("UPDATE users SET accountName=?, username=?, password=?, role=? WHERE id=?").bind(data.accountName, data.username, data.password, data.role, data.id).run();
-          else await db.prepare("INSERT INTO users (accountName, username, password, role) VALUES (?, ?, ?, ?)").bind(data.accountName, data.username, data.password, data.role).run();
+        if (targetT === await resolveTable('users', 'user')) {
+          if (data.id) await db.prepare(`UPDATE ${targetT} SET accountName=?, username=?, password=?, role=? WHERE id=?`).bind(data.accountName, data.username, data.password, data.role, data.id).run();
+          else await db.prepare(`INSERT INTO ${targetT} (accountName, username, password, role) VALUES (?, ?, ?, ?)`).bind(data.accountName, data.username, data.password, data.role).run();
         }
-        else if (table === 'updates') {
-          if (data.id) await db.prepare("UPDATE updates SET topic=?, badge=?, message=?, author=?, date=? WHERE id=?").bind(data.topic, data.badge, data.message, data.author, data.date, data.id).run();
-          else await db.prepare("INSERT INTO updates (topic, badge, message, author, date) VALUES (?, ?, ?, ?, ?)").bind(data.topic, data.badge, data.message, data.author, data.date).run();
+        else if (targetT === await resolveTable('updates', 'update')) {
+          if (data.id) await db.prepare(`UPDATE ${targetT} SET topic=?, badge=?, message=?, author=?, date=? WHERE id=?`).bind(data.topic, data.badge, data.message, data.author, data.date, data.id).run();
+          else await db.prepare(`INSERT INTO ${targetT} (topic, badge, message, author, date) VALUES (?, ?, ?, ?, ?)`).bind(data.topic, data.badge, data.message, data.author, data.date).run();
         }
-        else if (table === 'categories') {
-          if (data.id) await db.prepare("UPDATE categories SET name=?, icon=? WHERE id=?").bind(data.name, data.icon, data.id).run();
-          else await db.prepare("INSERT INTO categories (name, icon) VALUES (?, ?)").bind(data.name, data.icon).run();
+        else if (targetT === await resolveTable('categories', 'category')) {
+          if (data.id) await db.prepare(`UPDATE ${targetT} SET name=?, icon=? WHERE id=?`).bind(data.name, data.icon, data.id).run();
+          else await db.prepare(`INSERT INTO ${targetT} (name, icon) VALUES (?, ?)`).bind(data.name, data.icon).run();
         }
-        else if (table === 'info_cards') {
-          if (data.id) await db.prepare("UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, permissions=? WHERE id=?").bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr, data.id).run();
-          else await db.prepare("INSERT INTO info_cards (title, displayType, icon, image, link, categoryId, permissions) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(data.title, displayType, data.icon, data.image, data.link, data.categoryId, permsStr).run();
+        else if (targetT === await resolveTable('info_cards', 'info_card')) {
+          if (data.id) await db.prepare(`UPDATE ${targetT} SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, permissions=? WHERE id=?`).bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr, data.id).run();
+          else await db.prepare(`INSERT INTO ${targetT} (title, displayType, icon, image, link, categoryId, permissions) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr).run();
         }
-        else if (table === 'folders') {
-          if (data.id) await db.prepare("UPDATE folders SET name=?, parentId=?, permissions=? WHERE id=?").bind(data.name, data.parentId, permsStr, data.id).run();
-          else await db.prepare("INSERT INTO folders (name, parentId, permissions) VALUES (?, ?, ?)").bind(data.name, data.parentId, permsStr).run();
+        else if (targetT === await resolveTable('folders', 'folder')) {
+          if (data.id) await db.prepare(`UPDATE ${targetT} SET name=?, parentId=?, permissions=? WHERE id=?`).bind(data.name, data.parentId, permsStr, data.id).run();
+          else await db.prepare(`INSERT INTO ${targetT} (name, parentId, permissions) VALUES (?, ?, ?)`).bind(data.name, data.parentId, permsStr).run();
         }
-        else if (table === 'learning_items') {
-          if (data.id) await db.prepare("UPDATE learning_items SET topic=?, type=?, link=?, content=?, folderId=?, permissions=? WHERE id=?").bind(data.topic, data.type, data.link, data.content, data.folderId, permsStr, data.id).run();
-          else await db.prepare("INSERT INTO learning_items (topic, type, link, content, folderId, permissions) VALUES (?, ?, ?, ?, ?, ?)").bind(data.topic, data.type, data.link, data.content, data.folderId, permsStr).run();
+        else if (targetT === await resolveTable('learning_items', 'learning_item')) {
+          if (data.id) await db.prepare(`UPDATE ${targetT} SET topic=?, type=?, link=?, content=?, folderId=?, permissions=? WHERE id=?`).bind(data.topic, data.type, data.link, data.content, data.folderId, permsStr, data.id).run();
+          else await db.prepare(`INSERT INTO ${targetT} (topic, type, link, content, folderId, permissions) VALUES (?, ?, ?, ?, ?, ?)`).bind(data.topic, data.type, data.link, data.content, data.folderId, permsStr).run();
         }
 
         return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
