@@ -44,9 +44,23 @@ export const onRequest = async (context) => {
     return new Response("Unauthorized", { status: 401, headers: corsHeaders });
   }
 
-  // Helper to safely parse permissions field
+  // Self-Healing Schema: Automatically add permissions column if missing in D1
+  const ensureSchema = async () => {
+    const contentTables = ['folders', 'learning_items', 'info_cards'];
+    for (const t of contentTables) {
+      try {
+        await env.DB.prepare(`SELECT permissions FROM ${t} LIMIT 1`).all();
+      } catch(e) {
+        try {
+          await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN permissions TEXT DEFAULT '["intern","member","leader","admin"]'`).run();
+        } catch(err2) {}
+      }
+    }
+  };
+
+  // Helper to parse permissions JSON string
   const parsePerms = (arr) => {
-    if (!arr) return [];
+    if (!arr || !Array.isArray(arr)) return [];
     return arr.map(x => {
       let p = ['intern', 'member', 'leader', 'admin'];
       if (x && x.permissions) {
@@ -58,28 +72,40 @@ export const onRequest = async (context) => {
     });
   };
 
-  // --- 2. Get All Data Endpoint ---
+  // --- 2. Get All Data Endpoint (Parallel Execution) ---
   if (path === "getData" && request.method === "GET") {
+    await ensureSchema();
+
+    const [updatesRes, categoriesRes, infoCardsRes, learningItemsRes, foldersRes, usersRes] = await Promise.all([
+      env.DB.prepare("SELECT * FROM updates ORDER BY id DESC").all().catch(() => ({ results: [] })),
+      env.DB.prepare("SELECT * FROM categories").all().catch(() => ({ results: [] })),
+      env.DB.prepare("SELECT * FROM info_cards").all().catch(() => ({ results: [] })),
+      env.DB.prepare("SELECT * FROM learning_items").all().catch(() => ({ results: [] })),
+      env.DB.prepare("SELECT * FROM folders").all().catch(() => ({ results: [] })),
+      (user.role === 'admin') ? env.DB.prepare("SELECT * FROM users").all().catch(() => ({ results: [user] })) : Promise.resolve({ results: [user] })
+    ]);
+
     const data = {
-      updates: await env.DB.prepare("SELECT * FROM updates ORDER BY id DESC").all().then(r => r.results || []),
-      categories: await env.DB.prepare("SELECT * FROM categories").all().then(r => r.results || []),
-      infoCards: await env.DB.prepare("SELECT * FROM info_cards").all().then(r => parsePerms(r.results)),
-      learningItems: await env.DB.prepare("SELECT * FROM learning_items").all().then(r => parsePerms(r.results)),
-      folders: await env.DB.prepare("SELECT * FROM folders").all().then(r => parsePerms(r.results)),
-      users: (user.role === 'admin') ? await env.DB.prepare("SELECT * FROM users").all().then(r => r.results || []) : [user]
+      updates: updatesRes.results || [],
+      categories: categoriesRes.results || [],
+      infoCards: parsePerms(infoCardsRes.results || []),
+      learningItems: parsePerms(learningItemsRes.results || []),
+      folders: parsePerms(foldersRes.results || []),
+      users: usersRes.results || [user]
     };
+
     return new Response(JSON.stringify(data), {
       headers: { "Content-Type": "application/json", ...corsHeaders }
     });
   }
 
-  // --- 3. CRUD & Actions Operations ---
+  // --- 3. CRUD Operations ---
   if (request.method === "POST") {
     const body = await request.json();
     const { action, table, data, id } = body;
 
     try {
-      // --- Case A: User changes their own password ---
+      // Case A: User changes their own password
       if (action === 'changePassword' || (action === 'save' && table === 'users' && data && data.id === user.id)) {
         const newPwd = data ? data.password : body.newPassword;
         if (!newPwd) throw new Error("Password required");
@@ -87,14 +113,13 @@ export const onRequest = async (context) => {
         return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       }
 
-      // Check role authorization for content vs admin management
       const isContentManager = user.role === 'admin' || user.role === 'leader';
       const isAdmin = user.role === 'admin';
       const contentTables = ['updates', 'info_cards', 'learning_items', 'folders'];
       const adminTables = ['users', 'categories'];
 
       if (!contentTables.includes(table) && !adminTables.includes(table)) {
-        throw new Error("Invalid table");
+        throw new Error("Invalid table target");
       }
 
       if (contentTables.includes(table) && !isContentManager) {
@@ -105,18 +130,19 @@ export const onRequest = async (context) => {
         return new Response("Forbidden: Requires Admin role", { status: 403, headers: corsHeaders });
       }
 
-      // --- DELETE ---
+      await ensureSchema();
+
+      // DELETE
       if (action === 'delete') {
         if (!id || !table) throw new Error("Missing ID or table");
         await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
         return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       }
 
-      // --- SAVE (Insert or Update) ---
+      // SAVE
       if (action === 'save') {
         const permsStr = data.permissions ? JSON.stringify(data.permissions) : '["intern","member","leader","admin"]';
 
-        // --- USERS ---
         if (table === 'users') {
           if (data.id) {
             await env.DB.prepare("UPDATE users SET accountName=?, username=?, password=?, role=? WHERE id=?")
@@ -126,8 +152,6 @@ export const onRequest = async (context) => {
               .bind(data.accountName, data.username, data.password, data.role).run();
           }
         }
-        
-        // --- UPDATES ---
         else if (table === 'updates') {
           if (data.id) {
             await env.DB.prepare("UPDATE updates SET topic=?, badge=?, message=?, author=?, date=? WHERE id=?")
@@ -137,8 +161,6 @@ export const onRequest = async (context) => {
               .bind(data.topic, data.badge, data.message, data.author, data.date).run();
           }
         }
-
-        // --- CATEGORIES ---
         else if (table === 'categories') {
           if (data.id) {
              await env.DB.prepare("UPDATE categories SET name=?, icon=? WHERE id=?").bind(data.name, data.icon, data.id).run();
@@ -146,66 +168,31 @@ export const onRequest = async (context) => {
              await env.DB.prepare("INSERT INTO categories (name, icon) VALUES (?, ?)").bind(data.name, data.icon).run();
           }
         }
-
-        // --- INFO CARDS ---
         else if (table === 'info_cards') {
-          try {
-            if (data.id) {
-               await env.DB.prepare("UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, permissions=? WHERE id=?")
-                 .bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr, data.id).run();
-            } else {
-               await env.DB.prepare("INSERT INTO info_cards (title, displayType, icon, image, link, categoryId, permissions) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                 .bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr).run();
-            }
-          } catch(colErr) {
-            // Fallback if D1 database does not have permissions column yet
-            if (data.id) {
-               await env.DB.prepare("UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=? WHERE id=?")
-                 .bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, data.id).run();
-            } else {
-               await env.DB.prepare("INSERT INTO info_cards (title, displayType, icon, image, link, categoryId) VALUES (?, ?, ?, ?, ?, ?)")
-                 .bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId).run();
-            }
+          if (data.id) {
+             await env.DB.prepare("UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, permissions=? WHERE id=?")
+               .bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr, data.id).run();
+          } else {
+             await env.DB.prepare("INSERT INTO info_cards (title, displayType, icon, image, link, categoryId, permissions) VALUES (?, ?, ?, ?, ?, ?, ?)")
+               .bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr).run();
           }
         }
-
-        // --- FOLDERS ---
         else if (table === 'folders') {
-          try {
-            if (data.id) {
-              await env.DB.prepare("UPDATE folders SET name=?, parentId=?, permissions=? WHERE id=?")
-                .bind(data.name, data.parentId, permsStr, data.id).run();
-            } else {
-              await env.DB.prepare("INSERT INTO folders (name, parentId, permissions) VALUES (?, ?, ?)")
-                .bind(data.name, data.parentId, permsStr).run();
-            }
-          } catch(colErr) {
-            if (data.id) {
-              await env.DB.prepare("UPDATE folders SET name=?, parentId=? WHERE id=?").bind(data.name, data.parentId, data.id).run();
-            } else {
-              await env.DB.prepare("INSERT INTO folders (name, parentId) VALUES (?, ?)").bind(data.name, data.parentId).run();
-            }
+          if (data.id) {
+            await env.DB.prepare("UPDATE folders SET name=?, parentId=?, permissions=? WHERE id=?")
+              .bind(data.name, data.parentId, permsStr, data.id).run();
+          } else {
+            await env.DB.prepare("INSERT INTO folders (name, parentId, permissions) VALUES (?, ?, ?)")
+              .bind(data.name, data.parentId, permsStr).run();
           }
         }
-
-        // --- LEARNING ITEMS ---
         else if (table === 'learning_items') {
-          try {
-            if (data.id) {
-              await env.DB.prepare("UPDATE learning_items SET topic=?, type=?, link=?, content=?, folderId=?, permissions=? WHERE id=?")
-                .bind(data.topic, data.type, data.link, data.content, data.folderId, permsStr, data.id).run();
-            } else {
-              await env.DB.prepare("INSERT INTO learning_items (topic, type, link, content, folderId, permissions) VALUES (?, ?, ?, ?, ?, ?)")
-                .bind(data.topic, data.type, data.link, data.content, data.folderId, permsStr).run();
-            }
-          } catch(colErr) {
-            if (data.id) {
-              await env.DB.prepare("UPDATE learning_items SET topic=?, type=?, link=?, content=?, folderId=? WHERE id=?")
-                .bind(data.topic, data.type, data.link, data.content, data.folderId, data.id).run();
-            } else {
-              await env.DB.prepare("INSERT INTO learning_items (topic, type, link, content, folderId) VALUES (?, ?, ?, ?, ?)")
-                .bind(data.topic, data.type, data.link, data.content, data.folderId).run();
-            }
+          if (data.id) {
+            await env.DB.prepare("UPDATE learning_items SET topic=?, type=?, link=?, content=?, folderId=?, permissions=? WHERE id=?")
+              .bind(data.topic, data.type, data.link, data.content, data.folderId, permsStr, data.id).run();
+          } else {
+            await env.DB.prepare("INSERT INTO learning_items (topic, type, link, content, folderId, permissions) VALUES (?, ?, ?, ?, ?, ?)")
+              .bind(data.topic, data.type, data.link, data.content, data.folderId, permsStr).run();
           }
         }
 
