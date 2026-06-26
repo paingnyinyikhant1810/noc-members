@@ -8,83 +8,84 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-gray-50 min-h-screen transition-colors duration-200">
     <!-- Toast Container -->
     <div id="toastContainer" class="fixed top-4 right-4 z-[100] space-y-2"></div>
 
     <!-- Context Menu -->
     <div id="contextMenu" class="hidden fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[90] context-menu min-w-[160px]">
-        <button onclick="editContextItem()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3">
+        <button onclick="editContextItem()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3 text-sm font-medium">
             <i class="fas fa-pen text-gray-400 w-4"></i> Edit
         </button>
-        <button onclick="moveItem()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3">
+        <button onclick="moveItem()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3 text-sm font-medium">
             <i class="fas fa-folder-tree text-gray-400 w-4"></i> Move
         </button>
         <hr class="my-2 border-gray-100">
-        <button onclick="deleteItem()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 flex items-center gap-3">
+        <button onclick="deleteItem()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm font-medium">
             <i class="fas fa-trash w-4"></i> Delete
         </button>
     </div>
 
     <!-- Info Card Context Menu -->
     <div id="infoCardContextMenu" class="hidden fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[90] info-card-context-menu min-w-[160px]">
-        <button onclick="editInfoCardFromContext()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3">
+        <button onclick="editInfoCardFromContext()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3 text-sm font-medium">
             <i class="fas fa-edit text-gray-400 w-4"></i> Edit
         </button>
         <hr class="my-2 border-gray-100">
-        <button onclick="deleteInfoCardFromContext()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 flex items-center gap-3">
+        <button onclick="deleteInfoCardFromContext()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 flex items-center gap-3 text-sm font-medium">
             <i class="fas fa-trash w-4"></i> Delete
         </button>
     </div>
 
     <!-- Login Page -->
     <div id="loginPage" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
-        <div id="loginBox" class="bg-white p-8 rounded-3xl shadow-2xl shadow-gray-200/50 w-full max-w-md border border-gray-100">
+        <div id="loginBox" class="bg-white p-8 rounded-3xl shadow-2xl shadow-gray-200/50 w-full max-w-md border border-gray-100 transition-all">
             <div class="text-center mb-8">
-                <div class="w-20 h-20 bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                    <i class="fas fa-users text-white text-3xl"></i>
+                <div class="w-16 h-16 bg-gray-900 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                    <i class="fas fa-network-wired text-white text-2xl"></i>
                 </div>
                 <h1 class="text-3xl font-bold text-gray-800">NOC Portal</h1>
-                <p class="text-gray-400 mt-2">Welcome , Sign in to continue</p>
+                <p class="text-gray-400 mt-2 text-sm">Sign in to your Cloudflare database account</p>
             </div>
             <form id="loginForm" class="space-y-5">
                 <div>
-                    <label class="block text-sm font-medium text-gray-600 mb-2">Username</label>
+                    <label class="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Username</label>
                     <div class="relative">
                         <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                        <input type="text" id="username" class="login-input w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="Enter username">
+                        <input type="text" id="username" class="login-input w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm" placeholder="Enter username" required>
                     </div>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-600 mb-2">Password</label>
+                    <label class="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Password</label>
                     <div class="relative">
                         <i class="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                        <input type="password" id="password" class="login-input w-full pl-11 pr-12 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="Enter password">
+                        <input type="password" id="password" class="login-input w-full pl-11 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm" placeholder="Enter password" required>
                         <button type="button" id="togglePassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition">
                             <i class="fas fa-eye"></i>
                         </button>
                     </div>
                 </div>
-                <button type="submit" id="loginBtn" class="w-full bg-gradient-to-r from-gray-800 to-gray-900 text-white py-3.5 rounded-xl font-semibold hover:from-gray-900 hover:to-black transition-all shadow-lg shadow-gray-300 flex items-center justify-center gap-2">
+                <button type="submit" id="loginBtn" class="w-full bg-gray-900 text-white py-3.5 rounded-xl font-bold text-sm hover:bg-gray-800 transition-all shadow-lg shadow-gray-300 flex items-center justify-center gap-2">
                     <span>Sign In</span>
-                    <i class="fas fa-arrow-right"></i>
+                    <i class="fas fa-arrow-right text-xs"></i>
                 </button>
             </form>
 
+            <!-- Minimalist Test Accounts Helper -->
             <div class="mt-8 pt-6 border-t border-gray-100 text-center">
-                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick Login Demo Accounts</p>
+                <p class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">Quick Test Demo Perspectives</p>
                 <div class="grid grid-cols-2 gap-2">
-                    <button type="button" onclick="quickLogin('admin', 'admin123')" class="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-semibold rounded-xl transition border border-purple-200 flex items-center justify-center gap-1.5 shadow-sm">
-                        <span>👑</span> Admin
+                    <button type="button" onclick="quickLogin('admin', 'admin123')" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl transition border border-slate-200 flex items-center justify-center gap-2 shadow-2xs">
+                        <i class="fas fa-shield-halved text-purple-600"></i> Admin
                     </button>
-                    <button type="button" onclick="quickLogin('leader', 'leader123')" class="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-xl transition border border-blue-200 flex items-center justify-center gap-1.5 shadow-sm">
-                        <span>⭐</span> Leader
+                    <button type="button" onclick="quickLogin('leader', 'leader123')" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl transition border border-slate-200 flex items-center justify-center gap-2 shadow-2xs">
+                        <i class="fas fa-star text-blue-600"></i> Leader
                     </button>
-                    <button type="button" onclick="quickLogin('member', 'member123')" class="px-3 py-2 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-semibold rounded-xl transition border border-green-200 flex items-center justify-center gap-1.5 shadow-sm">
-                        <span>👤</span> Member
+                    <button type="button" onclick="quickLogin('member', 'member123')" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl transition border border-slate-200 flex items-center justify-center gap-2 shadow-2xs">
+                        <i class="fas fa-user text-emerald-600"></i> Member
                     </button>
-                    <button type="button" onclick="quickLogin('intern', 'intern123')" class="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-semibold rounded-xl transition border border-amber-200 flex items-center justify-center gap-1.5 shadow-sm">
-                        <span>🌱</span> Intern
+                    <button type="button" onclick="quickLogin('intern', 'intern123')" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl transition border border-slate-200 flex items-center justify-center gap-2 shadow-2xs">
+                        <i class="fas fa-seedling text-amber-600"></i> Intern
                     </button>
                 </div>
             </div>
@@ -100,91 +101,102 @@
             <div>
                 <div class="p-5 border-b border-gray-100">
                     <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-users text-white text-lg"></i>
+                        <div class="w-10 h-10 bg-gray-900 rounded-xl flex items-center justify-center text-white">
+                            <i class="fas fa-network-wired text-base"></i>
                         </div>
                         <div>
-                            <h2 class="font-bold text-gray-800">NOC Portal</h2>
-                            <p class="text-sm text-gray-400" id="mobileWelcome">Welcome</p>
+                            <h2 class="font-bold text-gray-800 leading-tight">NOC Portal</h2>
+                            <p class="text-xs text-gray-400 truncate" id="mobileWelcome">Welcome</p>
                         </div>
                     </div>
                 </div>
-                <nav class="p-4 space-y-2">
-                    <button onclick="navigateTo('home'); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition" data-page="home">
-                        <i class="fas fa-home w-5"></i> Home
+                <nav class="p-4 space-y-1.5">
+                    <button onclick="navigateTo('home'); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-medium" data-page="home">
+                        <i class="fas fa-home w-5 text-center"></i> Home
                     </button>
-                    <button onclick="navigateTo('learning'); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition" data-page="learning">
-                        <i class="fas fa-book w-5"></i> Learning
+                    <button onclick="navigateTo('learning'); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-medium" data-page="learning">
+                        <i class="fas fa-book w-5 text-center"></i> Learning
                     </button>
-                    <button onclick="openChangePasswordModal(); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition">
-                        <i class="fas fa-key w-5"></i> Change Password
+                    <button onclick="openToolsModal(); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-medium">
+                        <i class="fas fa-toolbox w-5 text-center"></i> NOC Tools
                     </button>
                     <div id="mobileAdminBtn" class="hidden">
-                        <button onclick="navigateTo('admin'); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition" data-page="admin">
-                            <i class="fas fa-cog w-5"></i> Admin Panel
+                        <button onclick="navigateTo('admin'); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-medium" data-page="admin">
+                            <i class="fas fa-shield-halved w-5 text-center"></i> Admin Panel
                         </button>
                     </div>
-                    <div class="pt-2">
-                        <p class="px-4 py-2 text-xs font-medium text-gray-400 uppercase">Information</p>
+                    <button onclick="openSettingsModal(); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-medium">
+                        <i class="fas fa-sliders w-5 text-center"></i> Settings
+                    </button>
+                    <div class="pt-3">
+                        <p class="px-4 py-1.5 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Information</p>
                         <div id="mobileInfoMenu" class="space-y-1"></div>
                     </div>
                 </nav>
             </div>
             <div class="p-4 border-t border-gray-100 flex-shrink-0">
-                <button onclick="logout()" class="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition font-medium">
+                <button onclick="logout()" class="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition font-bold text-sm">
                     <i class="fas fa-sign-out-alt"></i> Logout
                 </button>
             </div>
         </div>
 
-        <!-- Navigation -->
-        <nav class="bg-white shadow-sm border-b border-gray-100 sticky top-0 z-30">
+        <!-- Desktop Sticky Navigation -->
+        <nav class="bg-white shadow-2xs border-b border-gray-100 sticky top-0 z-30 transition-colors">
             <div class="max-w-7xl mx-auto px-4">
                 <div class="flex items-center justify-between h-16">
                     <div class="flex items-center gap-3">
-                        <button onclick="openMobileMenu()" class="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 transition">
-                            <i class="fas fa-bars text-gray-600"></i>
+                        <button onclick="openMobileMenu()" class="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 transition text-gray-600">
+                            <i class="fas fa-bars"></i>
                         </button>
-                        <div class="w-10 h-10 bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-users text-white"></i>
+                        <div class="w-9 h-9 bg-gray-900 rounded-xl flex items-center justify-center text-white shadow-sm">
+                            <i class="fas fa-network-wired text-sm"></i>
                         </div>
-                        <span class="font-bold text-xl text-gray-800 hidden sm:block">NOC Portal</span>
+                        <span class="font-bold text-lg text-gray-800 hidden sm:block">NOC Portal</span>
                     </div>
                     
-                    <!-- Desktop Navigation -->
+                    <!-- Desktop Navigation Links -->
                     <div class="hidden lg:flex items-center gap-1">
-                        <button onclick="navigateTo('home')" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition font-medium" data-page="home">
-                            <i class="fas fa-home mr-2"></i>Home
+                        <button onclick="navigateTo('home')" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold" data-page="home">
+                            <i class="fas fa-home mr-2 text-gray-400"></i>Home
                         </button>
-                        <button onclick="navigateTo('learning')" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition font-medium" data-page="learning">
-                            <i class="fas fa-book mr-2"></i>Learning
+                        <button onclick="navigateTo('learning')" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold" data-page="learning">
+                            <i class="fas fa-book mr-2 text-gray-400"></i>Learning
                         </button>
                         <div class="relative">
-                            <button onclick="toggleInfoDropdown()" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition font-medium" data-page="information">
-                                <i class="fas fa-info-circle mr-2"></i>Information
-                                <i class="fas fa-chevron-down ml-1 text-xs"></i>
+                            <button onclick="toggleInfoDropdown()" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold" data-page="information">
+                                <i class="fas fa-circle-info mr-2 text-gray-400"></i>Information
+                                <i class="fas fa-chevron-down ml-1 text-[10px]"></i>
                             </button>
-                            <div id="infoDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50"></div>
+                            <div id="infoDropdown" class="hidden absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50"></div>
                         </div>
-                        <button id="adminBtn" onclick="navigateTo('admin')" class="hidden nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition font-medium" data-page="admin">
-                            <i class="fas fa-cog mr-2"></i>Admin Panel
+                        <button onclick="openToolsModal()" class="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold" title="Subnet Calc & Scratchpad">
+                            <i class="fas fa-toolbox mr-2 text-blue-500"></i>NOC Tools
                         </button>
-                        <button onclick="openChangePasswordModal()" class="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition font-medium">
-                            <i class="fas fa-key mr-2"></i>Password
+                        <button id="adminBtn" onclick="navigateTo('admin')" class="hidden nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold" data-page="admin">
+                            <i class="fas fa-shield-halved mr-2 text-purple-600"></i>Admin Panel
                         </button>
-                        <button onclick="logout()" class="px-4 py-2 rounded-xl text-red-600 hover:bg-red-50 transition font-medium">
-                            <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                        <button onclick="openSettingsModal()" class="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-sm font-semibold" title="Portal Theme, Dark Mode & Password">
+                            <i class="fas fa-sliders mr-2 text-gray-500"></i>Settings
+                        </button>
+                        <button onclick="logout()" class="px-4 py-2 rounded-xl text-red-600 hover:bg-red-50 transition text-sm font-semibold">
+                            <i class="fas fa-sign-out-alt mr-1.5"></i>Logout
                         </button>
                     </div>
                 </div>
             </div>
         </nav>
 
-        <!-- Welcome Banner -->
-        <div class="bg-gradient-to-r from-gray-800 to-gray-900 text-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-5 flex items-center justify-between">
-                <p class="text-gray-300">Hi, <span id="welcomeUser" class="font-semibold text-white"></span>! 👋</p>
-                <span id="currentUserRoleBadge" class="text-xs px-3 py-1 rounded-full bg-white/10 text-white font-medium capitalize"></span>
+        <!-- Welcome Header Banner with Live UTC Time -->
+        <div class="bg-gray-900 text-white shadow-md transition-all duration-300" id="headerBanner">
+            <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div class="flex items-center gap-3">
+                    <p class="text-gray-300 text-sm">Welcome, <span id="welcomeUser" class="font-bold text-white"></span></p>
+                    <span id="currentUserRoleBadge" class="text-[11px] px-2.5 py-0.5 rounded-md bg-white/10 text-white font-bold uppercase tracking-wider"></span>
+                </div>
+                <div class="flex items-center gap-4 text-xs font-mono text-gray-300 bg-black/30 px-3 py-1.5 rounded-lg border border-white/10 w-fit">
+                    <span class="flex items-center gap-2"><i class="fas fa-globe text-blue-400"></i> <span id="liveUtcClock">UTC: 00:00:00</span></span>
+                </div>
             </div>
         </div>
 
@@ -192,12 +204,12 @@
         <div id="homePage" class="page max-w-7xl mx-auto px-4 py-6 sm:py-8">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <h2 class="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-3">
-                    <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                        <i class="fas fa-bullhorn text-blue-600"></i>
+                    <div class="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                        <i class="fas fa-bullhorn text-sm"></i>
                     </div>
                     Team Updates
                 </h2>
-                <button id="addUpdateBtn" onclick="openUpdateModal()" class="hidden btn-primary bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 font-medium shadow-lg shadow-gray-200">
+                <button id="addUpdateBtn" onclick="openUpdateModal()" class="hidden btn-primary bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 font-bold text-sm shadow-md transition">
                     <i class="fas fa-plus mr-2"></i>Add Update
                 </button>
             </div>
@@ -209,8 +221,8 @@
             <div class="flex flex-col gap-5 mb-6">
                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <h2 class="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-3 flex-shrink-0">
-                        <div class="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-folder-open text-amber-600"></i>
+                        <div class="w-9 h-9 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
+                            <i class="fas fa-folder-tree text-sm"></i>
                         </div>
                         Learning
                     </h2>
@@ -218,24 +230,24 @@
                     <!-- Search Bar -->
                     <div class="flex-1 max-w-md w-full mx-auto md:mx-4">
                         <div class="relative">
-                            <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                            <input type="text" id="learningSearchInput" oninput="handleLearningSearch()" class="w-full pl-11 pr-10 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent outline-none transition text-sm shadow-sm placeholder-gray-400" placeholder="Search folder or file...">
+                            <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input type="text" id="learningSearchInput" oninput="handleLearningSearch()" class="w-full pl-11 pr-10 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent outline-none transition text-sm shadow-xs placeholder-gray-400" placeholder="Search folders or files...">
                             <button type="button" id="clearLearningSearchBtn" onclick="clearLearningSearch()" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition">
-                                <i class="fas fa-times-circle"></i>
+                                <i class="fas fa-circle-xmark"></i>
                             </button>
                         </div>
                     </div>
 
                     <div id="learningAdminBtns" class="hidden flex gap-2 flex-shrink-0">
-                        <button onclick="openFolderModal()" class="btn-secondary bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium hover:bg-gray-200 transition">
-                            <i class="fas fa-folder-plus mr-2"></i>New Folder
+                        <button onclick="openFolderModal()" class="btn-secondary bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-200 transition">
+                            <i class="fas fa-folder-plus mr-2 text-amber-500"></i>New Folder
                         </button>
-                        <button onclick="openLearningItemModal()" class="btn-primary bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-800 font-medium shadow-lg shadow-gray-200 transition">
+                        <button onclick="openLearningItemModal()" class="btn-primary bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-800 font-bold text-sm shadow-md transition">
                             <i class="fas fa-plus mr-2"></i>Add Item
                         </button>
                     </div>
                 </div>
-                <div id="breadcrumb" class="flex items-center gap-2 text-gray-500 text-sm flex-wrap bg-white px-4 py-2.5 rounded-xl border border-gray-100 shadow-sm"></div>
+                <div id="breadcrumb" class="flex items-center gap-2 text-gray-500 text-sm flex-wrap bg-white px-4 py-2.5 rounded-xl border border-gray-100 shadow-2xs"></div>
             </div>
             <div id="learningContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4"></div>
         </div>
@@ -244,12 +256,12 @@
         <div id="informationPage" class="page hidden max-w-7xl mx-auto px-4 py-6 sm:py-8">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <h2 id="infoPageTitle" class="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-3">
-                    <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                        <i class="fas fa-layer-group text-blue-600"></i>
+                    <div class="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                        <i class="fas fa-layer-group text-sm"></i>
                     </div>
                     <span id="infoTitleText">Information</span>
                 </h2>
-                <button id="addInfoCardBtn" onclick="openInfoCardModal()" class="hidden btn-primary bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 font-medium shadow-lg shadow-gray-200">
+                <button id="addInfoCardBtn" onclick="openInfoCardModal()" class="hidden btn-primary bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 font-bold text-sm shadow-md">
                     <i class="fas fa-plus mr-2"></i>Add Item
                 </button>
             </div>
@@ -259,45 +271,45 @@
         <!-- Admin Page -->
         <div id="adminPage" class="page hidden max-w-7xl mx-auto px-4 py-6 sm:py-8">
             <h2 class="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-3 mb-6">
-                <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                    <i class="fas fa-shield-alt text-blue-600"></i>
+                <div class="w-9 h-9 bg-purple-100 rounded-xl flex items-center justify-center text-purple-600">
+                    <i class="fas fa-shield-halved text-sm"></i>
                 </div>
                 Admin Panel
             </h2>
             
-            <div class="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
-                <button onclick="showAdminTab('users')" class="admin-tab px-4 py-2.5 font-medium text-gray-600 rounded-lg transition" data-tab="users">
-                    <i class="fas fa-users mr-2"></i>Users
+            <div class="flex gap-1 mb-6 bg-gray-200/60 p-1 rounded-xl w-fit flex-wrap">
+                <button onclick="showAdminTab('users')" class="admin-tab px-4 py-2 font-bold text-xs uppercase tracking-wider text-gray-600 rounded-lg transition" data-tab="users">
+                    <i class="fas fa-users mr-1.5"></i>Users
                 </button>
-                <button onclick="showAdminTab('roles')" class="admin-tab px-4 py-2.5 font-medium text-gray-600 rounded-lg transition" data-tab="roles">
-                    <i class="fas fa-user-shield mr-2"></i>Roles
+                <button onclick="showAdminTab('roles')" class="admin-tab px-4 py-2 font-bold text-xs uppercase tracking-wider text-gray-600 rounded-lg transition" data-tab="roles">
+                    <i class="fas fa-user-shield mr-1.5"></i>Roles
                 </button>
-                <button onclick="showAdminTab('categories')" class="admin-tab px-4 py-2.5 font-medium text-gray-600 rounded-lg transition" data-tab="categories">
-                    <i class="fas fa-tags mr-2"></i>Categories
+                <button onclick="showAdminTab('categories')" class="admin-tab px-4 py-2 font-bold text-xs uppercase tracking-wider text-gray-600 rounded-lg transition" data-tab="categories">
+                    <i class="fas fa-tags mr-1.5"></i>Categories
                 </button>
             </div>
 
             <!-- Users Tab -->
             <div id="usersTab" class="admin-tab-content">
                 <div class="flex justify-between items-center mb-4">
-                    <p class="text-sm text-gray-500">Manage user accounts, passwords, and assigned roles.</p>
-                    <button onclick="openUserModal()" class="bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-800 transition font-medium shadow-lg shadow-gray-200">
-                        <i class="fas fa-user-plus mr-2"></i>Add User
+                    <p class="text-xs font-semibold text-gray-400 uppercase">System Accounts & Permissions</p>
+                    <button onclick="openUserModal()" class="bg-gray-900 text-white px-4 py-2 rounded-xl hover:bg-gray-800 transition font-bold text-xs uppercase tracking-wider shadow-md">
+                        <i class="fas fa-user-plus mr-1.5"></i>Add User
                     </button>
                 </div>
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="bg-white rounded-2xl shadow-xs border border-gray-100 overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full">
-                            <thead class="bg-gray-50">
+                            <thead class="bg-gray-50/80">
                                 <tr>
-                                    <th class="px-4 sm:px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Account</th>
-                                    <th class="px-4 sm:px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell">Username</th>
-                                    <th class="px-4 sm:px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Password</th>
-                                    <th class="px-4 sm:px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Role</th>
-                                    <th class="px-4 sm:px-6 py-4 text-right text-xs font-semibold text-gray-500 uppercase">Actions</th>
+                                    <th class="px-4 sm:px-6 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Account</th>
+                                    <th class="px-4 sm:px-6 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider hidden sm:table-cell">Username</th>
+                                    <th class="px-4 sm:px-6 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Password</th>
+                                    <th class="px-4 sm:px-6 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Role</th>
+                                    <th class="px-4 sm:px-6 py-3.5 text-right text-[11px] font-bold text-gray-400 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="usersTable" class="divide-y divide-gray-100"></tbody>
+                            <tbody id="usersTable" class="divide-y divide-gray-100 text-sm"></tbody>
                         </table>
                     </div>
                 </div>
@@ -305,63 +317,52 @@
 
             <!-- Roles Tab -->
             <div id="rolesTab" class="admin-tab-content hidden">
-                <div class="mb-4">
-                    <p class="text-sm text-gray-500">Overview of available system roles and content creation permissions.</p>
-                </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div class="bg-purple-50 border border-purple-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+                    <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-1.5 h-full bg-purple-600"></div>
                         <div>
-                            <div class="flex items-center justify-between mb-3">
-                                <span class="px-3 py-1 bg-purple-200 text-purple-800 rounded-full font-bold text-xs uppercase">👑 Admin</span>
-                                <span class="text-xs font-semibold text-purple-600" id="roleCountAdmin">0 Users</span>
+                            <div class="flex items-center justify-between mb-3 pl-2">
+                                <span class="text-xs font-bold text-purple-700 uppercase tracking-wider"><i class="fas fa-shield-halved mr-1"></i> Admin</span>
+                                <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-full" id="roleCountAdmin">0</span>
                             </div>
-                            <h4 class="font-bold text-gray-800 text-base mb-1">Administrator</h4>
-                            <p class="text-xs text-gray-600 leading-relaxed mb-4">Full system control. Can view/create users, manage categories/roles, and create, edit, move, or delete all learning folders, files, info cards, and team updates.</p>
-                        </div>
-                        <div class="pt-3 border-t border-purple-200/60 text-[11px] font-medium text-purple-700">
-                            ✓ User Management <br>✓ Create & Edit Content <br>✓ Access All Folders
+                            <h4 class="font-bold text-gray-800 text-base mb-1 pl-2">Administrator</h4>
+                            <p class="text-xs text-gray-500 leading-relaxed pl-2 mb-4">Full system access. Can view & create accounts, manage database tables, and create/edit/delete all learning materials and info cards.</p>
                         </div>
                     </div>
 
-                    <div class="bg-blue-50 border border-blue-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+                    <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-1.5 h-full bg-blue-600"></div>
                         <div>
-                            <div class="flex items-center justify-between mb-3">
-                                <span class="px-3 py-1 bg-blue-200 text-blue-800 rounded-full font-bold text-xs uppercase">⭐ Leader</span>
-                                <span class="text-xs font-semibold text-blue-600" id="roleCountLeader">0 Users</span>
+                            <div class="flex items-center justify-between mb-3 pl-2">
+                                <span class="text-xs font-bold text-blue-700 uppercase tracking-wider"><i class="fas fa-star mr-1"></i> Leader</span>
+                                <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-full" id="roleCountLeader">0</span>
                             </div>
-                            <h4 class="font-bold text-gray-800 text-base mb-1">Team Leader</h4>
-                            <p class="text-xs text-gray-600 leading-relaxed mb-4">Content manager. Can create, edit, move, and delete learning files, folders, and information cards based on permissions. Cannot manage users.</p>
-                        </div>
-                        <div class="pt-3 border-t border-blue-200/60 text-[11px] font-medium text-blue-700">
-                            ✗ User Management <br>✓ Create & Edit Content <br>✓ Access Permitted Folders
+                            <h4 class="font-bold text-gray-800 text-base mb-1 pl-2">Team Leader</h4>
+                            <p class="text-xs text-gray-500 leading-relaxed pl-2 mb-4">Content manager. Can create, edit, move, and delete learning folders, files, and info cards based on permissions. Cannot manage user accounts.</p>
                         </div>
                     </div>
 
-                    <div class="bg-green-50 border border-green-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+                    <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-1.5 h-full bg-emerald-600"></div>
                         <div>
-                            <div class="flex items-center justify-between mb-3">
-                                <span class="px-3 py-1 bg-green-200 text-green-800 rounded-full font-bold text-xs uppercase">👤 Member</span>
-                                <span class="text-xs font-semibold text-green-600" id="roleCountMember">0 Users</span>
+                            <div class="flex items-center justify-between mb-3 pl-2">
+                                <span class="text-xs font-bold text-emerald-700 uppercase tracking-wider"><i class="fas fa-user mr-1"></i> Member</span>
+                                <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-full" id="roleCountMember">0</span>
                             </div>
-                            <h4 class="font-bold text-gray-800 text-base mb-1">Team Member</h4>
-                            <p class="text-xs text-gray-600 leading-relaxed mb-4">Standard account. Can access learning materials and information cards permitted for members. Can change own password. Cannot create or edit content.</p>
-                        </div>
-                        <div class="pt-3 border-t border-green-200/60 text-[11px] font-medium text-green-700">
-                            ✗ Create Content <br>✓ View Permitted Materials <br>✓ Change Own Password
+                            <h4 class="font-bold text-gray-800 text-base mb-1 pl-2">Team Member</h4>
+                            <p class="text-xs text-gray-500 leading-relaxed pl-2 mb-4">Standard account. Can browse permitted learning materials and information cards. Can change own password in Settings.</p>
                         </div>
                     </div>
 
-                    <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+                    <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-1.5 h-full bg-amber-600"></div>
                         <div>
-                            <div class="flex items-center justify-between mb-3">
-                                <span class="px-3 py-1 bg-amber-200 text-amber-800 rounded-full font-bold text-xs uppercase">🌱 Intern</span>
-                                <span class="text-xs font-semibold text-amber-600" id="roleCountIntern">0 Users</span>
+                            <div class="flex items-center justify-between mb-3 pl-2">
+                                <span class="text-xs font-bold text-amber-700 uppercase tracking-wider"><i class="fas fa-seedling mr-1"></i> Intern</span>
+                                <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-full" id="roleCountIntern">0</span>
                             </div>
-                            <h4 class="font-bold text-gray-800 text-base mb-1">Intern</h4>
-                            <p class="text-xs text-gray-600 leading-relaxed mb-4">Entry-level account. Can view learning files and info cards specifically permitted for interns. Hidden items are blocked. Can change own password.</p>
-                        </div>
-                        <div class="pt-3 border-t border-amber-200/60 text-[11px] font-medium text-amber-700">
-                            ✗ Create Content <br>✓ View Intern Materials <br>✓ Change Own Password
+                            <h4 class="font-bold text-gray-800 text-base mb-1 pl-2">Intern</h4>
+                            <p class="text-xs text-gray-500 leading-relaxed pl-2 mb-4">Entry-level account. Restricted exclusively to intern-permitted files and notes. Hidden items are blocked. Can change own password.</p>
                         </div>
                     </div>
                 </div>
@@ -370,8 +371,8 @@
             <!-- Categories Tab -->
             <div id="categoriesTab" class="admin-tab-content hidden">
                 <div class="flex justify-end mb-4">
-                    <button onclick="openCategoryModal()" class="bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-800 transition font-medium shadow-lg shadow-gray-200">
-                        <i class="fas fa-plus mr-2"></i>Add Category
+                    <button onclick="openCategoryModal()" class="bg-gray-900 text-white px-4 py-2 rounded-xl hover:bg-gray-800 transition font-bold text-xs uppercase tracking-wider shadow-md">
+                        <i class="fas fa-plus mr-1.5"></i>Add Category
                     </button>
                 </div>
                 <div id="categoriesList" class="grid gap-3"></div>
@@ -379,341 +380,477 @@
         </div>
     </div>
 
-    <!-- Modals -->
-    
+    <!-- ============ POPUPS & MODALS ============ -->
+
+    <!-- Settings Modal (Appearance, Theme, Font, Password Change) -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-fadeIn border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2.5">
+                    <i class="fas fa-sliders text-gray-600"></i> Portal Settings
+                </h3>
+                <button onclick="closeModal('settingsModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 hover:text-gray-600 transition">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="flex border-b border-gray-100 px-5 pt-3 bg-gray-50/40 gap-6">
+                <button onclick="switchSettingsTab('appearance')" id="tabBtnAppearance" class="settings-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-gray-900 text-gray-900 flex items-center gap-2">
+                    <i class="fas fa-palette"></i> Appearance
+                </button>
+                <button onclick="switchSettingsTab('security')" id="tabBtnSecurity" class="settings-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-transparent text-gray-400 hover:text-gray-600 flex items-center gap-2">
+                    <i class="fas fa-key"></i> Password Change
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1 space-y-6">
+                <!-- Appearance Tab -->
+                <div id="settingsSectionAppearance" class="space-y-6">
+                    <!-- Dark Mode -->
+                    <div class="flex items-center justify-between pb-4 border-b border-gray-100">
+                        <div>
+                            <h4 class="font-bold text-gray-800 text-sm">Theme Mode</h4>
+                            <p class="text-xs text-gray-400 mt-0.5">Switch between light and dark interface</p>
+                        </div>
+                        <div class="flex bg-gray-100 p-1 rounded-xl border border-gray-200/60">
+                            <button onclick="setThemeMode('light')" id="modeBtnLight" class="px-3.5 py-1.5 rounded-lg text-xs font-bold text-gray-800 transition flex items-center gap-1.5 bg-white shadow-xs">
+                                <i class="fas fa-sun text-amber-500"></i> Light
+                            </button>
+                            <button onclick="setThemeMode('dark')" id="modeBtnDark" class="px-3.5 py-1.5 rounded-lg text-xs font-bold text-gray-500 transition flex items-center gap-1.5 hover:text-gray-700">
+                                <i class="fas fa-moon text-indigo-400"></i> Dark
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Accent Theme -->
+                    <div class="pb-4 border-b border-gray-100">
+                        <h4 class="font-bold text-gray-800 text-sm mb-1">Color Theme</h4>
+                        <p class="text-xs text-gray-400 mb-3.5">Choose primary header & accent color</p>
+                        <div class="grid grid-cols-5 gap-2.5">
+                            <button onclick="setAccentTheme('slate')" id="accentBtnSlate" class="accent-btn p-2.5 rounded-xl border-2 border-gray-900 bg-slate-900 text-white flex flex-col items-center justify-center gap-1.5 transition">
+                                <span class="w-4 h-4 rounded-full bg-slate-400 border border-white/20"></span>
+                                <span class="text-[10px] font-bold uppercase">Slate</span>
+                            </button>
+                            <button onclick="setAccentTheme('blue')" id="accentBtnBlue" class="accent-btn p-2.5 rounded-xl border-2 border-gray-200 bg-blue-50/50 text-blue-800 flex flex-col items-center justify-center gap-1.5 transition">
+                                <span class="w-4 h-4 rounded-full bg-blue-600"></span>
+                                <span class="text-[10px] font-bold uppercase">Ocean</span>
+                            </button>
+                            <button onclick="setAccentTheme('emerald')" id="accentBtnEmerald" class="accent-btn p-2.5 rounded-xl border-2 border-gray-200 bg-emerald-50/50 text-emerald-800 flex flex-col items-center justify-center gap-1.5 transition">
+                                <span class="w-4 h-4 rounded-full bg-emerald-600"></span>
+                                <span class="text-[10px] font-bold uppercase">Emerald</span>
+                            </button>
+                            <button onclick="setAccentTheme('purple')" id="accentBtnPurple" class="accent-btn p-2.5 rounded-xl border-2 border-gray-200 bg-purple-50/50 text-purple-800 flex flex-col items-center justify-center gap-1.5 transition">
+                                <span class="w-4 h-4 rounded-full bg-purple-600"></span>
+                                <span class="text-[10px] font-bold uppercase">Royal</span>
+                            </button>
+                            <button onclick="setAccentTheme('amber')" id="accentBtnAmber" class="accent-btn p-2.5 rounded-xl border-2 border-gray-200 bg-amber-50/50 text-amber-800 flex flex-col items-center justify-center gap-1.5 transition">
+                                <span class="w-4 h-4 rounded-full bg-amber-600"></span>
+                                <span class="text-[10px] font-bold uppercase">Amber</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Font Size -->
+                    <div>
+                        <h4 class="font-bold text-gray-800 text-sm mb-1">UI Scaling (Font Size)</h4>
+                        <p class="text-xs text-gray-400 mb-3">Adjust portal text scale</p>
+                        <div class="grid grid-cols-3 gap-3">
+                            <button onclick="setPortalFontSize('small')" id="fontBtnSmall" class="font-btn py-2.5 px-3 rounded-xl border border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600 transition">
+                                Compact (14px)
+                            </button>
+                            <button onclick="setPortalFontSize('normal')" id="fontBtnNormal" class="font-btn py-2.5 px-3 rounded-xl border-2 border-gray-900 bg-white text-xs font-bold text-gray-900 transition">
+                                Default (16px)
+                            </button>
+                            <button onclick="setPortalFontSize('large')" id="fontBtnLarge" class="font-btn py-2.5 px-3 rounded-xl border border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600 transition">
+                                Spacious (18px)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Password Change Tab -->
+                <div id="settingsSectionSecurity" class="hidden space-y-4">
+                    <div class="bg-blue-50/80 border border-blue-200 p-3.5 rounded-xl text-xs text-blue-900 flex items-start gap-2.5">
+                        <i class="fas fa-circle-info text-blue-600 mt-0.5"></i>
+                        <div>
+                            <span class="font-bold">Cloudflare Sync:</span> Updating your password will instantly save to your remote Cloudflare D1 SQL database.
+                        </div>
+                    </div>
+
+                    <form id="changePasswordForm" class="space-y-4 pt-1" onsubmit="saveUserPassword(event)">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Current Password</label>
+                            <input type="password" id="currentPasswordInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-mono" placeholder="Enter current password" required>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">New Password</label>
+                            <input type="password" id="newPasswordInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-mono" placeholder="Enter new password" required>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Confirm New Password</label>
+                            <input type="password" id="confirmPasswordInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-mono" placeholder="Confirm new password" required>
+                        </div>
+                        <div class="pt-2 flex justify-end">
+                            <button type="submit" class="btn-primary px-6 py-2.5 bg-gray-900 text-white rounded-xl font-bold text-sm shadow-md hover:bg-gray-800 transition flex items-center gap-2">
+                                <i class="fas fa-check"></i> <span>Save Password</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NOC Tools & Utilities Modal -->
+    <div id="toolsModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-fadeIn border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2.5">
+                    <i class="fas fa-toolbox text-blue-600"></i> NOC Engineer Utilities
+                </h3>
+                <button onclick="closeModal('toolsModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400 hover:text-gray-600 transition">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="flex border-b border-gray-100 px-5 pt-3 bg-gray-50/40 gap-6">
+                <button onclick="switchToolsTab('subnet')" id="toolTabSubnet" class="tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-blue-600 text-blue-600 flex items-center gap-2">
+                    <i class="fas fa-network-wired"></i> Subnet Calculator
+                </button>
+                <button onclick="switchToolsTab('scratchpad')" id="toolTabScratchpad" class="tools-tab-btn pb-3 text-xs font-bold uppercase tracking-wider border-b-2 border-transparent text-gray-400 hover:text-gray-600 flex items-center gap-2">
+                    <i class="fas fa-clipboard"></i> Shift Scratchpad
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1 space-y-6">
+                <!-- Subnet Tab -->
+                <div id="toolSectionSubnet" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Enter IPv4 CIDR (e.g. 192.168.10.1/24)</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="subnetInput" oninput="calculateSubnet()" class="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-blue-600 outline-none" value="192.168.10.1/24">
+                            <button onclick="calculateSubnet()" class="px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl text-sm hover:bg-blue-700 transition shadow-xs">Calc</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 rounded-xl p-4 border border-gray-200/80 font-mono text-xs space-y-2.5 divide-y divide-gray-200/60">
+                        <div class="flex justify-between pt-1"><span class="text-gray-500 font-sans">IP Address:</span> <span id="calcIp" class="font-bold text-gray-800">192.168.10.1</span></div>
+                        <div class="flex justify-between pt-2.5"><span class="text-gray-500 font-sans">Subnet Mask:</span> <span id="calcMask" class="font-bold text-blue-600">255.255.255.0</span></div>
+                        <div class="flex justify-between pt-2.5"><span class="text-gray-500 font-sans">Wildcard Mask:</span> <span id="calcWildcard" class="font-bold text-gray-700">0.0.0.255</span></div>
+                        <div class="flex justify-between pt-2.5"><span class="text-gray-500 font-sans">Network Address:</span> <span id="calcNet" class="font-bold text-emerald-600">192.168.10.0</span></div>
+                        <div class="flex justify-between pt-2.5"><span class="text-gray-500 font-sans">Broadcast Address:</span> <span id="calcBcast" class="font-bold text-purple-600">192.168.10.255</span></div>
+                        <div class="flex justify-between pt-2.5"><span class="text-gray-500 font-sans">Host Range:</span> <span id="calcRange" class="font-bold text-gray-800">192.168.10.1 - 192.168.10.254</span></div>
+                        <div class="flex justify-between pt-2.5"><span class="text-gray-500 font-sans">Usable Hosts:</span> <span id="calcHosts" class="font-bold text-amber-600">254</span></div>
+                    </div>
+                </div>
+
+                <!-- Scratchpad Tab -->
+                <div id="toolSectionScratchpad" class="hidden space-y-3">
+                    <div class="flex justify-between items-center">
+                        <p class="text-xs text-gray-500">Local shift notes (persists in your browser cache)</p>
+                        <button onclick="clearScratchpad()" class="text-xs font-bold text-red-500 hover:underline flex items-center gap-1"><i class="fas fa-trash text-[10px]"></i> Clear</button>
+                    </div>
+                    <textarea id="nocScratchpadText" oninput="saveScratchpad()" rows="8" class="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl font-mono text-xs focus:ring-2 focus:ring-blue-600 outline-none leading-relaxed resize-none" placeholder="Paste ticket numbers, incident logs, switch configs..."></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Update Modal -->
-    <div id="updateModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 id="updateModalTitle" class="text-xl font-bold text-gray-800">Add Update</h3>
-                <button onclick="closeModal('updateModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+    <div id="updateModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
+                <h3 id="updateModalTitle" class="text-lg font-bold text-gray-800">Add Update</h3>
+                <button onclick="closeModal('updateModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <form id="updateForm" class="p-5 space-y-4 overflow-y-auto flex-1" onsubmit="saveUpdate(event)">
                 <input type="hidden" id="updateId">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Topic</label>
-                    <input type="text" id="updateTopic" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" required>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Topic</label>
+                    <input type="text" id="updateTopic" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium" required>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Badge</label>
-                    <select id="updateBadge" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition">
-                        <option value="important">🔴 Important</option>
-                        <option value="general">🔵 General</option>
-                        <option value="announcement">🟢 Announcement</option>
-                        <option value="reminder">🟡 Reminder</option>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Badge Category</label>
+                    <select id="updateBadge" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium">
+                        <option value="important">Important (Red)</option>
+                        <option value="general">General (Blue)</option>
+                        <option value="announcement">Announcement (Green)</option>
+                        <option value="reminder">Reminder (Amber)</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Message</label>
-                    <textarea id="updateMessage" rows="4" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition resize-none" required></textarea>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Message</label>
+                    <textarea id="updateMessage" rows="4" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm resize-none" required></textarea>
                 </div>
-            </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
-                <button type="button" onclick="closeModal('updateModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button type="button" onclick="saveUpdate()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Save</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Change Password Modal (For current user) -->
-    <div id="changePasswordModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl animate-fadeIn">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
-                <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <i class="fas fa-key text-amber-500"></i> Change Password
-                </h3>
-                <button onclick="closeModal('changePasswordModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <form id="changePasswordForm" class="p-5 space-y-4" onsubmit="saveUserPassword(event)">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Current Password</label>
-                    <input type="password" id="currentPasswordInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition" placeholder="Enter current password" required>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">New Password</label>
-                    <input type="password" id="newPasswordInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition" placeholder="Enter new password" required>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
-                    <input type="password" id="confirmPasswordInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition" placeholder="Confirm new password" required>
-                </div>
-                <div class="pt-3 flex justify-end gap-3 border-t border-gray-100 mt-2">
-                    <button type="button" onclick="closeModal('changePasswordModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                    <button type="submit" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium shadow-md">Update Password</button>
+                <div class="pt-3 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal('updateModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-sm font-medium">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-sm font-bold shadow-md">Save Update</button>
                 </div>
             </form>
         </div>
     </div>
 
     <!-- User Modal (Admin Panel) -->
-    <div id="userModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 id="userModalTitle" class="text-xl font-bold text-gray-800">Add User</h3>
-                <button onclick="closeModal('userModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+    <div id="userModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
+                <h3 id="userModalTitle" class="text-lg font-bold text-gray-800">Add User</h3>
+                <button onclick="closeModal('userModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <form id="userForm" class="p-5 space-y-4 overflow-y-auto flex-1" onsubmit="saveUser(event)">
                 <input type="hidden" id="userId">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Account Name (Display)</label>
-                    <input type="text" id="userAccountName" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="e.g. Operations User" required>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Account Display Name</label>
+                    <input type="text" id="userAccountName" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium" placeholder="e.g. NOC Operator" required>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Username (Login)</label>
-                    <input type="text" id="userUsername" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="e.g. operations" required>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Username (Login ID)</label>
+                    <input type="text" id="userUsername" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-mono" placeholder="e.g. operator" required>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Password</label>
                     <div class="relative">
-                        <input type="password" id="userPassword" class="w-full pl-4 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition font-mono" required>
+                        <input type="password" id="userPassword" class="w-full pl-4 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition font-mono text-sm" required>
                         <button type="button" id="toggleEditPassword" onclick="toggleEditPasswordVisibility()" class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition">
                             <i class="fas fa-eye"></i>
                         </button>
                     </div>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Role</label>
-                    <select id="userRole" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition font-medium">
-                        <option value="intern">🌱 Intern</option>
-                        <option value="member">👤 Member</option>
-                        <option value="leader">⭐ Leader</option>
-                        <option value="admin">👑 Admin</option>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Assigned Role</label>
+                    <select id="userRole" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-semibold">
+                        <option value="intern">Intern (Restricted)</option>
+                        <option value="member">Member (Standard)</option>
+                        <option value="leader">Leader (Content Manager)</option>
+                        <option value="admin">Admin (Full Control)</option>
                     </select>
                 </div>
+                <div class="pt-3 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal('userModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-sm font-medium">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-sm font-bold shadow-md">Save User</button>
+                </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
-                <button type="button" onclick="closeModal('userModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button type="button" onclick="saveUser()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Save User</button>
-            </div>
         </div>
     </div>
 
     <!-- Category Modal -->
-    <div id="categoryModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
-                <h3 id="categoryModalTitle" class="text-xl font-bold text-gray-800">Add Category</h3>
-                <button onclick="closeModal('categoryModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+    <div id="categoryModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
+                <h3 id="categoryModalTitle" class="text-lg font-bold text-gray-800">Add Category</h3>
+                <button onclick="closeModal('categoryModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <form id="categoryForm" class="p-5 space-y-4">
+            <form id="categoryForm" class="p-5 space-y-4" onsubmit="saveCategory(event)">
                 <input type="hidden" id="categoryId">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Category Name</label>
-                    <input type="text" id="categoryName" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" required>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Category Name</label>
+                    <input type="text" id="categoryName" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium" required>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Icon</label>
-                    <select id="categoryIcon" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition">
-                        <option value="fa-users">👥 Team</option>
-                        <option value="fa-clipboard-list">📋 Procedures</option>
-                        <option value="fa-briefcase">💼 Business</option>
-                        <option value="fa-chart-line">📈 Analytics</option>
-                        <option value="fa-cogs">⚙️ Settings</option>
-                        <option value="fa-book">📚 Documentation</option>
-                        <option value="fa-link">🔗 Links</option>
-                        <option value="fa-tools">🛠️ Tools</option>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Minimalist Vector Icon</label>
+                    <select id="categoryIcon" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium">
+                        <option value="fa-users">Team & Roster (fa-users)</option>
+                        <option value="fa-clipboard-list">Procedures & SOPs (fa-clipboard-list)</option>
+                        <option value="fa-briefcase">Business Operations (fa-briefcase)</option>
+                        <option value="fa-chart-line">Monitoring Analytics (fa-chart-line)</option>
+                        <option value="fa-cogs">Infrastructure Configs (fa-cogs)</option>
+                        <option value="fa-book">Documentation (fa-book)</option>
+                        <option value="fa-link">External Links (fa-link)</option>
+                        <option value="fa-tools">NOC Utilities (fa-tools)</option>
                     </select>
                 </div>
+                <div class="pt-3 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal('categoryModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-sm font-medium">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-sm font-bold shadow-md">Save Category</button>
+                </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3">
-                <button type="button" onclick="closeModal('categoryModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button type="button" onclick="saveCategory()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Save</button>
-            </div>
         </div>
     </div>
 
     <!-- Folder Modal -->
-    <div id="folderModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
-                <h3 id="folderModalTitle" class="text-xl font-bold text-gray-800">Create Folder</h3>
-                <button onclick="closeModal('folderModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+    <div id="folderModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
+                <h3 id="folderModalTitle" class="text-lg font-bold text-gray-800">Create Folder</h3>
+                <button onclick="closeModal('folderModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <form id="folderForm" class="p-5 space-y-5">
+            <form id="folderForm" class="p-5 space-y-5" onsubmit="saveFolder(event)">
                 <input type="hidden" id="folderId">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Folder Name</label>
-                    <input type="text" id="folderName" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition font-medium" placeholder="Enter folder name" required>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Folder Name</label>
+                    <input type="text" id="folderName" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium" placeholder="Enter directory name" required>
                 </div>
-                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Access Permissions</label>
-                    <p class="text-xs text-gray-500 mb-3">Select which roles can access this folder (Admins always have full access):</p>
+                <div class="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80">
+                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Access Role Permissions</label>
+                    <p class="text-xs text-gray-500 mb-3">Check which roles can view this directory (Admins retain full access):</p>
                     <div class="flex flex-wrap gap-4">
-                        <label class="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 font-semibold cursor-pointer">
                             <input type="checkbox" name="permRole" value="intern" checked class="w-4 h-4 rounded text-gray-900 focus:ring-gray-800"> Intern
                         </label>
-                        <label class="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 font-semibold cursor-pointer">
                             <input type="checkbox" name="permRole" value="member" checked class="w-4 h-4 rounded text-gray-900 focus:ring-gray-800"> Member
                         </label>
-                        <label class="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 font-semibold cursor-pointer">
                             <input type="checkbox" name="permRole" value="leader" checked class="w-4 h-4 rounded text-gray-900 focus:ring-gray-800"> Leader
                         </label>
                     </div>
                 </div>
+                <div class="pt-2 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal('folderModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-sm font-medium">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-sm font-bold shadow-md">Save Folder</button>
+                </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3">
-                <button type="button" onclick="closeModal('folderModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button type="button" onclick="saveFolder()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium shadow-md">Save Folder</button>
-            </div>
         </div>
     </div>
 
     <!-- Learning Item Modal -->
-    <div id="learningItemModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 id="learningItemModalTitle" class="text-xl font-bold text-gray-800">Add Item</h3>
-                <button onclick="closeModal('learningItemModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+    <div id="learningItemModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
+                <h3 id="learningItemModalTitle" class="text-lg font-bold text-gray-800">Add Item</h3>
+                <button onclick="closeModal('learningItemModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <form id="learningItemForm" class="p-5 space-y-4 overflow-y-auto flex-1">
+            <form id="learningItemForm" class="p-5 space-y-4 overflow-y-auto flex-1" onsubmit="saveLearningItem(event)">
                 <input type="hidden" id="learningItemId">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">File / Note Name</label>
-                    <input type="text" id="learningItemTopic" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition font-medium" placeholder="Enter title" required>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">File or Note Name</label>
+                    <input type="text" id="learningItemTopic" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium" placeholder="Enter item title" required>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                    <select id="learningItemType" onchange="toggleLearningItemFields()" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition font-medium">
-                        <option value="pdf">PDF / Web Link</option>
-                        <option value="text">Text Note</option>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Content Type</label>
+                    <select id="learningItemType" onchange="toggleLearningItemFields()" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium">
+                        <option value="pdf">PDF Document / Web Link</option>
+                        <option value="text">Formatted Text Note</option>
                     </select>
                 </div>
                 <div id="pdfLinkField">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Link URL</label>
-                    <input type="url" id="learningItemLink" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="https://...">
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Link URL</label>
+                    <input type="url" id="learningItemLink" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-mono" placeholder="https://...">
                 </div>
                 <div id="textContentField" class="hidden">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Content</label>
-                    <textarea id="learningItemContent" rows="6" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition font-mono text-sm resize-none" placeholder="Write note text..."></textarea>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Note Content</label>
+                    <textarea id="learningItemContent" rows="6" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition font-mono text-sm resize-none" placeholder="Enter configuration notes, guidelines..."></textarea>
                 </div>
-                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Access Permissions</label>
-                    <p class="text-xs text-gray-500 mb-3">Select which roles can view this item (Admins always have full access):</p>
+                <div class="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80">
+                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Access Role Permissions</label>
+                    <p class="text-xs text-gray-500 mb-3">Check which roles can view this item (Admins retain full access):</p>
                     <div class="flex flex-wrap gap-4">
-                        <label class="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 font-semibold cursor-pointer">
                             <input type="checkbox" name="permRole" value="intern" checked class="w-4 h-4 rounded text-gray-900 focus:ring-gray-800"> Intern
                         </label>
-                        <label class="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 font-semibold cursor-pointer">
                             <input type="checkbox" name="permRole" value="member" checked class="w-4 h-4 rounded text-gray-900 focus:ring-gray-800"> Member
                         </label>
-                        <label class="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 font-semibold cursor-pointer">
                             <input type="checkbox" name="permRole" value="leader" checked class="w-4 h-4 rounded text-gray-900 focus:ring-gray-800"> Leader
                         </label>
                     </div>
                 </div>
+                <div class="pt-2 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal('learningItemModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-sm font-medium">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-sm font-bold shadow-md">Save Item</button>
+                </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
-                <button type="button" onclick="closeModal('learningItemModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button type="button" onclick="saveLearningItem()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium shadow-md">Save Item</button>
-            </div>
         </div>
     </div>
 
     <!-- Text View Modal -->
-    <div id="textViewModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 id="textViewTitle" class="text-xl font-bold text-gray-800"></h3>
-                <button onclick="closeModal('textViewModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+    <div id="textViewModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
+                <h3 id="textViewTitle" class="text-lg font-bold text-gray-800"></h3>
+                <button onclick="closeModal('textViewModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div id="textViewContent" class="p-5 overflow-y-auto flex-1 whitespace-pre-wrap text-gray-700 font-mono text-sm bg-gray-50 leading-relaxed"></div>
+            <div id="textViewContent" class="p-6 overflow-y-auto flex-1 whitespace-pre-wrap text-gray-700 font-mono text-sm bg-gray-50/50 leading-relaxed"></div>
         </div>
     </div>
 
     <!-- Move Modal -->
-    <div id="moveModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col shadow-2xl animate-fadeIn">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+    <div id="moveModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col shadow-2xl animate-fadeIn border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
                     <i class="fas fa-folder-tree text-amber-500"></i> Move Item
                 </h3>
-                <button onclick="closeModal('moveModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+                <button onclick="closeModal('moveModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="px-5 pt-4 pb-2 text-xs text-gray-500 flex-shrink-0">Select destination folder:</div>
+            <div class="px-5 pt-4 pb-2 text-xs font-semibold text-gray-500 flex-shrink-0 uppercase">Select destination directory:</div>
             <div id="moveFolderList" class="p-5 pt-0 space-y-2 overflow-y-auto flex-1"></div>
-            <div class="p-4 border-t border-gray-100 flex justify-end flex-shrink-0 bg-gray-50">
-                <button type="button" onclick="closeModal('moveModal')" class="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-xl transition text-sm font-medium">Cancel</button>
+            <div class="p-4 border-t border-gray-100 flex justify-end flex-shrink-0 bg-gray-50/80">
+                <button type="button" onclick="closeModal('moveModal')" class="px-5 py-2 text-gray-600 hover:bg-gray-200 rounded-xl transition text-sm font-semibold">Cancel</button>
             </div>
         </div>
     </div>
 
     <!-- Info Card Modal -->
-    <div id="infoCardModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 id="infoCardModalTitle" class="text-xl font-bold text-gray-800">Add Item</h3>
-                <button onclick="closeModal('infoCardModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
+    <div id="infoCardModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-gray-100 transition-colors">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
+                <h3 id="infoCardModalTitle" class="text-lg font-bold text-gray-800">Add Item</h3>
+                <button onclick="closeModal('infoCardModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200/60 text-gray-400">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <form id="infoCardForm" class="p-5 space-y-4 overflow-y-auto flex-1">
+            <form id="infoCardForm" class="p-5 space-y-4 overflow-y-auto flex-1" onsubmit="saveInfoCard(event)">
                 <input type="hidden" id="infoCardId">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                    <input type="text" id="infoCardTitle" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition font-medium" required>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Card Title</label>
+                    <input type="text" id="infoCardTitle" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium" required>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Display Type</label>
-                    <select id="infoCardDisplayType" onchange="toggleInfoCardFields()" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition font-medium">
-                        <option value="icon">Icon</option>
-                        <option value="image">Image</option>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Display Mode</label>
+                    <select id="infoCardDisplayType" onchange="toggleInfoCardFields()" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium">
+                        <option value="icon">Vector Icon</option>
+                        <option value="image">Custom Image Source</option>
                     </select>
                 </div>
                 <div id="iconField">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Icon</label>
-                    <select id="infoCardIcon" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition">
-                        <option value="fa-link">🔗 Link</option>
-                        <option value="fa-file-alt">📄 Document</option>
-                        <option value="fa-globe">🌐 Website</option>
-                        <option value="fa-database">🗄️ Database</option>
-                        <option value="fa-chart-bar">📊 Chart</option>
-                        <option value="fa-calendar">📅 Calendar</option>
-                        <option value="fa-envelope">✉️ Email</option>
-                        <option value="fa-phone">📞 Phone</option>
-                        <option value="fa-map-marker-alt">📍 Location</option>
-                        <option value="fa-video">🎥 Video</option>
-                        <option value="fa-image">🖼️ Image</option>
-                        <option value="fa-code">💻 Code</option>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Minimalist Icon</label>
+                    <select id="infoCardIcon" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-medium">
+                        <option value="fa-link">External Link (fa-link)</option>
+                        <option value="fa-file-alt">Document (fa-file-alt)</option>
+                        <option value="fa-globe">Web Server (fa-globe)</option>
+                        <option value="fa-database">Database Vault (fa-database)</option>
+                        <option value="fa-chart-bar">Analytics Chart (fa-chart-bar)</option>
+                        <option value="fa-calendar">Maintenance Roster (fa-calendar)</option>
+                        <option value="fa-envelope">Email Alert (fa-envelope)</option>
+                        <option value="fa-phone">On-Call Phone (fa-phone)</option>
+                        <option value="fa-map-marker-alt">Datacenter Location (fa-map-marker-alt)</option>
+                        <option value="fa-video">CCTV Stream (fa-video)</option>
+                        <option value="fa-code">Code Repository (fa-code)</option>
                     </select>
                 </div>
                 <div id="imageField" class="hidden space-y-3">
-                    <label class="block text-sm font-medium text-gray-700">Image Source</label>
+                    <label class="block text-xs font-bold text-gray-500 uppercase">Image Source</label>
                     <div class="flex gap-2">
-                        <button type="button" onclick="setImageSource('url')" id="imgSourceUrl" class="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-800 bg-gray-800 text-white font-medium transition">
-                            <i class="fas fa-link mr-2"></i>URL
-                        </button>
-                        <button type="button" onclick="setImageSource('upload')" id="imgSourceUpload" class="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-gray-600 font-medium hover:border-gray-300 transition">
-                            <i class="fas fa-upload mr-2"></i>Upload
-                        </button>
+                        <button type="button" onclick="setImageSource('url')" id="imgSourceUrl" class="flex-1 px-4 py-2 rounded-xl border-2 border-gray-900 bg-gray-900 text-white text-xs font-bold transition">URL</button>
+                        <button type="button" onclick="setImageSource('upload')" id="imgSourceUpload" class="flex-1 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 text-gray-600 text-xs font-bold transition">Upload</button>
                     </div>
                     <div id="imageUrlField">
-                        <input type="url" id="infoCardImageUrl" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="https://example.com/image.jpg">
+                        <input type="url" id="infoCardImageUrl" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-mono" placeholder="https://example.com/logo.png">
                     </div>
                     <div id="imageUploadField" class="hidden">
-                        <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-200 border-dashed rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition">
+                        <label class="flex flex-col items-center justify-center w-full h-28 border-2 border-gray-200 border-dashed rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition">
                             <div class="flex flex-col items-center justify-center pt-5 pb-6" id="uploadPlaceholder">
-                                <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
-                                <p class="text-sm text-gray-500">Click to upload image</p>
-                                <p class="text-xs text-gray-400 mt-1">PNG, JPG up to 2MB</p>
+                                <i class="fas fa-cloud-upload-alt text-2xl text-gray-400 mb-1.5"></i>
+                                <p class="text-xs text-gray-500">Click to upload PNG or JPG</p>
                             </div>
-                            <div id="uploadPreview" class="hidden w-full h-full flex items-center justify-center">
-                                <img id="previewImg" class="max-h-28 rounded-lg" src="" alt="Preview">
+                            <div id="uploadPreview" class="hidden w-full h-full flex items-center justify-center p-2">
+                                <img id="previewImg" class="max-h-24 rounded-md" src="" alt="Preview">
                             </div>
                             <input type="file" id="infoCardImageFile" class="hidden" accept="image/*" onchange="handleImageUpload(event)">
                         </label>
@@ -721,51 +858,41 @@
                     <input type="hidden" id="infoCardImage">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Link URL</label>
-                    <input type="url" id="infoCardLink" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="https://..." required>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1.5">Target Link URL</label>
+                    <input type="url" id="infoCardLink" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 outline-none transition text-sm font-mono" placeholder="https://..." required>
                 </div>
-                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Access Permissions</label>
-                    <p class="text-xs text-gray-500 mb-3">Select which roles can view this item (Admins always have full access):</p>
+                <div class="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80">
+                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Access Role Permissions</label>
+                    <p class="text-xs text-gray-500 mb-3">Check which roles can view this item (Admins retain full access):</p>
                     <div class="flex flex-wrap gap-4">
-                        <label class="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 font-semibold cursor-pointer">
                             <input type="checkbox" name="permRole" value="intern" checked class="w-4 h-4 rounded text-gray-900 focus:ring-gray-800"> Intern
                         </label>
-                        <label class="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 font-semibold cursor-pointer">
                             <input type="checkbox" name="permRole" value="member" checked class="w-4 h-4 rounded text-gray-900 focus:ring-gray-800"> Member
                         </label>
-                        <label class="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 font-semibold cursor-pointer">
                             <input type="checkbox" name="permRole" value="leader" checked class="w-4 h-4 rounded text-gray-900 focus:ring-gray-800"> Leader
                         </label>
                     </div>
                 </div>
+                <div class="pt-2 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal('infoCardModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition text-sm font-medium">Cancel</button>
+                    <button type="submit" class="px-6 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition text-sm font-bold shadow-md">Save Card</button>
+                </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
-                <button type="button" onclick="closeModal('infoCardModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button type="button" onclick="saveInfoCard()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium shadow-md">Save Card</button>
-            </div>
         </div>
     </div>
 
-    <!-- Rename Modal (Legacy Backup) -->
-    <div id="renameModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
-                <h3 class="text-xl font-bold text-gray-800">Rename</h3>
-                <button onclick="closeModal('renameModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <form class="p-5">
-                <input type="text" id="renameInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" required>
-            </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3">
-                <button type="button" onclick="closeModal('renameModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button type="button" onclick="confirmRename()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Rename</button>
-            </div>
+    <!-- Legacy Backup Rename Modal -->
+    <div id="renameModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg p-5 space-y-4">
+            <h3 class="text-lg font-bold">Rename</h3>
+            <input type="text" id="renameInput" class="w-full px-4 py-3 border rounded-xl">
+            <div class="flex justify-end gap-2"><button onclick="closeModal('renameModal')" class="px-4 py-2">Cancel</button></div>
         </div>
     </div>
 
     <script src="script.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a11d265fda65c51a',t:'MTc4MjQ4Njc0Mw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a11d41822a6b3f88',t:'MTc4MjQ4Nzg1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
