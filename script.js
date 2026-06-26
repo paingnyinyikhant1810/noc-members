@@ -1,5 +1,8 @@
 // ============ CONFIG & STATE ============
-const STORAGE_KEY = 'noc_portal_cache_v8';
+const stuckOverlay = document.getElementById('loadingOverlay');
+if (stuckOverlay) stuckOverlay.remove();
+
+const STORAGE_KEY = 'noc_portal_cache_v9';
 const API_URL = '/api';
 let currentUser = null;
 let authHeader = localStorage.getItem('authHeader');
@@ -47,6 +50,28 @@ const defaultData = {
 };
 
 let appData = { ...defaultData };
+
+// Universal case-insensitive user extractors
+function getUserRole(u) {
+    if (!u) return 'admin';
+    const r = u.role || u.Role || u.ROLE || u.user_role || u.type || u.tier || u.level || u.userType || 'admin';
+    return String(r).toLowerCase().trim();
+}
+function getAccountName(u) {
+    if (!u) return 'Operator';
+    return u.accountName || u.account_name || u.AccountName || u.name || u.Name || u.displayName || u.username || 'Operator';
+}
+
+// Universal vector icon formatter
+function renderIconHtml(iconVal, extraClass = "") {
+    if (!iconVal) return `<i class="fas fa-tag ${extraClass}"></i>`;
+    let s = String(iconVal).trim();
+    if (/\p{Emoji}/u.test(s) && !/^[a-z0-9_-]+$/i.test(s)) {
+        return `<span class="${extraClass}">${s}</span>`;
+    }
+    s = s.replace(/^fas?\s+/i, '').replace(/^fa-\s*/i, '');
+    return `<i class="fas fa-${s} ${extraClass}"></i>`;
+}
 
 // ============ APPEARANCE, THEME & FONT SCALING ============
 applyAppearanceSettings();
@@ -170,7 +195,7 @@ async function refreshData() {
     let fetchedFromServer = false;
     try {
         const controller = new AbortController();
-        const tid = setTimeout(() => controller.abort(), 4500); // 4.5s safety timeout
+        const tid = setTimeout(() => controller.abort(), 4500);
         const res = await fetch(`${API_URL}/getData`, { headers: getHeaders(), signal: controller.signal });
         clearTimeout(tid);
 
@@ -181,15 +206,12 @@ async function refreshData() {
         if (res.ok) {
             const data = await res.json();
             if (data) {
-                const mergeArr = (def, srv) => (srv && Array.isArray(srv) && srv.length > 0) ? srv : def;
-                appData = {
-                    users: mergeArr(appData.users || defaultData.users, data.users),
-                    updates: mergeArr(defaultData.updates, data.updates),
-                    categories: mergeArr(defaultData.categories, data.categories),
-                    infoCards: mergeArr(defaultData.infoCards, data.infoCards),
-                    folders: mergeArr(defaultData.folders, data.folders),
-                    learningItems: mergeArr(defaultData.learningItems, data.learningItems)
-                };
+                if (data.updates) appData.updates = data.updates;
+                if (data.categories) appData.categories = data.categories;
+                if (data.infoCards) appData.infoCards = data.infoCards;
+                if (data.folders) appData.folders = data.folders;
+                if (data.learningItems) appData.learningItems = data.learningItems;
+                if (data.users && data.users.length > 0) appData.users = data.users;
                 fetchedFromServer = true;
                 saveLocalCache();
 
@@ -198,8 +220,8 @@ async function refreshData() {
                     if (u) {
                         currentUser = u;
                         localStorage.setItem('noc_current_user', JSON.stringify(u));
-                        document.getElementById('welcomeUser').textContent = currentUser.accountName;
-                        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
+                        document.getElementById('welcomeUser').textContent = getAccountName(currentUser);
+                        document.getElementById('mobileWelcome').textContent = getAccountName(currentUser);
                         updateAdminUI();
                     }
                 }
@@ -229,19 +251,19 @@ function showToast(message, type = 'error') {
 // ============ STRICT CASE-INSENSITIVE PERMISSIONS & CHECKS ============
 function isAdmin() {
     if (!currentUser) return false;
-    const r = String(currentUser.role).toLowerCase().trim();
+    const r = getUserRole(currentUser);
     return r === 'admin' || r === 'administrator';
 }
 
 function canManageContent() {
     if (!currentUser) return false;
-    const r = String(currentUser.role).toLowerCase().trim();
+    const r = getUserRole(currentUser);
     return r === 'admin' || r === 'administrator' || r === 'leader' || r === 'team leader';
 }
 
 function hasPermission(item) {
     if (!currentUser) return false;
-    const r = String(currentUser.role).toLowerCase().trim();
+    const r = getUserRole(currentUser);
     if (r === 'admin' || r === 'administrator') return true;
     if (!item.permissions || !Array.isArray(item.permissions) || item.permissions.length === 0) return true;
     return item.permissions.map(x => String(x).toLowerCase().trim()).includes(r);
@@ -346,8 +368,8 @@ document.getElementById('loginForm')?.addEventListener('submit', async function(
         // ZERO FREEZE: Immediately switch views
         document.getElementById('loginPage').classList.add('hidden');
         document.getElementById('mainApp').classList.remove('hidden');
-        document.getElementById('welcomeUser').textContent = currentUser.accountName || u;
-        document.getElementById('mobileWelcome').textContent = currentUser.accountName || u;
+        document.getElementById('welcomeUser').textContent = getAccountName(currentUser);
+        document.getElementById('mobileWelcome').textContent = getAccountName(currentUser);
         updateAdminUI();
 
         navigateTo('home');
@@ -387,8 +409,8 @@ async function initApp() {
             currentUser = { username: creds[0], accountName: creds[0], role: 'member' };
         }
 
-        document.getElementById('welcomeUser').textContent = currentUser.accountName || creds[0];
-        document.getElementById('mobileWelcome').textContent = currentUser.accountName || creds[0];
+        document.getElementById('welcomeUser').textContent = getAccountName(currentUser);
+        document.getElementById('mobileWelcome').textContent = getAccountName(currentUser);
         updateAdminUI();
 
         navigateTo('home');
@@ -419,8 +441,8 @@ function logout() {
 function updateAdminUI() {
     const badgeEl = document.getElementById('currentUserRoleBadge');
     if (badgeEl && currentUser) {
-        badgeEl.textContent = currentUser.role;
-        const r = String(currentUser.role).toLowerCase().trim();
+        const r = getUserRole(currentUser);
+        badgeEl.textContent = r;
         const colors = {
             admin: 'bg-purple-600 text-white shadow-2xs border border-purple-500',
             leader: 'bg-blue-600 text-white shadow-2xs border border-blue-500',
@@ -678,8 +700,8 @@ async function saveToApi(table, data) {
     if (key === 'users' && currentUser && data.id === currentUser.id) {
         currentUser = { ...currentUser, ...data };
         localStorage.setItem('noc_current_user', JSON.stringify(currentUser));
-        document.getElementById('welcomeUser').textContent = currentUser.accountName;
-        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
+        document.getElementById('welcomeUser').textContent = getAccountName(currentUser);
+        document.getElementById('mobileWelcome').textContent = getAccountName(currentUser);
         updateAdminUI();
     }
 
@@ -774,14 +796,11 @@ function closeMobileMenu() {
 function renderMobileInfoMenu() {
     const container = document.getElementById('mobileInfoMenu');
     if (!container) return;
-    let html = appData.categories.map(cat => {
-        const iconCls = (cat.icon && cat.icon.startsWith('fa-')) ? cat.icon : 'fa-tag';
-        return `
-            <button onclick="showInfoCategory(${cat.id}, '${cat.name}'); closeMobileMenu();" class="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-xs font-semibold cursor-pointer">
-                <i class="fas ${iconCls} w-4 text-gray-400 text-center"></i> ${cat.name}
-            </button>
-        `;
-    }).join('');
+    let html = appData.categories.map(cat => `
+        <button onclick="showInfoCategory(${cat.id}, '${cat.name}'); closeMobileMenu();" class="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition text-xs font-semibold cursor-pointer">
+            <span class="w-5 text-center flex justify-center text-gray-400">${renderIconHtml(cat.icon)}</span> ${cat.name}
+        </button>
+    `).join('');
 
     if (isAdmin()) {
         html += `
@@ -828,14 +847,11 @@ function toggleInfoDropdown() {
 function renderInfoDropdown() {
     const container = document.getElementById('infoDropdown');
     if (!container) return;
-    let html = `<div class="py-1">` + appData.categories.map(cat => {
-        const iconCls = (cat.icon && cat.icon.startsWith('fa-')) ? cat.icon : 'fa-tag';
-        return `
-            <button onclick="showInfoCategory(${cat.id}, '${cat.name}')" class="dropdown-item w-full text-left px-4 py-2.5 text-gray-700 flex items-center gap-3 text-xs font-bold cursor-pointer">
-                <i class="fas ${iconCls} text-gray-400 w-4 text-center"></i> ${cat.name}
-            </button>
-        `;
-    }).join('') + `</div>`;
+    let html = `<div class="py-1">` + appData.categories.map(cat => `
+        <button onclick="showInfoCategory(${cat.id}, '${cat.name}')" class="dropdown-item w-full text-left px-4 py-2.5 text-gray-700 flex items-center gap-3 text-xs font-bold cursor-pointer">
+            <span class="w-5 text-center flex justify-center text-gray-400">${renderIconHtml(cat.icon)}</span> ${cat.name}
+        </button>
+    `).join('') + `</div>`;
 
     if (isAdmin()) {
         html += `
@@ -868,6 +884,172 @@ document.addEventListener('click', function(e) {
     if (contextM && !contextM.contains(e.target)) contextM.classList.add('hidden');
 });
 
+// ============ TEAM UPDATES ============
+function renderUpdates() {
+    const container = document.getElementById('updatesContainer');
+    if (!container) return;
+    const badgeStyles = {
+        important: 'bg-red-50 text-red-700 border-red-200',
+        general: 'bg-blue-50 text-blue-700 border-blue-200',
+        announcement: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        reminder: 'bg-amber-50 text-amber-700 border-amber-200'
+    };
+    const badgeIcons = {
+        important: '<i class="fas fa-circle text-[6px] text-red-500 mr-1.5"></i>',
+        general: '<i class="fas fa-circle text-[6px] text-blue-500 mr-1.5"></i>',
+        announcement: '<i class="fas fa-circle text-[6px] text-emerald-500 mr-1.5"></i>',
+        reminder: '<i class="fas fa-circle text-[6px] text-amber-500 mr-1.5"></i>'
+    };
+
+    container.innerHTML = appData.updates.map(update => `
+        <div class="update-card bg-white rounded-2xl p-6 shadow-xs border border-gray-100 hover:border-blue-200 transition">
+            <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
+                <h3 class="font-bold text-base text-gray-900">${update.topic}</h3>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <span class="px-2.5 py-1 rounded text-[11px] font-bold border ${badgeStyles[update.badge]} cursor-default flex items-center capitalize">
+                        ${badgeIcons[update.badge]} ${update.badge}
+                    </span>
+                    ${isAdmin() ? `
+                        <button onclick="editUpdate(${update.id})" class="icon-btn w-7 h-7 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 cursor-pointer" title="Edit"><i class="fas fa-pen text-[10px]"></i></button>
+                        <button onclick="deleteUpdate(${update.id})" class="icon-btn w-7 h-7 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-red-600 hover:bg-red-50 cursor-pointer" title="Delete"><i class="fas fa-trash text-[10px]"></i></button>
+                    ` : ''}
+                </div>
+            </div>
+            <div class="card-link text-gray-600 mb-4 leading-relaxed text-sm font-sans">${linkify(update.message)}</div>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-gray-400 pt-3 border-t border-gray-100 font-mono">
+                <span class="flex items-center gap-1.5"><i class="fas fa-user-circle text-gray-400"></i>${update.author}</span>
+                <span class="flex items-center gap-1.5"><i class="fas fa-calendar text-gray-400"></i>${update.date}</span>
+            </div>
+        </div>
+    `).join('') || '<div class="text-center text-gray-400 py-16 bg-white rounded-2xl border border-gray-100"><i class="fas fa-inbox text-2xl mb-2 text-gray-300"></i><p class="text-xs font-semibold uppercase tracking-wider">No team updates posted</p></div>';
+}
+
+function linkify(text) {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    return text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener" class="text-blue-600 underline font-mono">$1</a>').replace(/\n/g, '<br>');
+}
+
+function openUpdateModal(id = null) {
+    if (!isAdmin()) return;
+    document.getElementById('updateModal').classList.remove('hidden');
+    document.getElementById('updateModalTitle').textContent = id ? 'Edit Update' : 'Add Update';
+    document.getElementById('updateId').value = id || '';
+    if (id) {
+        const u = appData.updates.find(x => x.id === id);
+        if (u) {
+            document.getElementById('updateTopic').value = u.topic;
+            document.getElementById('updateBadge').value = u.badge;
+            document.getElementById('updateMessage').value = u.message;
+        }
+    } else document.getElementById('updateForm').reset();
+}
+
+async function saveUpdate(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (!isAdmin()) return;
+    const id = document.getElementById('updateId').value;
+    const topic = document.getElementById('updateTopic').value.trim();
+    const message = document.getElementById('updateMessage').value.trim();
+    if (!topic || !message) return showToast('Topic and message required');
+
+    const update = {
+        id: id ? parseInt(id) : null,
+        topic,
+        badge: document.getElementById('updateBadge').value,
+        message,
+        author: getAccountName(currentUser),
+        date: new Date().toISOString().slice(0, 10)
+    };
+    if (await saveToApi('updates', update)) closeModal('updateModal');
+}
+
+function editUpdate(id) { if (isAdmin()) openUpdateModal(id); }
+async function deleteUpdate(id) { if (isAdmin() && confirm('Delete update?')) await deleteFromApi('updates', id); }
+
+// ============ ADMIN PANEL OPERATORS ============
+function getRoleBadge(role) {
+    const r = String(role).toLowerCase().trim();
+    const badges = {
+        admin: '<span class="px-2 py-0.5 bg-purple-50 text-purple-700 font-bold rounded text-[11px] border border-purple-200 uppercase tracking-wider"><i class="fas fa-shield-halved mr-1"></i> Admin</span>',
+        leader: '<span class="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold rounded text-[11px] border border-blue-200 uppercase tracking-wider"><i class="fas fa-star mr-1"></i> Leader</span>',
+        member: '<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold rounded text-[11px] border border-emerald-200 uppercase tracking-wider"><i class="fas fa-user mr-1"></i> Member</span>',
+        intern: '<span class="px-2 py-0.5 bg-amber-50 text-amber-700 font-bold rounded text-[11px] border border-amber-200 uppercase tracking-wider"><i class="fas fa-seedling mr-1"></i> Intern</span>'
+    };
+    return badges[r] || role;
+}
+
+function renderUsers() {
+    const tbody = document.getElementById('usersTable');
+    if (!tbody) return;
+    tbody.innerHTML = appData.users.map(user => {
+        const uId = user.id || user.Id || user._id;
+        return `
+            <tr class="hover:bg-gray-50/80 transition border-b border-gray-100">
+                <td class="px-4 sm:px-6 py-3.5">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500 border border-gray-200/60"><i class="fas fa-user text-xs"></i></div>
+                        <span class="font-bold text-gray-900 text-xs">${getAccountName(user)}</span>
+                    </div>
+                </td>
+                <td class="px-4 sm:px-6 py-3.5 hidden sm:table-cell font-mono text-xs text-gray-500">${user.username || user.Username}</td>
+                <td class="px-4 sm:px-6 py-3.5">
+                     <div class="flex items-center gap-2">
+                        <span class="text-gray-600 font-mono text-xs ${visiblePasswords[uId] ? '' : 'password-dots'}">${visiblePasswords[uId] ? (user.password || user.Password) : '••••'}</span>
+                        <button type="button" onclick="togglePasswordVisibility(${uId})" class="icon-btn text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fas ${visiblePasswords[uId] ? 'fa-eye-slash' : 'fa-eye'} text-xs"></i></button>
+                    </div>
+                </td>
+                <td class="px-4 sm:px-6 py-3.5">${getRoleBadge(getUserRole(user))}</td>
+                <td class="px-4 sm:px-6 py-3.5 text-right">
+                    <button type="button" onclick="editUser(${uId})" class="icon-btn text-gray-400 hover:text-blue-600 mr-2 cursor-pointer" title="Edit"><i class="fas fa-pen text-xs"></i></button>
+                    ${uId !== (currentUser?.id || currentUser?.Id) ? `<button type="button" onclick="deleteFromApi('users', ${uId})" class="icon-btn text-gray-400 hover:text-red-600 cursor-pointer" title="Delete"><i class="fas fa-trash text-xs"></i></button>` : ''}
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function openUserModal(id = null) {
+    document.getElementById('userModal').classList.remove('hidden');
+    document.getElementById('userId').value = id || '';
+    document.getElementById('userModalTitle').textContent = id ? 'Edit Operator' : 'Add Operator';
+    
+    const pwdField = document.getElementById('userPassword');
+    if (pwdField) pwdField.type = 'password';
+    document.getElementById('toggleEditPassword')?.querySelector('i')?.classList.replace('fa-eye-slash', 'fa-eye');
+    
+    if (id) {
+        const u = appData.users.find(x => (x.id === id || x.Id === id || x._id === id));
+        if (u) {
+            document.getElementById('userAccountName').value = getAccountName(u);
+            document.getElementById('userUsername').value = u.username || u.Username || '';
+            document.getElementById('userPassword').value = u.password || u.Password || '';
+            document.getElementById('userRole').value = getUserRole(u);
+        }
+    } else {
+        document.getElementById('userForm').reset();
+        document.getElementById('userRole').value = 'member';
+    }
+}
+
+async function saveUser(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    const id = document.getElementById('userId').value;
+    const accountName = document.getElementById('userAccountName').value.trim();
+    const username = document.getElementById('userUsername').value.trim();
+    const password = document.getElementById('userPassword').value;
+    const role = document.getElementById('userRole').value;
+
+    if (!accountName || !username || !password) return showToast('All fields required');
+
+    const existing = appData.users.find(u => (u.username || u.Username) === username && (u.id || u.Id || u._id) !== (id ? parseInt(id) : -1));
+    if (existing) return showToast('Username already taken', 'error');
+
+    const data = { id: id ? parseInt(id) : null, accountName, username, password, role };
+    if (await saveToApi('users', data)) closeModal('userModal');
+}
+
+function editUser(id) { openUserModal(id); }
+
 // ============ CATEGORIES SETTING MODAL ============
 function openCategoriesManageModal() {
     document.getElementById('infoDropdown')?.classList.add('hidden');
@@ -878,21 +1060,18 @@ function openCategoriesManageModal() {
 function renderCategoriesManageList() {
     const container = document.getElementById('categoriesManageList');
     if (!container) return;
-    container.innerHTML = appData.categories.map(cat => {
-        const iconCls = (cat.icon && cat.icon.startsWith('fa-')) ? cat.icon : 'fa-tag';
-        return `
-            <div class="p-3.5 bg-gray-50 border border-gray-200/80 rounded-xl flex items-center justify-between">
-                <div class="flex items-center gap-3 truncate">
-                    <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-gray-200 text-blue-600 shadow-2xs flex-shrink-0"><i class="fas ${iconCls} text-xs"></i></div>
-                    <span class="font-bold text-gray-800 text-xs truncate">${cat.name}</span>
-                </div>
-                <div class="flex gap-1.5 flex-shrink-0">
-                     <button type="button" onclick="openCategoryModal(${cat.id})" class="icon-btn p-2 text-gray-400 hover:text-blue-600 cursor-pointer" title="Edit"><i class="fas fa-pen text-xs"></i></button>
-                     <button type="button" onclick="deleteFromApi('categories', ${cat.id})" class="icon-btn p-2 text-gray-400 hover:text-red-600 cursor-pointer" title="Delete"><i class="fas fa-trash text-xs"></i></button>
-                </div>
+    container.innerHTML = appData.categories.map(cat => `
+        <div class="p-3.5 bg-gray-50 border border-gray-200/80 rounded-xl flex items-center justify-between">
+            <div class="flex items-center gap-3 truncate">
+                <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center border border-gray-200 text-blue-600 shadow-2xs flex-shrink-0"><span class="flex justify-center items-center text-xs">${renderIconHtml(cat.icon)}</span></div>
+                <span class="font-bold text-gray-800 text-xs truncate">${cat.name}</span>
             </div>
-        `;
-    }).join('');
+            <div class="flex gap-1.5 flex-shrink-0">
+                 <button type="button" onclick="openCategoryModal(${cat.id})" class="icon-btn p-2 text-gray-400 hover:text-blue-600 cursor-pointer" title="Edit"><i class="fas fa-pen text-xs"></i></button>
+                 <button type="button" onclick="deleteFromApi('categories', ${cat.id})" class="icon-btn p-2 text-gray-400 hover:text-red-600 cursor-pointer" title="Delete"><i class="fas fa-trash text-xs"></i></button>
+            </div>
+        </div>
+    `).join('');
 }
 
 function openCategoryModal(id = null) {
