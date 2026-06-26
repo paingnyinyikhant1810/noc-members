@@ -3,9 +3,8 @@
 export const onRequest = async (context) => {
   const { request, env } = context;
   const url = new URL(request.url);
-  const path = url.pathname.replace('/api/', ''); 
+  const path = url.pathname.replace(/^\/api\//, '').replace(/\/$/, ''); 
 
-  // CORS headers
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*", 
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
@@ -16,21 +15,16 @@ export const onRequest = async (context) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Dynamic D1 Resolution: Find any bound Cloudflare D1 database object in env
-  let db = null;
-  if (env) {
-    db = env.DB || env.DATABASE || env.D1 || env.NOC_DB || env.DB_BINDING || env.db || env.database || env.d1 || null;
-    if (!db) {
-      for (const key of Object.keys(env)) {
-        if (env[key] && typeof env[key].prepare === 'function') {
-          db = env[key];
-          break;
-        }
-      }
-    }
-  }
+  const db = env ? (env.DB || env.DATABASE || env.D1 || env.NOC_DB || env.DB_BINDING || env.db || env.database || env.d1 || null) : null;
 
-  // Helper to resolve table names (supporting both singular and plural table conventions in D1)
+  // Universal case-insensitive SQLite column property extractors
+  const getRole = (u) => {
+    if (!u) return 'admin';
+    const r = u.role || u.Role || u.ROLE || u.user_role || u.type || u.tier || u.level || u.userType || 'admin';
+    return String(r).toLowerCase().trim();
+  };
+  const getId = (u) => u ? (u.id || u.Id || u.ID || u._id || u.user_id) : null;
+
   const resolveTable = async (plural, singular) => {
     if (!db) return plural;
     try { await db.prepare(`SELECT 1 FROM ${plural} LIMIT 1`).all(); return plural; }
@@ -43,11 +37,11 @@ export const onRequest = async (context) => {
     }
   };
 
-  const queryTable = async (plural, singular, orderClause = "") => {
+  const safeSelect = async (plural, singular, clause = "") => {
     if (!db) return [];
-    const tName = await resolveTable(plural, singular);
+    const t = await resolveTable(plural, singular);
     try {
-      const r = await db.prepare(`SELECT * FROM ${tName} ${orderClause}`).all();
+      const r = await db.prepare(`SELECT * FROM ${t} ${clause}`).all();
       return r.results || [];
     } catch(e) { return []; }
   };
@@ -64,9 +58,10 @@ export const onRequest = async (context) => {
       const password = credentials.slice(idx + 1);
       if (!username || !password || !db) return null;
       const tUsers = await resolveTable('users', 'user');
-      return await db.prepare(`SELECT * FROM ${tUsers} WHERE username = ? AND password = ?`)
-        .bind(username, password)
-        .first();
+      // Query case-insensitively on username just in case
+      const uRes = await db.prepare(`SELECT * FROM ${tUsers} WHERE username = ? AND password = ?`).bind(username, password).first();
+      if (uRes) return uRes;
+      return await db.prepare(`SELECT * FROM ${tUsers} WHERE lower(username) = lower(?) AND password = ?`).bind(username, password).first();
     } catch (e) { return null; }
   };
 
@@ -74,7 +69,7 @@ export const onRequest = async (context) => {
   if (path === "login" && request.method === "POST") {
     const user = await getAuth();
     if (!user) {
-      return new Response(JSON.stringify({ error: "Invalid credentials or unbound D1 database" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Invalid login credentials or database unbound" }), { status: 401, headers: corsHeaders });
     }
     return new Response(JSON.stringify({ success: true, user }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
   }
@@ -91,36 +86,31 @@ export const onRequest = async (context) => {
     const pairs = [['folders','folder'], ['learning_items','learning_item'], ['info_cards','info_card']];
     for (const [pl, sg] of pairs) {
       const t = await resolveTable(pl, sg);
-      try {
-        await db.prepare(`SELECT permissions FROM ${t} LIMIT 1`).all();
-      } catch(e) {
-        try {
-          await db.prepare(`ALTER TABLE ${t} ADD COLUMN permissions TEXT DEFAULT '["intern","member","leader","admin"]'`).run();
-        } catch(err2) {}
+      try { await db.prepare(`SELECT permissions FROM ${t} LIMIT 1`).all(); }
+      catch(e) {
+        try { await db.prepare(`ALTER TABLE ${t} ADD COLUMN permissions TEXT DEFAULT '["intern","member","leader","admin"]'`).run(); } catch(err2) {}
       }
     }
   };
 
-  // Helper to parse permissions JSON string
   const parsePerms = (arr) => {
     if (!arr || !Array.isArray(arr)) return [];
     return arr.map(x => {
       let p = ['intern', 'member', 'leader', 'admin'];
-      if (x && x.permissions) {
-        try {
-          p = typeof x.permissions === 'string' ? JSON.parse(x.permissions) : x.permissions;
-        } catch(e) {}
+      const rawP = x.permissions || x.Permissions || x.PERMISSIONS;
+      if (rawP) {
+        try { p = typeof rawP === 'string' ? JSON.parse(rawP) : rawP; } catch(e){}
       }
       return { ...x, permissions: p };
     });
   };
 
-  // --- 2. Get All Data Endpoint (Parallel Execution) ---
+  // --- 2. Get All Data Endpoint ---
   if (path === "getData" && request.method === "GET") {
     try { await ensureSchema(); } catch(e) {}
 
-    const userRole = user.role ? String(user.role).toLowerCase().trim() : '';
-    const isAdmin = userRole === 'admin' || userRole === 'administrator';
+    const uRole = getRole(user);
+    const isAdmin = uRole === 'admin' || uRole === 'administrator';
 
     if (!db) {
       return new Response(JSON.stringify({
@@ -128,22 +118,22 @@ export const onRequest = async (context) => {
       }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
     }
 
-    const [updatesRes, categoriesRes, infoCardsRes, learningItemsRes, foldersRes, usersRes] = await Promise.all([
-      queryTable('updates', 'update', 'ORDER BY id DESC'),
-      queryTable('categories', 'category'),
-      queryTable('info_cards', 'info_card').then(r => parsePerms(r)),
-      queryTable('learning_items', 'learning_item').then(r => parsePerms(r)),
-      queryTable('folders', 'folder').then(r => parsePerms(r)),
-      isAdmin ? queryTable('users', 'user') : Promise.resolve([user])
+    const [updatesArr, categoriesArr, infoCardsArr, learningItemsArr, foldersArr, usersArr] = await Promise.all([
+      safeSelect('updates', 'update', 'ORDER BY id DESC'),
+      safeSelect('categories', 'category'),
+      safeSelect('info_cards', 'info_card').then(r => parsePerms(r)),
+      safeSelect('learning_items', 'learning_item').then(r => parsePerms(r)),
+      safeSelect('folders', 'folder').then(r => parsePerms(r)),
+      isAdmin ? safeSelect('users', 'user') : Promise.resolve([user])
     ]);
 
     const data = {
-      updates: updatesRes,
-      categories: categoriesRes,
-      infoCards: infoCardsRes,
-      learningItems: learningItemsRes,
-      folders: foldersRes,
-      users: usersRes
+      updates: updatesArr,
+      categories: categoriesArr,
+      infoCards: infoCardsArr,
+      learningItems: learningItemsArr,
+      folders: foldersArr,
+      users: usersArr
     };
 
     return new Response(JSON.stringify(data), {
@@ -159,17 +149,18 @@ export const onRequest = async (context) => {
 
     try {
       const tUsers = await resolveTable('users', 'user');
+      const uId = getId(user);
 
-      if (action === 'changePassword' || (action === 'save' && (table === 'users' || table === 'user') && data && data.id === user.id)) {
-        const newPwd = data ? data.password : body.newPassword;
+      if (action === 'changePassword' || (action === 'save' && (table === 'users' || table === 'user') && data && (data.id === uId || data.Id === uId))) {
+        const newPwd = data ? (data.password || data.Password) : body.newPassword;
         if (!newPwd) throw new Error("Password required");
-        await db.prepare(`UPDATE ${tUsers} SET password=? WHERE id=?`).bind(newPwd, user.id).run();
+        await db.prepare(`UPDATE ${tUsers} SET password=? WHERE id=?`).bind(newPwd, uId).run();
         return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       }
 
-      const userRole = user.role ? String(user.role).toLowerCase().trim() : '';
-      const isContentManager = userRole === 'admin' || userRole === 'administrator' || userRole === 'leader' || userRole === 'team leader';
-      const isAdmin = userRole === 'admin' || userRole === 'administrator';
+      const uRole = getRole(user);
+      const isContentManager = uRole === 'admin' || uRole === 'administrator' || uRole === 'leader' || uRole === 'team leader';
+      const isAdmin = uRole === 'admin' || uRole === 'administrator';
       
       const contentTargets = ['updates', 'update', 'info_cards', 'info_card', 'learning_items', 'learning_item', 'folders', 'folder'];
       const adminTargets = ['users', 'user', 'categories', 'category'];
@@ -180,7 +171,6 @@ export const onRequest = async (context) => {
 
       try { await ensureSchema(); } catch(e) {}
 
-      // Resolve actual table name in D1
       let targetT = table;
       if (table === 'updates' || table === 'update') targetT = await resolveTable('updates', 'update');
       else if (table === 'categories' || table === 'category') targetT = await resolveTable('categories', 'category');
@@ -197,8 +187,9 @@ export const onRequest = async (context) => {
 
       if (action === 'save') {
         const permsStr = data.permissions ? JSON.stringify(data.permissions) : '["intern","member","leader","admin"]';
+        const iconVal = data.icon || data.Icon || 'fa-tag';
 
-        if (targetT === await resolveTable('users', 'user')) {
+        if (targetT === tUsers) {
           if (data.id) await db.prepare(`UPDATE ${targetT} SET accountName=?, username=?, password=?, role=? WHERE id=?`).bind(data.accountName, data.username, data.password, data.role, data.id).run();
           else await db.prepare(`INSERT INTO ${targetT} (accountName, username, password, role) VALUES (?, ?, ?, ?)`).bind(data.accountName, data.username, data.password, data.role).run();
         }
@@ -207,12 +198,12 @@ export const onRequest = async (context) => {
           else await db.prepare(`INSERT INTO ${targetT} (topic, badge, message, author, date) VALUES (?, ?, ?, ?, ?)`).bind(data.topic, data.badge, data.message, data.author, data.date).run();
         }
         else if (targetT === await resolveTable('categories', 'category')) {
-          if (data.id) await db.prepare(`UPDATE ${targetT} SET name=?, icon=? WHERE id=?`).bind(data.name, data.icon, data.id).run();
-          else await db.prepare(`INSERT INTO ${targetT} (name, icon) VALUES (?, ?)`).bind(data.name, data.icon).run();
+          if (data.id) await db.prepare(`UPDATE ${targetT} SET name=?, icon=? WHERE id=?`).bind(data.name, iconVal, data.id).run();
+          else await db.prepare(`INSERT INTO ${targetT} (name, icon) VALUES (?, ?)`).bind(data.name, iconVal).run();
         }
         else if (targetT === await resolveTable('info_cards', 'info_card')) {
-          if (data.id) await db.prepare(`UPDATE ${targetT} SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, permissions=? WHERE id=?`).bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr, data.id).run();
-          else await db.prepare(`INSERT INTO ${targetT} (title, displayType, icon, image, link, categoryId, permissions) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, permsStr).run();
+          if (data.id) await db.prepare(`UPDATE ${targetT} SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, permissions=? WHERE id=?`).bind(data.title, data.displayType, iconVal, data.image, data.link, data.categoryId, permsStr, data.id).run();
+          else await db.prepare(`INSERT INTO ${targetT} (title, displayType, icon, image, link, categoryId, permissions) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(data.title, data.displayType, iconVal, data.image, data.link, data.categoryId, permsStr).run();
         }
         else if (targetT === await resolveTable('folders', 'folder')) {
           if (data.id) await db.prepare(`UPDATE ${targetT} SET name=?, parentId=?, permissions=? WHERE id=?`).bind(data.name, data.parentId, permsStr, data.id).run();
