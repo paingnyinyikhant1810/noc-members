@@ -494,7 +494,7 @@ function makeFolderCard(f){
   const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
   // No hover icons — right-click (desktop) / long-press (mobile) only
   return `<div class="file-card" data-kind="folder" data-id="${f.id}" onclick="openFolder(${f.id})"
-    ${isAdmin()?`oncontextmenu="showCtx(event,'folder',${f.id})"`:''}>
+    ${isAdmin()?`oncontextmenu="showCtx(event,'folder',${f.id});return false;"`:''}>
     <div class="fi fi-folder"><i class="fas fa-folder"></i></div>
     <span class="fc-name">${escHtml(f.name)}</span>
     ${permTag}
@@ -509,7 +509,7 @@ function makeItemCard(i){
   const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
   // No hover icons — right-click (desktop) / long-press (mobile) only
   return `<div class="file-card" data-kind="item" data-id="${i.id}" onclick="openLearningItem(${i.id})"
-    ${isAdmin()?`oncontextmenu="showCtx(event,'item',${i.id})"`:''}>
+    ${isAdmin()?`oncontextmenu="showCtx(event,'item',${i.id});return false;"`:''}>
     <div class="fi ${fiCls}"><i class="fas ${faIcon}"></i></div>
     <span class="fc-name">${escHtml(i.topic)}</span>
     ${permTag}
@@ -680,7 +680,7 @@ function renderInfoCards(){
     <div id="ic-${card.id}" style="position:relative">
       <div class="info-card" data-cid="${card.id}"
            onclick="handleInfoCardClick(event,${card.id},'${escAttr(card.link)}')"
-           ${canManageInfo()?`oncontextmenu="showInfoCardCtx(event,${card.id})"`:''}>
+           ${canManageInfo()?`oncontextmenu="showInfoCardCtx(event,${card.id});return false;"`:''}>
         ${card.displayType==='image'&&card.image
           ?`<img src="${escAttr(card.image)}" alt="${escAttr(card.title)}" class="info-card-img" onerror="this.style.display='none'">`
           :`<div class="info-icon"><i class="fas ${card.icon||'fa-link'}"></i></div>`}
@@ -697,7 +697,19 @@ function handleInfoCardClick(event,cardId,link){if(isLongPress){event.preventDef
 function startLongPress(e,id){if(!canManageInfo())return;isLongPress=false;longPressCardId=id;longPressTimer=setTimeout(()=>{isLongPress=true;if(navigator.vibrate)navigator.vibrate(50);showInfoCardCtx(e,id);},500);}
 function endLongPress(){clearTimeout(longPressTimer);}
 function cancelLongPress(){clearTimeout(longPressTimer);isLongPress=false;}
-function showInfoCardCtx(e,id){if(!canManageInfo())return;longPressCardId=id;const m=el('infoCardContextMenu');m.classList.remove('hidden');const x=e.touches?e.touches[0].clientX:e.clientX,y=e.touches?e.touches[0].clientY:e.clientY;m.style.left=Math.min(x,window.innerWidth-180)+'px';m.style.top=Math.min(y,window.innerHeight-120)+'px';}
+function showInfoCardCtx(e,id){
+  if(!canManageInfo())return;
+  // Always stop browser default context menu
+  if(e && e.preventDefault) e.preventDefault();
+  if(e && e.stopPropagation) e.stopPropagation();
+  longPressCardId=id;
+  const m=el('infoCardContextMenu');
+  m.classList.remove('hidden');
+  const x=e.touches?e.touches[0].clientX:e.clientX;
+  const y=e.touches?e.touches[0].clientY:e.clientY;
+  m.style.left=Math.min(x,window.innerWidth-190)+'px';
+  m.style.top=Math.min(y,window.innerHeight-140)+'px';
+}
 document.addEventListener('click',e=>{const m=el('infoCardContextMenu');if(m&&!m.classList.contains('hidden')&&!m.contains(e.target))m.classList.add('hidden');});
 function editInfoCardFromContext(){el('infoCardContextMenu').classList.add('hidden');openInfoCardModal(longPressCardId);}
 
@@ -938,24 +950,94 @@ function pad(n){return String(n).padStart(2,'0');}
 
 /* Subnet Calculator */
 el('subnetInput').addEventListener('input',calcSubnet);
+
 function calcSubnet(){
-  const raw=el('subnetInput').value.trim(),out=el('subnetResults');
+  const raw=el('subnetInput').value.trim(), out=el('subnetResults');
   if(!raw){out.innerHTML='';return;}
   try{
     const[ipPart,cidrPart]=raw.split('/');
     if(!cidrPart)throw new Error('Enter CIDR notation e.g. 192.168.1.0/24');
-    const cidr=parseInt(cidrPart);if(cidr<0||cidr>32)throw new Error('CIDR must be 0–32');
+    const cidr=parseInt(cidrPart);
+    if(cidr<0||cidr>32)throw new Error('CIDR must be 0–32');
     const ipNums=ipPart.split('.').map(Number);
     if(ipNums.length!==4||ipNums.some(n=>isNaN(n)||n<0||n>255))throw new Error('Invalid IP address');
+
     const ipInt=ipNums.reduce((a,b)=>(a<<8)+b,0)>>>0;
     const mask=cidr===0?0:(0xFFFFFFFF<<(32-cidr))>>>0;
-    const network=(ipInt&mask)>>>0,broadcast=(network|(~mask>>>0))>>>0;
-    const first=(network+1)>>>0,last=(broadcast-1)>>>0;
-    const total=Math.pow(2,32-cidr),usable=cidr>=31?total:Math.max(0,total-2);
+    const network =(ipInt&mask)>>>0;
+    const broadcast=(network|(~mask>>>0))>>>0;
+    const first=(network+1)>>>0;
+    const last =(broadcast-1)>>>0;
+    const total=Math.pow(2,32-cidr);
+    const usable=cidr>=31?total:Math.max(0,total-2);
     const i2s=n=>[24,16,8,0].map(s=>(n>>s)&0xFF).join('.');
-    const rows=[['Network',i2s(network)],['Subnet Mask',i2s(mask)],['Wildcard',i2s(~mask>>>0)],['Broadcast',i2s(broadcast)],['First Host',cidr>=31?'N/A':i2s(first)],['Last Host',cidr>=31?'N/A':i2s(last)],['Total IPs',total.toLocaleString()],['Usable Hosts',usable.toLocaleString()],['CIDR',`/${cidr}`]];
-    out.innerHTML=rows.map(([l,v])=>`<div class="sn-row"><span class="sn-label">${l}</span><span class="sn-val">${v}</span></div>`).join('');
-  }catch(e){out.innerHTML=`<div class="sn-error"><i class="fas fa-exclamation-circle"></i> ${escHtml(e.message)}</div>`;}
+    const maskStr=i2s(mask);
+
+    // ── Subnet info rows ─────────────────────────────────
+    const rows=[
+      ['Network Address', i2s(network)],
+      ['Subnet Mask',     maskStr],
+      ['Wildcard Mask',   i2s(~mask>>>0)],
+      ['Broadcast',       i2s(broadcast)],
+      ['First Usable IP', cidr>=31?'N/A':i2s(first)],
+      ['Last Usable IP',  cidr>=31?'N/A':i2s(last)],
+      ['Total IPs',       total.toLocaleString()],
+      ['Usable Hosts',    usable.toLocaleString()],
+      ['CIDR',            `/${cidr}`],
+    ];
+
+    // ── NOC Handover text block ───────────────────────────
+    // Gateway  = first usable IP
+    // Customer = last usable IP  (last usable, not broadcast, not gateway)
+    const gateway   = cidr>=31 ? 'N/A' : i2s(first);
+    const customerIP= cidr>=31 ? 'N/A' : i2s(last);
+    const subnetDisplay=`${i2s(network)}/${cidr} (${maskStr})`;
+
+    const handoverText =
+`Customer IP : ${customerIP}
+Gateway     : ${gateway}
+Subnet      : ${subnetDisplay}
+DNS1        - 59.153.88.210
+DNS2        - 59.153.90.34`;
+
+    out.innerHTML=`
+      ${rows.map(([l,v])=>`<div class="sn-row"><span class="sn-label">${l}</span><span class="sn-val">${v}</span></div>`).join('')}
+
+      <div class="sn-handover-wrap">
+        <div class="sn-handover-header">
+          <span class="sn-handover-title"><i class="fas fa-clipboard"></i> NOC Handover Info</span>
+          <button class="sn-copy-btn" onclick="copyHandoverText()" title="Copy to clipboard">
+            <i class="fas fa-copy"></i> Copy
+          </button>
+        </div>
+        <pre id="handoverText" class="sn-handover-pre">${escHtml(handoverText)}</pre>
+      </div>`;
+
+  }catch(e){
+    el('subnetResults').innerHTML=`<div class="sn-error"><i class="fas fa-exclamation-circle"></i> ${escHtml(e.message)}</div>`;
+  }
+}
+
+function copyHandoverText(){
+  const pre=el('handoverText');
+  if(!pre)return;
+  const text=pre.textContent;
+  navigator.clipboard.writeText(text).then(()=>{
+    const btn=document.querySelector('.sn-copy-btn');
+    if(btn){
+      btn.innerHTML='<i class="fas fa-check"></i> Copied!';
+      btn.style.background='#10b981';btn.style.color='#fff';
+      setTimeout(()=>{btn.innerHTML='<i class="fas fa-copy"></i> Copy';btn.style.background='';btn.style.color='';},2000);
+    }
+    showToast('Handover info copied!','success');
+  }).catch(()=>{
+    // Fallback for older browsers
+    const ta=document.createElement('textarea');
+    ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    document.execCommand('copy');document.body.removeChild(ta);
+    showToast('Copied!','success');
+  });
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1043,16 +1125,26 @@ function renderStickyNotes(){
     board.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--text2);font-size:.85rem"><i class="fas fa-sticky-note" style="font-size:1.5rem;display:block;margin-bottom:.5rem"></i>No notes yet. Click + Add Note</div>';
     return;
   }
-  board.innerHTML=stickyNotes.map(n=>`
+  board.innerHTML=stickyNotes.map(n=>{
+    // resolve display name of author
+    const author = n.accountName || n.account_name || n.username || 'Unknown';
+    // only the creator can edit text/color, but everyone can delete
+    const isOwn  = n.user_id === currentUser?.id;
+    return `
     <div class="sticky-note" data-sid="${n.id}" style="background:${n.color}">
-      <textarea placeholder="Type your note…" oninput="updateStickyText(${n.id},this.value)">${escHtml(n.text||'')}</textarea>
+      <div class="sticky-author"><i class="fas fa-user-circle"></i> ${escHtml(author)}</div>
+      <textarea placeholder="Type your note…"
+        ${isOwn ? `oninput="updateStickyText(${n.id},this.value)"` : 'readonly'}
+        style="${isOwn?'':'opacity:.75;cursor:default'}"
+      >${escHtml(n.text||'')}</textarea>
       <div class="sticky-note-actions">
-        <div class="sticky-color-pick">
+        ${isOwn ? `<div class="sticky-color-pick">
           ${STICKY_COLORS.map(c=>`<button class="sc-dot" style="background:${c};border:${n.color===c?'2px solid #1e293b':'1px solid rgba(0,0,0,.15)'}" onclick="updateStickyColor(${n.id},'${c}')"></button>`).join('')}
-        </div>
-        <button class="sticky-del" onclick="deleteSticky(${n.id})"><i class="fas fa-times"></i></button>
+        </div>` : '<div></div>'}
+        <button class="sticky-del" title="Delete" onclick="deleteSticky(${n.id})"><i class="fas fa-times"></i></button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 /* ══════════════════════════════════════════════════════════
