@@ -113,6 +113,16 @@ export const onRequest = async (context) => {
       infoCards    : icRows.results   ?? [],
       learningItems: liRows.results   ?? [],
       folders      : folderRows.results ?? [],
+      // Always return the requesting user's own data so every role
+      // can restore their session correctly on page refresh
+      currentUser  : {
+        id          : user.id,
+        username    : user.username,
+        accountName : user.accountName || user.account_name || user.username,
+        account_name: user.account_name || user.accountName || user.username,
+        role        : user.role,
+      },
+      // Full users list — admin only
       users        : isAdmin
         ? (await env.DB.prepare("SELECT * FROM users").all()).results ?? []
         : [],
