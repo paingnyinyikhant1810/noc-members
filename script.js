@@ -1342,29 +1342,47 @@ function calcSubnet(){
     ];
 
     // ── NOC Handover text block ───────────────────────────
-    const gateway   = cidr>=31 ? 'N/A' : i2s(first);
-    const customerIP= cidr>=31 ? 'N/A' : i2s(last);
-    const subnetDisplay=`${i2s(network)}/${cidr} (${maskStr})`;
+    const gateway      = cidr>=31 ? 'N/A' : i2s(first);
+    const subnetDisplay= `${i2s(network)}/${cidr} (${maskStr})`;
 
-    const handoverText =
-`Customer IP : ${customerIP}
-Gateway     : ${gateway}
-Subnet      : ${subnetDisplay}
-DNS1        : 59.153.88.210
-DNS2        : 59.153.90.34`;
+    // Build customer IP rows: all usable IPs after the gateway (2nd usable onward)
+    // /30 → 1 customer IP, /29 → 5 customer IPs, /28 → 13, etc.
+    const hoRows = [];
+
+    if(cidr >= 31){
+      // /31 or /32 — no real gateway/customer distinction
+      hoRows.push(['Customer IP', 'N/A']);
+      hoRows.push(['Gateway    ', 'N/A']);
+    } else {
+      // Gateway = first usable
+      hoRows.push(['Gateway    ', gateway]);
+
+      // Customer IPs = all usable IPs from second usable onward
+      const customerCount = usable - 1; // exclude gateway
+      if(customerCount <= 0){
+        hoRows.push(['Customer IP', 'N/A']);
+      } else if(customerCount === 1){
+        // Only one customer slot (e.g. /30)
+        hoRows.push(['Customer IP', i2s(last)]);
+      } else {
+        // Multiple customer slots — list each one
+        for(let n=1; n<=customerCount; n++){
+          const ip = (first + n) >>> 0;  // first+1, first+2, ...
+          const label = `Customer ${n}  `;
+          hoRows.push([label, i2s(ip)]);
+        }
+      }
+    }
+
+    hoRows.push(['Subnet     ', subnetDisplay]);
+    hoRows.push(['DNS1       ', '59.153.88.210']);
+    hoRows.push(['DNS2       ', '59.153.90.34']);
 
     // ── Handover block (above subnet rows) ───────────────
     const handoverEl=el('handoverText');
     const handoverBlock=el('handoverBlock');
     if(handoverEl){
-      // Render as styled lines — each field on its own row
-      handoverEl.innerHTML=[
-        ['Customer IP', customerIP],
-        ['Gateway    ', gateway],
-        ['Subnet     ', subnetDisplay],
-        ['DNS1       ', '59.153.88.210'],
-        ['DNS2       ', '59.153.90.34'],
-      ].map(([label,value])=>
+      handoverEl.innerHTML=hoRows.map(([label,value])=>
         `<div class="sn-ho-row"><span class="sn-ho-label">${label} :</span><span class="sn-ho-value">${escHtml(value)}</span></div>`
       ).join('');
     }
