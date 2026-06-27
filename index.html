@@ -1,550 +1,509 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light" data-color="blue" data-font="md" data-modal="md">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NOC Portal</title>
-    <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Toast Container -->
-    <div id="toastContainer"></div>
+<!-- Toast -->
+<div id="toastContainer"></div>
 
-    <!-- Context Menu -->
-    <div id="contextMenu" class="hidden context-menu">
-        <button onclick="renameItem()" class="ctx-btn">
-            <i class="fas fa-pen"></i> Rename
-        </button>
-        <hr class="ctx-divider">
-        <button onclick="deleteItem()" class="ctx-btn ctx-danger">
-            <i class="fas fa-trash"></i> Delete
-        </button>
-    </div>
+<!-- Context Menus -->
+<div id="contextMenu" class="hidden ctx-menu">
+    <button onclick="ctxEdit()" class="ctx-btn"><i class="fas fa-edit"></i> Edit</button>
+    <button onclick="ctxMove()" class="ctx-btn"><i class="fas fa-arrows-alt"></i> Move</button>
+    <hr class="ctx-div">
+    <button onclick="ctxDelete()" class="ctx-btn ctx-danger"><i class="fas fa-trash"></i> Delete</button>
+</div>
+<div id="infoCardContextMenu" class="hidden ctx-menu">
+    <button onclick="editInfoCardFromContext()" class="ctx-btn"><i class="fas fa-edit"></i> Edit</button>
+    <hr class="ctx-div">
+    <button onclick="deleteInfoCardFromContext()" class="ctx-btn ctx-danger"><i class="fas fa-trash"></i> Delete</button>
+</div>
 
-    <!-- Info Card Context Menu -->
-    <div id="infoCardContextMenu" class="hidden context-menu">
-        <button onclick="editInfoCardFromContext()" class="ctx-btn">
-            <i class="fas fa-edit"></i> Edit
-        </button>
-        <hr class="ctx-divider">
-        <button onclick="deleteInfoCardFromContext()" class="ctx-btn ctx-danger">
-            <i class="fas fa-trash"></i> Delete
-        </button>
-    </div>
-
-    <!-- ═══════════════════════════════════════════════════ -->
-    <!--  LOGIN PAGE                                         -->
-    <!-- ═══════════════════════════════════════════════════ -->
-    <div id="loginPage" class="login-page">
-        <div id="loginBox" class="login-box">
-            <div class="login-header">
-                <div class="login-logo">
-                    <i class="fas fa-users"></i>
-                </div>
-                <h1 class="login-title">NOC Portal</h1>
-                <p class="login-sub">Welcome, Sign in to continue</p>
-            </div>
-            <form id="loginForm">
-                <div class="form-group">
-                    <label class="form-label">Username</label>
-                    <div class="input-wrap">
-                        <i class="fas fa-user input-icon"></i>
-                        <input type="text" id="username" class="form-input" placeholder="Enter username" autocomplete="username">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Password</label>
-                    <div class="input-wrap">
-                        <i class="fas fa-lock input-icon"></i>
-                        <input type="password" id="password" class="form-input form-input--pw" placeholder="Enter password" autocomplete="current-password">
-                        <button type="button" id="togglePassword" class="eye-btn">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    </div>
-                </div>
-                <button type="submit" id="loginBtn" class="btn-login">
-                    <span>Sign In</span>
-                    <i class="fas fa-arrow-right"></i>
-                </button>
-            </form>
+<!-- ════════════════ LOGIN ════════════════ -->
+<div id="loginPage" class="login-page">
+    <div id="loginBox" class="login-box">
+        <div class="login-hdr">
+            <div class="login-logo"><i class="fas fa-users"></i></div>
+            <h1 class="login-title">NOC Portal</h1>
+            <p class="login-sub">Welcome, sign in to continue</p>
         </div>
+        <form id="loginForm">
+            <div class="fg">
+                <label class="flabel">Username</label>
+                <div class="iwrap">
+                    <i class="fas fa-user iicon"></i>
+                    <input type="text" id="username" class="finput ipl" placeholder="Enter username" autocomplete="username">
+                </div>
+            </div>
+            <div class="fg">
+                <label class="flabel">Password</label>
+                <div class="iwrap">
+                    <i class="fas fa-lock iicon"></i>
+                    <input type="password" id="password" class="finput ipl ipr" placeholder="Enter password" autocomplete="current-password">
+                    <button type="button" id="togglePassword" class="eye-btn"><i class="fas fa-eye"></i></button>
+                </div>
+            </div>
+            <button type="submit" id="loginBtn" class="btn-login">
+                <span>Sign In</span><i class="fas fa-arrow-right"></i>
+            </button>
+        </form>
     </div>
+</div>
 
-    <!-- ═══════════════════════════════════════════════════ -->
-    <!--  MAIN APP                                           -->
-    <!-- ═══════════════════════════════════════════════════ -->
-    <div id="mainApp" class="hidden">
+<!-- ════════════════ MAIN APP ════════════════ -->
+<div id="mainApp" class="hidden">
 
-        <!-- Mobile Overlay -->
-        <div id="mobileOverlay" class="hidden mobile-overlay" onclick="closeMobileMenu()"></div>
+    <!-- Mobile overlay -->
+    <div id="mobileOverlay" class="hidden mob-overlay" onclick="closeMobileMenu()"></div>
 
-        <!-- Mobile Sidebar -->
-        <div id="mobileMenu" class="mobile-menu hidden">
-            <div class="mobile-menu-header">
-                <div class="mobile-menu-logo"><i class="fas fa-users"></i></div>
-                <div>
-                    <div class="fw-bold">NOC Portal</div>
-                    <div class="text-sm text-muted" id="mobileWelcome">Welcome</div>
-                </div>
-            </div>
-            <nav class="mobile-nav">
-                <button onclick="navigateTo('home'); closeMobileMenu();" class="mobile-nav-btn" data-page="home">
-                    <i class="fas fa-home"></i> Home
-                </button>
-                <button onclick="navigateTo('learning'); closeMobileMenu();" class="mobile-nav-btn" data-page="learning">
-                    <i class="fas fa-book"></i> Learning
-                </button>
-                <div id="mobileAdminBtn" class="hidden">
-                    <button onclick="navigateTo('admin'); closeMobileMenu();" class="mobile-nav-btn" data-page="admin">
-                        <i class="fas fa-cog"></i> Admin Panel
-                    </button>
-                </div>
-                <div class="mobile-nav-section">
-                    <p class="mobile-nav-label">Information</p>
-                    <div id="mobileInfoMenu"></div>
-                </div>
-            </nav>
-            <div class="mobile-menu-footer">
-                <button onclick="logout()" class="mobile-logout-btn">
-                    <i class="fas fa-sign-out-alt"></i> Logout
-                </button>
-            </div>
+    <!-- Mobile sidebar -->
+    <div id="mobileMenu" class="mob-menu hidden">
+        <div class="mob-hdr">
+            <div class="mob-logo"><i class="fas fa-users"></i></div>
+            <div><div class="fw7">NOC Portal</div><div class="txt-sm txt-muted" id="mobileWelcome"></div></div>
         </div>
-
-        <!-- Top Navigation -->
-        <nav class="topnav">
-            <div class="topnav-inner">
-                <div class="topnav-left">
-                    <button onclick="openMobileMenu()" class="hamburger-btn desktop-hidden">
-                        <i class="fas fa-bars"></i>
-                    </button>
-                    <div class="topnav-logo"><i class="fas fa-users"></i></div>
-                    <span class="topnav-title mobile-hidden">NOC Portal</span>
-                </div>
-                <div class="topnav-right desktop-only">
-                    <button onclick="navigateTo('home')" class="nav-btn" data-page="home">
-                        <i class="fas fa-home"></i> Home
-                    </button>
-                    <button onclick="navigateTo('learning')" class="nav-btn" data-page="learning">
-                        <i class="fas fa-book"></i> Learning
-                    </button>
-                    <div class="dropdown-wrap">
-                        <button onclick="toggleInfoDropdown()" class="nav-btn" data-page="information">
-                            <i class="fas fa-info-circle"></i> Information <i class="fas fa-chevron-down caret"></i>
-                        </button>
-                        <div id="infoDropdown" class="hidden dropdown-menu"></div>
-                    </div>
-                    <button id="adminBtn" onclick="navigateTo('admin')" class="nav-btn hidden" data-page="admin">
-                        <i class="fas fa-cog"></i> Admin Panel
-                    </button>
-                    <button onclick="logout()" class="nav-btn nav-btn--logout">
-                        <i class="fas fa-sign-out-alt"></i> Logout
-                    </button>
-                </div>
+        <nav class="mob-nav">
+            <button onclick="navigateTo('home');closeMobileMenu()" class="mob-nbtn" data-page="home"><i class="fas fa-home"></i> Home</button>
+            <button onclick="navigateTo('learning');closeMobileMenu()" class="mob-nbtn" data-page="learning"><i class="fas fa-book"></i> Learning</button>
+            <div id="mobileAdminBtn" class="hidden">
+                <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn" data-page="admin"><i class="fas fa-cog"></i> Admin Panel</button>
+            </div>
+            <div class="mob-sect">
+                <p class="mob-slabel">Information</p>
+                <div id="mobileInfoMenu"></div>
             </div>
         </nav>
+        <div class="mob-foot">
+            <button onclick="logout()" class="mob-logout"><i class="fas fa-sign-out-alt"></i> Logout</button>
+        </div>
+    </div>
 
-        <!-- Welcome Banner -->
-        <div class="welcome-banner">
-            <div class="welcome-inner">
-                <p class="welcome-text">Hi, <span id="welcomeUser" class="fw-bold"></span>! 👋</p>
+    <!-- Top Nav -->
+    <nav class="topnav">
+        <div class="tnav-inner">
+            <div class="tnav-left">
+                <button onclick="openMobileMenu()" class="hamburger d-lg-none"><i class="fas fa-bars"></i></button>
+                <div class="tnav-logo"><i class="fas fa-users"></i></div>
+                <span class="tnav-title d-none-sm">NOC Portal</span>
+            </div>
+            <div class="tnav-right d-lg-flex">
+                <button onclick="navigateTo('home')" class="nav-btn" data-page="home"><i class="fas fa-home"></i> Home</button>
+                <button onclick="navigateTo('learning')" class="nav-btn" data-page="learning"><i class="fas fa-book"></i> Learning</button>
+                <div class="dd-wrap">
+                    <button onclick="toggleInfoDropdown()" class="nav-btn" data-page="information">
+                        <i class="fas fa-info-circle"></i> Information <i class="fas fa-chevron-down caret"></i>
+                    </button>
+                    <div id="infoDropdown" class="hidden dd-menu"></div>
+                </div>
+                <button id="adminBtn" onclick="navigateTo('admin')" class="nav-btn hidden" data-page="admin"><i class="fas fa-cog"></i> Admin</button>
+                <!-- NOC Utilities -->
+                <button onclick="openUtilities()" class="nav-btn nav-btn--util"><i class="fas fa-tools"></i> NOC Utilities</button>
+                <!-- Settings -->
+                <button onclick="openSettings()" class="nav-btn"><i class="fas fa-sliders-h"></i></button>
+                <button onclick="logout()" class="nav-btn nav-btn--logout"><i class="fas fa-sign-out-alt"></i> Logout</button>
             </div>
         </div>
+    </nav>
 
-        <!-- ── Home Page ──────────────────────────────────── -->
-        <div id="homePage" class="page page-container">
-            <div class="page-header">
-                <h2 class="page-title">
-                    <div class="page-icon page-icon--blue"><i class="fas fa-bullhorn"></i></div>
-                    Team Updates
-                </h2>
-                <button id="addUpdateBtn" onclick="openUpdateModal()" class="hidden btn-primary">
-                    <i class="fas fa-plus"></i> Add Update
-                </button>
-            </div>
-            <div id="updatesContainer" class="updates-grid"></div>
+    <!-- Welcome Banner -->
+    <div class="welcome-banner">
+        <div class="wb-inner">
+            Hi, <span id="welcomeUser" class="fw7"></span>! 👋
+            <span id="userRoleBadge" class="role-badge"></span>
         </div>
+    </div>
 
-        <!-- ── Learning Page ──────────────────────────────── -->
-        <div id="learningPage" class="page page-container hidden">
-            <div class="page-header">
-                <h2 class="page-title">
-                    <div class="page-icon page-icon--amber"><i class="fas fa-folder-open"></i></div>
-                    Learning
-                </h2>
+    <!-- ── Home Page ── -->
+    <div id="homePage" class="page pg-wrap">
+        <div class="pg-hdr">
+            <h2 class="pg-title"><div class="pg-icon ic-blue"><i class="fas fa-bullhorn"></i></div> Team Updates</h2>
+            <button id="addUpdateBtn" onclick="openUpdateModal()" class="hidden btn-primary"><i class="fas fa-plus"></i> Add Update</button>
+        </div>
+        <div id="updatesContainer" class="updates-grid"></div>
+    </div>
+
+    <!-- ── Learning Page ── -->
+    <div id="learningPage" class="page pg-wrap hidden">
+        <div class="pg-hdr">
+            <h2 class="pg-title"><div class="pg-icon ic-amber"><i class="fas fa-folder-open"></i></div> Learning</h2>
+            <div class="lrn-toolbar">
+                <!-- Search Bar -->
+                <div class="search-wrap">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="search" id="learningSearch" class="search-input" placeholder="Search folders & files…">
+                    <button id="clearSearch" class="search-clear hidden" onclick="clearLearningSearch()"><i class="fas fa-times"></i></button>
+                </div>
                 <div id="learningAdminBtns" class="hidden btn-group">
-                    <button onclick="openFolderModal()" class="btn-secondary">
-                        <i class="fas fa-folder-plus"></i> New Folder
-                    </button>
-                    <button onclick="openLearningItemModal()" class="btn-primary">
-                        <i class="fas fa-plus"></i> Add Item
-                    </button>
+                    <button onclick="openFolderModal()" class="btn-secondary"><i class="fas fa-folder-plus"></i> New Folder</button>
+                    <button onclick="openLearningItemModal()" class="btn-primary"><i class="fas fa-plus"></i> Add Item</button>
                 </div>
-            </div>
-            <div id="breadcrumb" class="breadcrumb"></div>
-            <div id="learningContainer" class="file-grid"></div>
-        </div>
-
-        <!-- ── Information Page ───────────────────────────── -->
-        <div id="informationPage" class="page page-container hidden">
-            <div class="page-header">
-                <h2 id="infoPageTitle" class="page-title">
-                    <div class="page-icon page-icon--blue"><i class="fas fa-layer-group"></i></div>
-                    <span id="infoTitleText">Information</span>
-                </h2>
-                <button id="addInfoCardBtn" onclick="openInfoCardModal()" class="hidden btn-primary">
-                    <i class="fas fa-plus"></i> Add Item
-                </button>
-            </div>
-            <div id="infoCardsContainer" class="file-grid"></div>
-        </div>
-
-        <!-- ── Admin Page ─────────────────────────────────── -->
-        <div id="adminPage" class="page page-container hidden">
-            <h2 class="page-title mb-6">
-                <div class="page-icon page-icon--blue"><i class="fas fa-shield-alt"></i></div>
-                Admin Panel
-            </h2>
-            <div class="admin-tabs">
-                <button onclick="showAdminTab('users')" class="admin-tab" data-tab="users">
-                    <i class="fas fa-users"></i> Users
-                </button>
-                <button onclick="showAdminTab('categories')" class="admin-tab" data-tab="categories">
-                    <i class="fas fa-tags"></i> Categories
-                </button>
-            </div>
-
-            <!-- Users Tab -->
-            <div id="usersTab" class="admin-tab-content">
-                <div class="tab-toolbar">
-                    <button onclick="openUserModal()" class="btn-primary">
-                        <i class="fas fa-user-plus"></i> Add User
-                    </button>
-                </div>
-                <div class="table-wrap">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Account</th>
-                                <th class="col-hide-sm">Username</th>
-                                <th>Password</th>
-                                <th>Role</th>
-                                <th class="text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="usersTable"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Categories Tab -->
-            <div id="categoriesTab" class="admin-tab-content hidden">
-                <div class="tab-toolbar">
-                    <button onclick="openCategoryModal()" class="btn-primary">
-                        <i class="fas fa-plus"></i> Add Category
-                    </button>
-                </div>
-                <div id="categoriesList" class="categories-grid"></div>
             </div>
         </div>
+        <div id="breadcrumb" class="breadcrumb"></div>
+        <div id="searchResults" class="hidden">
+            <div class="search-results-label"><i class="fas fa-search"></i> Search results for: <span id="searchQuery"></span></div>
+            <div id="searchResultsGrid" class="file-grid"></div>
+        </div>
+        <div id="learningContainer" class="file-grid"></div>
+    </div>
 
-    </div><!-- /mainApp -->
+    <!-- ── Information Page ── -->
+    <div id="informationPage" class="page pg-wrap hidden">
+        <div class="pg-hdr">
+            <h2 class="pg-title"><div class="pg-icon ic-blue"><i class="fas fa-layer-group"></i></div><span id="infoTitleText">Information</span></h2>
+            <button id="addInfoCardBtn" onclick="openInfoCardModal()" class="hidden btn-primary"><i class="fas fa-plus"></i> Add Item</button>
+        </div>
+        <div id="infoCardsContainer" class="file-grid"></div>
+    </div>
 
-    <!-- ═══════════════════════════════════════════════════ -->
-    <!--  MODALS                                             -->
-    <!-- ═══════════════════════════════════════════════════ -->
-
-    <!-- Update Modal -->
-    <div id="updateModal" class="hidden modal-backdrop">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h3 id="updateModalTitle" class="modal-title">Add Update</h3>
-                <button onclick="closeModal('updateModal')" class="modal-close"><i class="fas fa-times"></i></button>
+    <!-- ── Admin Page ── -->
+    <div id="adminPage" class="page pg-wrap hidden">
+        <h2 class="pg-title mb6"><div class="pg-icon ic-blue"><i class="fas fa-shield-alt"></i></div> Admin Panel</h2>
+        <div class="admin-tabs">
+            <button onclick="showAdminTab('users')" class="admin-tab" data-tab="users"><i class="fas fa-users"></i> Users</button>
+            <button onclick="showAdminTab('categories')" class="admin-tab" data-tab="categories"><i class="fas fa-tags"></i> Categories</button>
+        </div>
+        <div id="usersTab" class="admin-tc">
+            <div class="tab-tb"><button onclick="openUserModal()" class="btn-primary"><i class="fas fa-user-plus"></i> Add User</button></div>
+            <div class="tbl-wrap">
+                <table class="dtbl">
+                    <thead><tr>
+                        <th>Account</th><th class="col-sm">Username</th><th>Password</th><th>Role</th><th class="tr">Actions</th>
+                    </tr></thead>
+                    <tbody id="usersTable"></tbody>
+                </table>
             </div>
-            <form id="updateForm" class="modal-body">
-                <input type="hidden" id="updateId">
-                <div class="form-group">
-                    <label class="form-label">Topic</label>
-                    <input type="text" id="updateTopic" class="form-input" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Badge</label>
-                    <select id="updateBadge" class="form-input">
-                        <option value="important">🔴 Important</option>
-                        <option value="general">🔵 General</option>
-                        <option value="announcement">🟢 Announcement</option>
-                        <option value="reminder">🟡 Reminder</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Message</label>
-                    <textarea id="updateMessage" rows="4" class="form-input" required></textarea>
-                </div>
-            </form>
-            <div class="modal-footer">
-                <button onclick="closeModal('updateModal')" class="btn-secondary">Cancel</button>
-                <button onclick="saveUpdate()" class="btn-primary">Save</button>
-            </div>
+        </div>
+        <div id="categoriesTab" class="admin-tc hidden">
+            <div class="tab-tb"><button onclick="openCategoryModal()" class="btn-primary"><i class="fas fa-plus"></i> Add Category</button></div>
+            <div id="categoriesList" class="cats-grid"></div>
         </div>
     </div>
 
-    <!-- User Modal -->
-    <div id="userModal" class="hidden modal-backdrop">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h3 id="userModalTitle" class="modal-title">Add User</h3>
-                <button onclick="closeModal('userModal')" class="modal-close"><i class="fas fa-times"></i></button>
+</div><!-- /mainApp -->
+
+<!-- ════════════════ MODALS ════════════════ -->
+
+<!-- Update Modal -->
+<div id="updateModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr"><h3 id="updateModalTitle" class="modal-title">Add Update</h3><button onclick="closeModal('updateModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <form id="updateForm" class="modal-body">
+            <input type="hidden" id="updateId">
+            <div class="fg"><label class="flabel">Topic</label><input type="text" id="updateTopic" class="finput" required></div>
+            <div class="fg"><label class="flabel">Badge</label>
+                <select id="updateBadge" class="finput">
+                    <option value="important">🔴 Important</option>
+                    <option value="general">🔵 General</option>
+                    <option value="announcement">🟢 Announcement</option>
+                    <option value="reminder">🟡 Reminder</option>
+                </select>
             </div>
-            <form id="userForm" class="modal-body">
-                <input type="hidden" id="userId">
-                <div class="form-group">
-                    <label class="form-label">Account Name (Display)</label>
-                    <input type="text" id="userAccountName" class="form-input" placeholder="e.g. Operations User" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Username (Login)</label>
-                    <input type="text" id="userUsername" class="form-input" placeholder="e.g. operations" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Password</label>
-                    <div class="input-wrap">
-                        <input type="password" id="userPassword" class="form-input" required>
-                        <button type="button" id="toggleEditPassword" onclick="toggleEditPasswordVisibility()" class="eye-btn eye-btn--right">
-                            <i class="fas fa-eye"></i>
-                        </button>
+            <div class="fg"><label class="flabel">Message</label><textarea id="updateMessage" rows="4" class="finput ftarea" required></textarea></div>
+        </form>
+        <div class="modal-ft"><button onclick="closeModal('updateModal')" class="btn-secondary">Cancel</button><button onclick="saveUpdate()" class="btn-primary">Save</button></div>
+    </div>
+</div>
+
+<!-- User Modal -->
+<div id="userModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr"><h3 id="userModalTitle" class="modal-title">Add User</h3><button onclick="closeModal('userModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <form id="userForm" class="modal-body">
+            <input type="hidden" id="userId">
+            <div class="fg"><label class="flabel">Display Name</label><input type="text" id="userAccountName" class="finput" required></div>
+            <div class="fg"><label class="flabel">Username</label><input type="text" id="userUsername" class="finput" required></div>
+            <div class="fg"><label class="flabel">Password</label>
+                <div class="iwrap"><input type="password" id="userPassword" class="finput ipr" required>
+                <button type="button" id="toggleEditPassword" onclick="toggleEditPasswordVisibility()" class="eye-btn eye-r"><i class="fas fa-eye"></i></button></div>
+            </div>
+            <div class="fg"><label class="flabel">Role</label>
+                <select id="userRole" class="finput">
+                    <option value="intern">Intern</option><option value="member">Member</option>
+                    <option value="leader">Leader</option><option value="admin">Admin</option>
+                </select>
+            </div>
+        </form>
+        <div class="modal-ft"><button onclick="closeModal('userModal')" class="btn-secondary">Cancel</button><button onclick="saveUser()" class="btn-primary">Save</button></div>
+    </div>
+</div>
+
+<!-- Category Modal -->
+<div id="categoryModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr"><h3 id="categoryModalTitle" class="modal-title">Add Category</h3><button onclick="closeModal('categoryModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <form id="categoryForm" class="modal-body">
+            <input type="hidden" id="categoryId">
+            <div class="fg"><label class="flabel">Name</label><input type="text" id="categoryName" class="finput" required></div>
+            <div class="fg"><label class="flabel">Icon</label>
+                <select id="categoryIcon" class="finput">
+                    <option value="fa-users">👥 Team</option><option value="fa-clipboard-list">📋 Procedures</option>
+                    <option value="fa-briefcase">💼 Business</option><option value="fa-chart-line">📈 Analytics</option>
+                    <option value="fa-cogs">⚙️ Settings</option><option value="fa-book">📚 Documentation</option>
+                    <option value="fa-link">🔗 Links</option><option value="fa-tools">🛠️ Tools</option>
+                </select>
+            </div>
+        </form>
+        <div class="modal-ft"><button onclick="closeModal('categoryModal')" class="btn-secondary">Cancel</button><button onclick="saveCategory()" class="btn-primary">Save</button></div>
+    </div>
+</div>
+
+<!-- Folder Modal (Create/Edit with Permission) -->
+<div id="folderModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr"><h3 id="folderModalTitle" class="modal-title">Create Folder</h3><button onclick="closeModal('folderModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <form id="folderForm" class="modal-body">
+            <input type="hidden" id="folderId">
+            <div class="fg"><label class="flabel">Folder Name</label><input type="text" id="folderName" class="finput" required></div>
+            <div class="fg"><label class="flabel">Min Permission</label>
+                <select id="folderPermission" class="finput">
+                    <option value="intern">🟡 Intern & above</option>
+                    <option value="member">🟢 Member & above</option>
+                    <option value="leader">🔵 Leader & above</option>
+                    <option value="admin">🔴 Admin only</option>
+                </select>
+            </div>
+        </form>
+        <div class="modal-ft"><button onclick="closeModal('folderModal')" class="btn-secondary">Cancel</button><button onclick="saveFolder()" class="btn-primary">Save</button></div>
+    </div>
+</div>
+
+<!-- Learning Item Modal (Create/Edit with Permission) -->
+<div id="learningItemModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr"><h3 id="learningItemModalTitle" class="modal-title">Add Item</h3><button onclick="closeModal('learningItemModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <form id="learningItemForm" class="modal-body">
+            <input type="hidden" id="learningItemId">
+            <div class="fg"><label class="flabel">Title</label><input type="text" id="learningItemTopic" class="finput" required></div>
+            <div class="fg"><label class="flabel">Type</label>
+                <select id="learningItemType" onchange="toggleLearningItemFields()" class="finput">
+                    <option value="pdf">Link / PDF</option><option value="text">Text Note</option>
+                </select>
+            </div>
+            <div id="pdfLinkField" class="fg"><label class="flabel">URL</label><input type="url" id="learningItemLink" class="finput" placeholder="https://..."></div>
+            <div id="textContentField" class="fg hidden"><label class="flabel">Content</label><textarea id="learningItemContent" rows="6" class="finput ftarea"></textarea></div>
+            <div class="fg"><label class="flabel">Min Permission</label>
+                <select id="learningItemPermission" class="finput">
+                    <option value="intern">🟡 Intern & above</option>
+                    <option value="member">🟢 Member & above</option>
+                    <option value="leader">🔵 Leader & above</option>
+                    <option value="admin">🔴 Admin only</option>
+                </select>
+            </div>
+        </form>
+        <div class="modal-ft"><button onclick="closeModal('learningItemModal')" class="btn-secondary">Cancel</button><button onclick="saveLearningItem()" class="btn-primary">Save</button></div>
+    </div>
+</div>
+
+<!-- Text View Modal -->
+<div id="textViewModal" class="hidden modal-bd">
+    <div class="modal-box modal-wide">
+        <div class="modal-hdr"><h3 id="textViewTitle" class="modal-title"></h3><button onclick="closeModal('textViewModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <div id="textViewContent" class="txt-view"></div>
+    </div>
+</div>
+
+<!-- Info Card Modal -->
+<div id="infoCardModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr"><h3 id="infoCardModalTitle" class="modal-title">Add Item</h3><button onclick="closeModal('infoCardModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <form id="infoCardForm" class="modal-body">
+            <input type="hidden" id="infoCardId">
+            <div class="fg"><label class="flabel">Title</label><input type="text" id="infoCardTitle" class="finput" required></div>
+            <div class="fg"><label class="flabel">Display Type</label>
+                <select id="infoCardDisplayType" onchange="toggleInfoCardFields()" class="finput">
+                    <option value="icon">Icon</option><option value="image">Image</option>
+                </select>
+            </div>
+            <div id="iconField" class="fg"><label class="flabel">Icon</label>
+                <select id="infoCardIcon" class="finput">
+                    <option value="fa-link">🔗 Link</option><option value="fa-file-alt">📄 Document</option>
+                    <option value="fa-globe">🌐 Website</option><option value="fa-database">🗄️ Database</option>
+                    <option value="fa-chart-bar">📊 Chart</option><option value="fa-calendar">📅 Calendar</option>
+                    <option value="fa-envelope">✉️ Email</option><option value="fa-phone">📞 Phone</option>
+                    <option value="fa-map-marker-alt">📍 Location</option><option value="fa-video">🎥 Video</option>
+                    <option value="fa-image">🖼️ Image</option><option value="fa-code">💻 Code</option>
+                </select>
+            </div>
+            <div id="imageField" class="hidden">
+                <div class="fg"><label class="flabel">Source</label>
+                    <div class="btn-group">
+                        <button type="button" onclick="setImageSource('url')" id="imgSourceUrl" class="btn-primary flex1"><i class="fas fa-link"></i> URL</button>
+                        <button type="button" onclick="setImageSource('upload')" id="imgSourceUpload" class="btn-secondary flex1"><i class="fas fa-upload"></i> Upload</button>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Role</label>
-                    <select id="userRole" class="form-input">
-                        <option value="intern">Intern</option>
-                        <option value="member">Member</option>
-                        <option value="leader">Leader</option>
-                        <option value="admin">Admin</option>
+                <div id="imageUrlField" class="fg"><input type="url" id="infoCardImageUrl" class="finput" placeholder="https://..."></div>
+                <div id="imageUploadField" class="fg hidden">
+                    <label class="upload-lbl">
+                        <div id="uploadPlaceholder"><i class="fas fa-cloud-upload-alt upl-icon"></i><p>Click to upload</p><p class="txt-sm txt-muted">PNG, JPG ≤ 2MB</p></div>
+                        <div id="uploadPreview" class="hidden"><img id="previewImg" class="upl-prev" src="" alt=""></div>
+                        <input type="file" id="infoCardImageFile" class="hidden" accept="image/*" onchange="handleImageUpload(event)">
+                    </label>
+                </div>
+                <input type="hidden" id="infoCardImage">
+            </div>
+            <div class="fg"><label class="flabel">Link URL</label><input type="url" id="infoCardLink" class="finput" placeholder="https://..." required></div>
+        </form>
+        <div class="modal-ft"><button onclick="closeModal('infoCardModal')" class="btn-secondary">Cancel</button><button onclick="saveInfoCard()" class="btn-primary">Save</button></div>
+    </div>
+</div>
+
+<!-- Rename Modal -->
+<div id="renameModal" class="hidden modal-bd">
+    <div class="modal-box modal-sm">
+        <div class="modal-hdr"><h3 class="modal-title">Rename</h3><button onclick="closeModal('renameModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <form class="modal-body"><input type="text" id="renameInput" class="finput" required></form>
+        <div class="modal-ft"><button onclick="closeModal('renameModal')" class="btn-secondary">Cancel</button><button onclick="confirmRename()" class="btn-primary">Rename</button></div>
+    </div>
+</div>
+
+<!-- Edit Item Modal (link/text/file name + permission) -->
+<div id="editItemModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr"><h3 id="editItemTitle" class="modal-title">Edit Item</h3><button onclick="closeModal('editItemModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <form id="editItemForm" class="modal-body">
+            <input type="hidden" id="editItemId">
+            <input type="hidden" id="editItemKind">
+            <div class="fg"><label class="flabel">Name</label><input type="text" id="editItemName" class="finput" required></div>
+            <div id="editItemTypeGroup" class="fg hidden"><label class="flabel">Type</label>
+                <select id="editItemType" onchange="onEditItemTypeChange()" class="finput">
+                    <option value="pdf">Link / PDF</option><option value="text">Text Note</option>
+                </select>
+            </div>
+            <div id="editItemLinkGroup" class="fg hidden"><label class="flabel">URL</label><input type="url" id="editItemLink" class="finput" placeholder="https://..."></div>
+            <div id="editItemContentGroup" class="fg hidden"><label class="flabel">Content</label><textarea id="editItemContent" rows="5" class="finput ftarea"></textarea></div>
+            <div id="editItemPermGroup" class="fg"><label class="flabel">Min Permission</label>
+                <select id="editItemPerm" class="finput">
+                    <option value="intern">🟡 Intern & above</option>
+                    <option value="member">🟢 Member & above</option>
+                    <option value="leader">🔵 Leader & above</option>
+                    <option value="admin">🔴 Admin only</option>
+                </select>
+            </div>
+        </form>
+        <div class="modal-ft"><button onclick="closeModal('editItemModal')" class="btn-secondary">Cancel</button><button onclick="saveEditItem()" class="btn-primary">Save Changes</button></div>
+    </div>
+</div>
+
+<!-- Move Modal -->
+<div id="moveModal" class="hidden modal-bd">
+    <div class="modal-box modal-sm">
+        <div class="modal-hdr"><h3 class="modal-title">Move To…</h3><button onclick="closeModal('moveModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <div id="moveFolderList" class="modal-body move-list"></div>
+        <div class="modal-ft"><button onclick="closeModal('moveModal')" class="btn-secondary">Cancel</button></div>
+    </div>
+</div>
+
+<!-- ════════ SETTINGS MODAL ════════ -->
+<div id="settingsModal" class="hidden modal-bd">
+    <div class="modal-box modal-sm">
+        <div class="modal-hdr"><h3 class="modal-title"><i class="fas fa-sliders-h"></i> Settings</h3><button onclick="closeModal('settingsModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <div class="modal-body">
+            <!-- Dark Mode -->
+            <div class="set-row">
+                <div><div class="set-label">Dark Mode</div><div class="set-sub">Toggle dark/light theme</div></div>
+                <label class="toggle-sw">
+                    <input type="checkbox" id="darkModeToggle" onchange="applyDarkMode(this.checked)">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+            <!-- Color Theme -->
+            <div class="set-row set-col">
+                <div class="set-label">Color Theme</div>
+                <div class="color-swatches">
+                    <button class="swatch" data-color="blue" onclick="applyColor('blue')" title="Blue"></button>
+                    <button class="swatch" data-color="purple" onclick="applyColor('purple')" title="Purple"></button>
+                    <button class="swatch" data-color="green" onclick="applyColor('green')" title="Green"></button>
+                    <button class="swatch" data-color="orange" onclick="applyColor('orange')" title="Orange"></button>
+                    <button class="swatch" data-color="red" onclick="applyColor('red')" title="Red"></button>
+                    <button class="swatch" data-color="teal" onclick="applyColor('teal')" title="Teal"></button>
+                </div>
+            </div>
+            <!-- Font Size -->
+            <div class="set-row set-col">
+                <div class="set-label">Font Size</div>
+                <div class="btn-group">
+                    <button onclick="applyFont('sm')" data-font="sm" class="btn-secondary font-opt">Small</button>
+                    <button onclick="applyFont('md')" data-font="md" class="btn-secondary font-opt">Medium</button>
+                    <button onclick="applyFont('lg')" data-font="lg" class="btn-secondary font-opt">Large</button>
+                </div>
+            </div>
+            <!-- Modal Size -->
+            <div class="set-row set-col">
+                <div class="set-label">Modal Size</div>
+                <div class="btn-group">
+                    <button onclick="applyModalSize('sm')" data-msize="sm" class="btn-secondary msize-opt">Compact</button>
+                    <button onclick="applyModalSize('md')" data-msize="md" class="btn-secondary msize-opt">Normal</button>
+                    <button onclick="applyModalSize('lg')" data-msize="lg" class="btn-secondary msize-opt">Large</button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-ft"><button onclick="closeModal('settingsModal')" class="btn-primary">Done</button></div>
+    </div>
+</div>
+
+<!-- ════════ NOC UTILITIES MODAL ════════ -->
+<div id="utilitiesModal" class="hidden modal-bd">
+    <div class="modal-box modal-util">
+        <div class="modal-hdr">
+            <h3 class="modal-title"><i class="fas fa-tools"></i> NOC Utilities</h3>
+            <button onclick="closeModal('utilitiesModal')" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <!-- Utility Tabs -->
+        <div class="util-tabs">
+            <button onclick="switchUtilTab('time')" class="util-tab active" data-utab="time"><i class="fas fa-clock"></i> Time Converter</button>
+            <button onclick="switchUtilTab('subnet')" class="util-tab" data-utab="subnet"><i class="fas fa-network-wired"></i> Subnet Calc</button>
+            <button onclick="switchUtilTab('handover')" class="util-tab" data-utab="handover"><i class="fas fa-sticky-note"></i> Handover</button>
+        </div>
+
+        <!-- ── Time Converter ── -->
+        <div id="utilTime" class="util-panel modal-body">
+            <div class="time-input-row">
+                <div class="fg">
+                    <label class="flabel">Hour (0–23)</label>
+                    <input type="number" id="tcHour" class="finput" min="0" max="23" placeholder="HH" oninput="convertTime()">
+                </div>
+                <div class="fg">
+                    <label class="flabel">Minute (0–59)</label>
+                    <input type="number" id="tcMin" class="finput" min="0" max="59" placeholder="MM" oninput="convertTime()">
+                </div>
+                <div class="fg">
+                    <label class="flabel">Format</label>
+                    <select id="tcFmt" class="finput" onchange="convertTime()">
+                        <option value="24">24-hour</option><option value="12">12-hour (AM/PM)</option>
                     </select>
                 </div>
-            </form>
-            <div class="modal-footer">
-                <button onclick="closeModal('userModal')" class="btn-secondary">Cancel</button>
-                <button onclick="saveUser()" class="btn-primary">Save</button>
             </div>
+            <div id="timeResults" class="time-results"></div>
+        </div>
+
+        <!-- ── Subnet Calculator ── -->
+        <div id="utilSubnet" class="util-panel modal-body hidden">
+            <div class="fg">
+                <label class="flabel">IP Address / CIDR (e.g. 192.168.1.0/24)</label>
+                <div class="iwrap">
+                    <input type="text" id="subnetInput" class="finput" placeholder="192.168.1.0/24" oninput="calcSubnet()">
+                </div>
+            </div>
+            <div id="subnetResults" class="subnet-results"></div>
+        </div>
+
+        <!-- ── Handover Dashboard ── -->
+        <div id="utilHandover" class="util-panel modal-body hidden">
+            <div class="handover-hdr">
+                <span class="flabel">Sticky Notes</span>
+                <button onclick="addStickyNote()" class="btn-primary btn-sm"><i class="fas fa-plus"></i> Add Note</button>
+            </div>
+            <div id="stickyBoard" class="sticky-board"></div>
         </div>
     </div>
+</div>
 
-    <!-- Category Modal -->
-    <div id="categoryModal" class="hidden modal-backdrop">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h3 id="categoryModalTitle" class="modal-title">Add Category</h3>
-                <button onclick="closeModal('categoryModal')" class="modal-close"><i class="fas fa-times"></i></button>
-            </div>
-            <form id="categoryForm" class="modal-body">
-                <input type="hidden" id="categoryId">
-                <div class="form-group">
-                    <label class="form-label">Category Name</label>
-                    <input type="text" id="categoryName" class="form-input" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Icon</label>
-                    <select id="categoryIcon" class="form-input">
-                        <option value="fa-users">👥 Team</option>
-                        <option value="fa-clipboard-list">📋 Procedures</option>
-                        <option value="fa-briefcase">💼 Business</option>
-                        <option value="fa-chart-line">📈 Analytics</option>
-                        <option value="fa-cogs">⚙️ Settings</option>
-                        <option value="fa-book">📚 Documentation</option>
-                        <option value="fa-link">🔗 Links</option>
-                        <option value="fa-tools">🛠️ Tools</option>
-                    </select>
-                </div>
-            </form>
-            <div class="modal-footer">
-                <button onclick="closeModal('categoryModal')" class="btn-secondary">Cancel</button>
-                <button onclick="saveCategory()" class="btn-primary">Save</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Folder Modal -->
-    <div id="folderModal" class="hidden modal-backdrop">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h3 id="folderModalTitle" class="modal-title">Create Folder</h3>
-                <button onclick="closeModal('folderModal')" class="modal-close"><i class="fas fa-times"></i></button>
-            </div>
-            <form id="folderForm" class="modal-body">
-                <input type="hidden" id="folderId">
-                <div class="form-group">
-                    <label class="form-label">Folder Name</label>
-                    <input type="text" id="folderName" class="form-input" required>
-                </div>
-            </form>
-            <div class="modal-footer">
-                <button onclick="closeModal('folderModal')" class="btn-secondary">Cancel</button>
-                <button onclick="saveFolder()" class="btn-primary">Save</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Learning Item Modal -->
-    <div id="learningItemModal" class="hidden modal-backdrop">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h3 id="learningItemModalTitle" class="modal-title">Add Item</h3>
-                <button onclick="closeModal('learningItemModal')" class="modal-close"><i class="fas fa-times"></i></button>
-            </div>
-            <form id="learningItemForm" class="modal-body">
-                <input type="hidden" id="learningItemId">
-                <div class="form-group">
-                    <label class="form-label">Topic / Title</label>
-                    <input type="text" id="learningItemTopic" class="form-input" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Type</label>
-                    <select id="learningItemType" onchange="toggleLearningItemFields()" class="form-input">
-                        <option value="pdf">Link / PDF</option>
-                        <option value="text">Text Note</option>
-                    </select>
-                </div>
-                <div id="pdfLinkField" class="form-group">
-                    <label class="form-label">Link URL</label>
-                    <input type="url" id="learningItemLink" class="form-input" placeholder="https://...">
-                </div>
-                <div id="textContentField" class="form-group hidden">
-                    <label class="form-label">Content</label>
-                    <textarea id="learningItemContent" rows="6" class="form-input form-textarea"></textarea>
-                </div>
-            </form>
-            <div class="modal-footer">
-                <button onclick="closeModal('learningItemModal')" class="btn-secondary">Cancel</button>
-                <button onclick="saveLearningItem()" class="btn-primary">Save</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Text View Modal -->
-    <div id="textViewModal" class="hidden modal-backdrop">
-        <div class="modal-box modal-box--wide">
-            <div class="modal-header">
-                <h3 id="textViewTitle" class="modal-title"></h3>
-                <button onclick="closeModal('textViewModal')" class="modal-close"><i class="fas fa-times"></i></button>
-            </div>
-            <div id="textViewContent" class="text-view-content"></div>
-        </div>
-    </div>
-
-    <!-- Info Card Modal -->
-    <div id="infoCardModal" class="hidden modal-backdrop">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h3 id="infoCardModalTitle" class="modal-title">Add Item</h3>
-                <button onclick="closeModal('infoCardModal')" class="modal-close"><i class="fas fa-times"></i></button>
-            </div>
-            <form id="infoCardForm" class="modal-body">
-                <input type="hidden" id="infoCardId">
-                <div class="form-group">
-                    <label class="form-label">Title</label>
-                    <input type="text" id="infoCardTitle" class="form-input" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Display Type</label>
-                    <select id="infoCardDisplayType" onchange="toggleInfoCardFields()" class="form-input">
-                        <option value="icon">Icon</option>
-                        <option value="image">Image</option>
-                    </select>
-                </div>
-                <div id="iconField" class="form-group">
-                    <label class="form-label">Icon</label>
-                    <select id="infoCardIcon" class="form-input">
-                        <option value="fa-link">🔗 Link</option>
-                        <option value="fa-file-alt">📄 Document</option>
-                        <option value="fa-globe">🌐 Website</option>
-                        <option value="fa-database">🗄️ Database</option>
-                        <option value="fa-chart-bar">📊 Chart</option>
-                        <option value="fa-calendar">📅 Calendar</option>
-                        <option value="fa-envelope">✉️ Email</option>
-                        <option value="fa-phone">📞 Phone</option>
-                        <option value="fa-map-marker-alt">📍 Location</option>
-                        <option value="fa-video">🎥 Video</option>
-                        <option value="fa-image">🖼️ Image</option>
-                        <option value="fa-code">💻 Code</option>
-                    </select>
-                </div>
-                <div id="imageField" class="hidden">
-                    <div class="form-group">
-                        <label class="form-label">Image Source</label>
-                        <div class="btn-group">
-                            <button type="button" onclick="setImageSource('url')" id="imgSourceUrl" class="btn-primary flex-1">
-                                <i class="fas fa-link"></i> URL
-                            </button>
-                            <button type="button" onclick="setImageSource('upload')" id="imgSourceUpload" class="btn-secondary flex-1">
-                                <i class="fas fa-upload"></i> Upload
-                            </button>
-                        </div>
-                    </div>
-                    <div id="imageUrlField" class="form-group">
-                        <input type="url" id="infoCardImageUrl" class="form-input" placeholder="https://example.com/image.jpg">
-                    </div>
-                    <div id="imageUploadField" class="form-group hidden">
-                        <label class="upload-label">
-                            <div id="uploadPlaceholder">
-                                <i class="fas fa-cloud-upload-alt upload-icon"></i>
-                                <p>Click to upload image</p>
-                                <p class="text-sm text-muted">PNG, JPG up to 2MB</p>
-                            </div>
-                            <div id="uploadPreview" class="hidden">
-                                <img id="previewImg" class="upload-preview-img" src="" alt="Preview">
-                            </div>
-                            <input type="file" id="infoCardImageFile" class="hidden" accept="image/*" onchange="handleImageUpload(event)">
-                        </label>
-                    </div>
-                    <input type="hidden" id="infoCardImage">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Link URL</label>
-                    <input type="url" id="infoCardLink" class="form-input" placeholder="https://..." required>
-                </div>
-            </form>
-            <div class="modal-footer">
-                <button onclick="closeModal('infoCardModal')" class="btn-secondary">Cancel</button>
-                <button onclick="saveInfoCard()" class="btn-primary">Save</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Rename Modal -->
-    <div id="renameModal" class="hidden modal-backdrop">
-        <div class="modal-box modal-box--sm">
-            <div class="modal-header">
-                <h3 class="modal-title">Rename</h3>
-                <button onclick="closeModal('renameModal')" class="modal-close"><i class="fas fa-times"></i></button>
-            </div>
-            <form class="modal-body">
-                <input type="text" id="renameInput" class="form-input" required>
-            </form>
-            <div class="modal-footer">
-                <button onclick="closeModal('renameModal')" class="btn-secondary">Cancel</button>
-                <button onclick="confirmRename()" class="btn-primary">Rename</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Move Modal -->
-    <div id="moveModal" class="hidden modal-backdrop">
-        <div class="modal-box modal-box--sm">
-            <div class="modal-header">
-                <h3 class="modal-title">Move To...</h3>
-                <button onclick="closeModal('moveModal')" class="modal-close"><i class="fas fa-times"></i></button>
-            </div>
-            <div id="moveFolderList" class="modal-body move-list"></div>
-            <div class="modal-footer">
-                <button onclick="closeModal('moveModal')" class="btn-secondary">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <script src="script.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a12192289df05ffd',t:'MTc4MjUzMzEwMA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script src="script.js"></script>
+</body>
 </html>
