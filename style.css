@@ -482,7 +482,7 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 /* Individual handover field rows */
 .sn-ho-row   { display:flex; align-items:baseline; gap:.4rem; padding:.28rem 0; border-bottom:1px solid var(--border); }
 .sn-ho-row:last-child { border-bottom:none; }
-.sn-ho-label { font-family:'Courier New',Courier,monospace; font-size:.8rem; font-weight:700; color:var(--text2); white-space:pre; min-width:110px; flex-shrink:0; }
+.sn-ho-label { font-family:'Courier New',Courier,monospace; font-size:.8rem; font-weight:700; color:var(--text); white-space:pre; min-width:110px; flex-shrink:0; }
 .sn-ho-value { font-family:'Courier New',Courier,monospace; font-size:.85rem; font-weight:700; color:var(--accent); word-break:break-all; }
 
 /* Subnet Calculator */
