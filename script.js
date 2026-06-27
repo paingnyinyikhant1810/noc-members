@@ -176,8 +176,8 @@ function doShowApp(){
 }
 
 function updateAdminUI(){
-  // Admin-only
-  ['adminBtn','mobileAdminBtn'].forEach(id=>{
+  // Admin-only elements
+  ['adminBtn','mobileAdminBtn','catSettingBtn'].forEach(id=>{
     const e=el(id);if(e)isAdmin()?e.classList.remove('hidden'):e.classList.add('hidden');
   });
   // All roles can add updates — button always visible after login
@@ -239,7 +239,13 @@ function closeMobileMenu(){
 }
 
 function renderMobileInfoMenu(){
-  // kept for compatibility but no longer used in sidebar (sidebar now opens picker)
+  const container=el('mobileInfoMenu');
+  if(!container) return;
+  const cats=appData.categories.filter(c=>canSee(c.min_role_required||'intern'));
+  container.innerHTML=cats.map(cat=>`
+    <button onclick="showInfoCategory(${cat.id},'${escAttr(cat.name)}');closeMobileMenu();" class="mob-nbtn mob-nbtn--sub">
+      <i class="fas ${cat.icon}"></i> ${escHtml(cat.name)}
+    </button>`).join('');
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -264,9 +270,23 @@ function navigateTo(page){
   document.querySelectorAll(`[data-page="${page}"]`).forEach(b=>b.classList.add('active'));
 }
 
-// Legacy stub (dropdown removed — picker modal used instead)
-function toggleInfoDropdown(){}
-function renderInfoDropdown(){}
+// Information dropdown (restored)
+function toggleInfoDropdown(){
+  const d=el('infoDropdown');
+  if(!d) return;
+  d.classList.toggle('hidden');
+  if(!d.classList.contains('hidden')) renderInfoDropdown();
+}
+function renderInfoDropdown(){
+  const d=el('infoDropdown');
+  if(!d) return;
+  const cats=appData.categories.filter(c=>canSee(c.min_role_required||'intern'));
+  d.innerHTML=cats.map(cat=>`
+    <button onclick="showInfoCategory(${cat.id},'${escAttr(cat.name)}')" class="dd-item">
+      <i class="fas ${cat.icon}"></i> ${escHtml(cat.name)}
+    </button>`).join('')
+    || '<div style="padding:.6rem 1rem;font-size:.82rem;color:var(--text3)">No categories yet</div>';
+}
 
 /* ── Information Category Picker Modal ──────────────────── */
 function openInfoCategoryPicker(){
@@ -296,6 +316,13 @@ function pickCategory(catId,catName){
   closeModal('infoCategoryPickerModal');
   showInfoCategory(catId,catName);
 }
+
+// Close dropdown when clicking outside
+document.addEventListener('click',e=>{
+  const dd=el('infoDropdown');
+  const btn=document.querySelector('[data-page="information"]');
+  if(dd&&btn&&!dd.contains(e.target)&&!btn.contains(e.target))dd.classList.add('hidden');
+});
 
 function showInfoCategory(catId,catName){
   currentInfoCategory=catId;
@@ -862,7 +889,13 @@ function renderUsers(){
       <td class="tr"><button onclick="editUser(${u.id})" class="icon-btn" style="color:var(--accent)"><i class="fas fa-edit"></i></button>${u.id!==currentUser.id?`<button onclick="deleteFromApi('users',${u.id})" class="icon-btn" style="color:#ef4444"><i class="fas fa-trash"></i></button>`:''}</td>
     </tr>`).join('');
 }
-function showAdminTab(tab){if(!isAdmin())return;document.querySelectorAll('.admin-tab').forEach(t=>t.classList.remove('active','bg-white','shadow-sm'));document.querySelectorAll('.admin-tc').forEach(c=>c.classList.add('hidden'));document.querySelector(`[data-tab="${tab}"]`).classList.add('active','bg-white','shadow-sm');el(`${tab}Tab`).classList.remove('hidden');if(tab==='users')renderUsers();if(tab==='categories')renderCategories();}
+function showAdminTab(tab){
+  if(!isAdmin())return;
+  // Categories tab removed — only users tab remains
+  if(tab==='users') renderUsers();
+  // renderCategories kept for category manager modal
+  if(tab==='categories') renderCategories();
+}
 function renderCategories(){el('categoriesList').innerHTML=appData.categories.map(cat=>`<div class="cat-card"><div style="display:flex;align-items:center;gap:.65rem"><div class="cat-icon"><i class="fas ${cat.icon}"></i></div><span style="font-weight:600">${escHtml(cat.name)}</span></div><div style="display:flex;gap:.35rem"><button onclick="openCategoryModal(${cat.id})" class="icon-btn" style="color:var(--accent)"><i class="fas fa-edit"></i></button><button onclick="deleteFromApi('categories',${cat.id})" class="icon-btn" style="color:#ef4444"><i class="fas fa-trash"></i></button></div></div>`).join('');}
 /* ── Category Manager (drag to sort) ────────────────────── */
 let catDragSrc=null;
@@ -1063,7 +1096,11 @@ el('subnetInput').addEventListener('input',calcSubnet);
 
 function calcSubnet(){
   const raw=el('subnetInput').value.trim(), out=el('subnetResults');
-  if(!raw){out.innerHTML='';return;}
+  if(!raw){
+    out.innerHTML='';
+    const hb=el('handoverBlock');if(hb)hb.classList.add('hidden');
+    return;
+  }
   try{
     const[ipPart,cidrPart]=raw.split('/');
     if(!cidrPart)throw new Error('Enter CIDR notation e.g. 192.168.1.0/24');
@@ -1108,28 +1145,46 @@ Subnet      : ${subnetDisplay}
 DNS1        : 59.153.88.210
 DNS2        : 59.153.90.34`;
 
-    out.innerHTML=`
-      ${rows.map(([l,v])=>`<div class="sn-row"><span class="sn-label">${l}</span><span class="sn-val">${v}</span></div>`).join('')}
+    // ── Handover block (above subnet rows) ───────────────
+    const handoverEl=el('handoverText');
+    const handoverBlock=el('handoverBlock');
+    if(handoverEl){
+      // Render as styled lines — each field on its own row
+      handoverEl.innerHTML=[
+        ['Customer IP', customerIP],
+        ['Gateway    ', gateway],
+        ['Subnet     ', subnetDisplay],
+        ['DNS1       ', '59.153.88.210'],
+        ['DNS2       ', '59.153.90.34'],
+      ].map(([label,value])=>
+        `<div class="sn-ho-row"><span class="sn-ho-label">${label} :</span><span class="sn-ho-value">${escHtml(value)}</span></div>`
+      ).join('');
+    }
+    if(handoverBlock) handoverBlock.classList.remove('hidden');
 
-      <div class="sn-handover-wrap">
-        <div class="sn-handover-header">
-          <span class="sn-handover-title"><i class="fas fa-clipboard"></i> NOC Handover Info</span>
-          <button class="sn-copy-btn" onclick="copyHandoverText()" title="Copy to clipboard">
-            <i class="fas fa-copy"></i> Copy
-          </button>
-        </div>
-        <textarea id="handoverText" class="sn-handover-pre sn-handover-editable" spellcheck="false">${escHtml(handoverText)}</textarea>
-      </div>`;
+    // ── Subnet detail rows ────────────────────────────────
+    out.innerHTML=rows.map(([l,v])=>
+      `<div class="sn-row"><span class="sn-label">${l}</span><span class="sn-val">${v}</span></div>`
+    ).join('');
 
   }catch(e){
-    el('subnetResults').innerHTML=`<div class="sn-error"><i class="fas fa-exclamation-circle"></i> ${escHtml(e.message)}</div>`;
+    out.innerHTML=`<div class="sn-error"><i class="fas fa-exclamation-circle"></i> ${escHtml(e.message)}</div>`;
+    const hb=el('handoverBlock');if(hb)hb.classList.add('hidden');
   }
 }
 
 function copyHandoverText(){
   const pre=el('handoverText');
   if(!pre)return;
-  const text=pre.value||pre.textContent;
+  // Build plain text from the structured rows
+  const rows=pre.querySelectorAll('.sn-ho-row');
+  const text=rows.length
+    ? Array.from(rows).map(r=>{
+        const label=r.querySelector('.sn-ho-label')?.textContent||'';
+        const value=r.querySelector('.sn-ho-value')?.textContent||'';
+        return label+' '+value;
+      }).join('\n')
+    : pre.textContent;
   navigator.clipboard.writeText(text).then(()=>{
     const btn=document.querySelector('.sn-copy-btn');
     if(btn){
