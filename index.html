@@ -75,10 +75,7 @@
     <div id="mobileMenu" class="mob-menu hidden">
         <div class="mob-hdr">
             <div class="mob-logo"><i class="fas fa-users"></i></div>
-            <div>
-                <div class="fw7">NOC Portal</div>
-                <div class="txt-sm txt-muted" id="mobileWelcome"></div>
-            </div>
+            <div class="fw7">NOC Portal</div>
             <button onclick="closeMobileMenu()" class="mob-close-btn"><i class="fas fa-times"></i></button>
         </div>
         <nav class="mob-nav">
@@ -102,13 +99,12 @@
             <!-- 5. Admin Panel + Categories Setting — admin only -->
             <div id="mobileAdminBtn" class="hidden">
                 <div class="mob-divider"></div>
-                 <button onclick="closeMobileMenu();openCategoryManagerModal()" class="mob-nbtn">
-                    <i class="fas fa-tags"></i> Categories Setting
-                </button>
                 <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn" data-page="admin">
                     <i class="fas fa-shield-alt"></i> Admin Panel
                 </button>
-               
+                <button onclick="closeMobileMenu();openCategoryManagerModal()" class="mob-nbtn">
+                    <i class="fas fa-tags"></i> Categories Setting
+                </button>
             </div>
             <!-- 6. Settings -->
             <div class="mob-divider"></div>
@@ -116,10 +112,8 @@
                 <i class="fas fa-sliders-h"></i> Settings
             </button>
         </nav>
-        <div class="mob-foot">
-            <div class="mob-user-info" id="mobUserInfo"></div>
-            <button onclick="logout()" class="mob-logout"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
-        </div>
+        <!-- Mobile drawer footer removed: no user info, no sign-out button here -->
+        <div class="mob-foot" style="display:none"></div>
     </div>
 
     <!-- Top Nav -->
@@ -149,11 +143,10 @@
         </div>
     </nav>
 
-    <!-- Welcome Banner -->
+    <!-- Welcome Banner — name only, no role badge -->
     <div class="welcome-banner">
         <div class="wb-inner">
             Hi, <span id="welcomeUser" class="fw7"></span>! 👋
-            <span id="userRoleBadge" class="role-badge"></span>
         </div>
     </div>
 
@@ -529,8 +522,8 @@
         <!-- Utility Tabs -->
         <div class="util-tabs">
             <button onclick="switchUtilTab('time')" class="util-tab active" data-utab="time"><i class="fas fa-clock"></i> Time Converter</button>
-            <button onclick="switchUtilTab('subnet')" class="util-tab" data-utab="subnet"><i class="fas fa-network-wired"></i> Subnet Calculator</button>
-            <button onclick="switchUtilTab('handover')" class="util-tab" data-utab="handover"><i class="fas fa-sticky-note"></i> Sticky Note</button>
+            <button onclick="switchUtilTab('subnet')" class="util-tab" data-utab="subnet"><i class="fas fa-network-wired"></i> Subnet Calc</button>
+            <button onclick="switchUtilTab('handover')" class="util-tab" data-utab="handover"><i class="fas fa-sticky-note"></i> Handover</button>
         </div>
 
         <!-- ── Time Converter ── -->
@@ -570,7 +563,7 @@
             <div id="handoverBlock" class="hidden" style="margin-bottom:.75rem">
                 <div class="sn-handover-wrap">
                     <div class="sn-handover-header">
-                        <span class="sn-handover-title"><i class="fas fa-clipboard"></i> IP Informations for Customer</span>
+                        <span class="sn-handover-title"><i class="fas fa-clipboard"></i> NOC Handover Info</span>
                         <button class="sn-copy-btn" onclick="copyHandoverText()"><i class="fas fa-copy"></i> Copy</button>
                     </div>
                     <div id="handoverText" class="sn-handover-pre"></div>
@@ -583,7 +576,7 @@
         <!-- ── Handover Dashboard ── -->
         <div id="utilHandover" class="util-panel modal-body hidden">
             <div class="handover-hdr">
-                <span class="flabel">Notes</span>
+                <span class="flabel">Handover Notes</span>
                 <button onclick="addStickyNote()" class="btn-primary btn-sm"><i class="fas fa-plus"></i> Add Note</button>
             </div>
             <div id="stickyBoard" class="sticky-board"></div>
