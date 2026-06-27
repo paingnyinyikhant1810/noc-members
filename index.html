@@ -104,8 +104,7 @@
                 <!-- NOC Utilities -->
                 <button onclick="openUtilities()" class="nav-btn nav-btn--util"><i class="fas fa-tools"></i> NOC Utilities</button>
                 <!-- Settings -->
-                <button onclick="openSettings()" class="nav-btn"><i class="fas fa-sliders-h"></i></button>
-                <button onclick="logout()" class="nav-btn nav-btn--logout"><i class="fas fa-sign-out-alt"></i> Logout</button>
+                <button onclick="openSettings()" class="nav-btn"><i class="fas fa-sliders-h"></i> Settings</button>
             </div>
         </div>
     </nav>
@@ -260,13 +259,15 @@
         <form id="folderForm" class="modal-body">
             <input type="hidden" id="folderId">
             <div class="fg"><label class="flabel">Folder Name</label><input type="text" id="folderName" class="finput" required></div>
-            <div class="fg"><label class="flabel">Min Permission</label>
-                <select id="folderPermission" class="finput">
-                    <option value="intern">🟡 Intern & above</option>
-                    <option value="member">🟢 Member & above</option>
-                    <option value="leader">🔵 Leader & above</option>
-                    <option value="admin">🔴 Admin only</option>
-                </select>
+            <div class="fg">
+                <label class="flabel">Who can see this folder?</label>
+                <p class="perm-hint">Select the <strong>minimum role</strong> required. Higher roles always inherit access.</p>
+                <div class="perm-checks">
+                    <label class="pcheck"><input type="radio" name="folderPerm" value="intern" checked><span class="pcheck-box intern">🟡 Intern &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="folderPerm" value="member"><span class="pcheck-box member">🟢 Member &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="folderPerm" value="leader"><span class="pcheck-box leader">🔵 Leader &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="folderPerm" value="admin"><span class="pcheck-box admin">🔴 Admin only</span></label>
+                </div>
             </div>
         </form>
         <div class="modal-ft"><button onclick="closeModal('folderModal')" class="btn-secondary">Cancel</button><button onclick="saveFolder()" class="btn-primary">Save</button></div>
@@ -287,13 +288,15 @@
             </div>
             <div id="pdfLinkField" class="fg"><label class="flabel">URL</label><input type="url" id="learningItemLink" class="finput" placeholder="https://..."></div>
             <div id="textContentField" class="fg hidden"><label class="flabel">Content</label><textarea id="learningItemContent" rows="6" class="finput ftarea"></textarea></div>
-            <div class="fg"><label class="flabel">Min Permission</label>
-                <select id="learningItemPermission" class="finput">
-                    <option value="intern">🟡 Intern & above</option>
-                    <option value="member">🟢 Member & above</option>
-                    <option value="leader">🔵 Leader & above</option>
-                    <option value="admin">🔴 Admin only</option>
-                </select>
+            <div class="fg">
+                <label class="flabel">Who can see this file?</label>
+                <p class="perm-hint">Select the <strong>minimum role</strong> required.</p>
+                <div class="perm-checks">
+                    <label class="pcheck"><input type="radio" name="itemPerm" value="intern" checked><span class="pcheck-box intern">🟡 Intern &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="itemPerm" value="member"><span class="pcheck-box member">🟢 Member &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="itemPerm" value="leader"><span class="pcheck-box leader">🔵 Leader &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="itemPerm" value="admin"><span class="pcheck-box admin">🔴 Admin only</span></label>
+                </div>
             </div>
         </form>
         <div class="modal-ft"><button onclick="closeModal('learningItemModal')" class="btn-secondary">Cancel</button><button onclick="saveLearningItem()" class="btn-primary">Save</button></div>
@@ -377,13 +380,15 @@
             </div>
             <div id="editItemLinkGroup" class="fg hidden"><label class="flabel">URL</label><input type="url" id="editItemLink" class="finput" placeholder="https://..."></div>
             <div id="editItemContentGroup" class="fg hidden"><label class="flabel">Content</label><textarea id="editItemContent" rows="5" class="finput ftarea"></textarea></div>
-            <div id="editItemPermGroup" class="fg"><label class="flabel">Min Permission</label>
-                <select id="editItemPerm" class="finput">
-                    <option value="intern">🟡 Intern & above</option>
-                    <option value="member">🟢 Member & above</option>
-                    <option value="leader">🔵 Leader & above</option>
-                    <option value="admin">🔴 Admin only</option>
-                </select>
+            <div id="editItemPermGroup" class="fg">
+                <label class="flabel">Who can see this?</label>
+                <p class="perm-hint">Select the <strong>minimum role</strong> required.</p>
+                <div class="perm-checks">
+                    <label class="pcheck"><input type="radio" name="editPerm" value="intern"><span class="pcheck-box intern">🟡 Intern &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="editPerm" value="member"><span class="pcheck-box member">🟢 Member &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="editPerm" value="leader"><span class="pcheck-box leader">🔵 Leader &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="editPerm" value="admin"><span class="pcheck-box admin">🔴 Admin only</span></label>
+                </div>
             </div>
         </form>
         <div class="modal-ft"><button onclick="closeModal('editItemModal')" class="btn-secondary">Cancel</button><button onclick="saveEditItem()" class="btn-primary">Save Changes</button></div>
@@ -443,7 +448,10 @@
                 </div>
             </div>
         </div>
-        <div class="modal-ft"><button onclick="closeModal('settingsModal')" class="btn-primary">Done</button></div>
+        <div class="modal-ft">
+            <button onclick="logout()" class="btn-secondary" style="margin-right:auto;color:#ef4444;border-color:#fecaca;"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
+            <button onclick="closeModal('settingsModal')" class="btn-primary">Done</button>
+        </div>
     </div>
 </div>
 
@@ -473,9 +481,13 @@
                     <input type="number" id="tcMin" class="finput" min="0" max="59" placeholder="MM" oninput="convertTime()">
                 </div>
                 <div class="fg">
-                    <label class="flabel">Format</label>
-                    <select id="tcFmt" class="finput" onchange="convertTime()">
-                        <option value="24">24-hour</option><option value="12">12-hour (AM/PM)</option>
+                    <label class="flabel">Input timezone</label>
+                    <select id="tcInputZone" class="finput" onchange="convertTime()">
+                        <option value="MMT">MMT (Myanmar)</option>
+                        <option value="UTC">UTC</option>
+                        <option value="IST">IST (India)</option>
+                        <option value="ICT">ICT (Indochina)</option>
+                        <option value="SGT">SGT (Singapore)</option>
                     </select>
                 </div>
             </div>
@@ -495,8 +507,19 @@
 
         <!-- ── Handover Dashboard ── -->
         <div id="utilHandover" class="util-panel modal-body hidden">
-            <div class="handover-hdr">
-                <span class="flabel">Sticky Notes</span>
+            <!-- Shift Timer -->
+            <div class="shift-timer-wrap">
+                <div class="shift-label"><i class="fas fa-business-time"></i> Shift Timer</div>
+                <div class="shift-clock" id="shiftClock">00:00:00</div>
+                <div class="btn-group" style="justify-content:center;margin-top:.5rem">
+                    <button onclick="shiftStart()" id="btnShiftStart" class="btn-primary btn-sm"><i class="fas fa-play"></i> Start</button>
+                    <button onclick="shiftPause()" id="btnShiftPause" class="btn-secondary btn-sm hidden"><i class="fas fa-pause"></i> Pause</button>
+                    <button onclick="shiftReset()" class="btn-secondary btn-sm"><i class="fas fa-redo"></i> Reset</button>
+                </div>
+            </div>
+            <!-- Sticky Notes -->
+            <div class="handover-hdr" style="margin-top:1rem">
+                <span class="flabel">Handover Notes</span>
                 <button onclick="addStickyNote()" class="btn-primary btn-sm"><i class="fas fa-plus"></i> Add Note</button>
             </div>
             <div id="stickyBoard" class="sticky-board"></div>
@@ -505,5 +528,5 @@
 </div>
 
 <script src="script.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a121c585cf0ba039',t:'MTc4MjUzNTIwNA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
