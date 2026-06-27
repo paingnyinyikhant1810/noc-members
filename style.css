@@ -462,16 +462,33 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 .modal-ft .btn-secondary[style*="ef4444"]:hover { background:#fef2f2; }
 
 /* ── Change Password modal ─────────────────────── */
-.cp-error {
-  background:#fef2f2; border:1px solid #fecaca; border-radius:var(--radius-sm);
-  color:#b91c1c; font-size:.82rem; padding:.55rem .85rem; margin-top:.1rem;
-  display:flex; align-items:center; gap:.4rem;
+.cp-error, .cp-success {
+  border-radius:var(--radius-sm); font-size:.82rem; padding:.55rem .85rem;
+  margin-top:.25rem; display:flex; align-items:center; gap:.4rem;
+  border:1px solid transparent;
 }
-.cp-success {
-  background:#f0fdf4; border:1px solid #bbf7d0; border-radius:var(--radius-sm);
-  color:#166534; font-size:.82rem; padding:.55rem .85rem; margin-top:.1rem;
-  display:flex; align-items:center; gap:.4rem;
-}
+.cp-error   { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+.cp-success { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
+
+/* Strength bar */
+.pwd-strength-wrap { display:flex; align-items:center; gap:.6rem; margin-top:.45rem; }
+.pwd-strength-track { flex:1; height:5px; background:var(--border); border-radius:50px; overflow:hidden; }
+.pwd-strength-bar   { height:100%; border-radius:50px; width:0%; transition:width .3s, background .3s; }
+.pwd-strength-label { font-size:.72rem; font-weight:700; min-width:65px; }
+
+/* Rules checklist */
+.pwd-rules { list-style:none; margin-top:.55rem; display:flex; flex-direction:column; gap:.25rem; }
+.rule { display:flex; align-items:center; gap:.45rem; font-size:.78rem; color:var(--text3); transition:color .2s; }
+.rule i { font-size:.75rem; transition:color .2s; }
+.rule-pass { color:#16a34a; }
+.rule-pass i { color:#16a34a; }
+.rule-fail { color:#dc2626; }
+.rule-fail i { color:#dc2626; }
+
+/* Match hint */
+.cp-match-hint { font-size:.78rem; margin-top:.35rem; display:flex; align-items:center; gap:.35rem; font-weight:600; }
+.match-ok { color:#16a34a; }
+.match-no { color:#dc2626; }
 
 /* ── Misc ──────────────────────────────────────── */
 .col-hide { display:none; } @media(min-width:640px){ .col-hide { display:table-cell; } }
