@@ -529,27 +529,60 @@
             <button onclick="closeModal('changePwdModal')" class="modal-x"><i class="fas fa-times"></i></button>
         </div>
         <form id="changePwdForm" class="modal-body" onsubmit="return false;">
+
+            <!-- Current password -->
             <div class="fg">
                 <label class="flabel">Current Password</label>
                 <div class="iwrap">
-                    <input type="password" id="cpOld" class="finput ipr" placeholder="Enter current password" autocomplete="current-password">
-                    <button type="button" class="eye-btn eye-r" onclick="togglePwdField('cpOld',this)"><i class="fas fa-eye"></i></button>
+                    <input type="password" id="cpOld" class="finput ipr"
+                        placeholder="Enter your current password"
+                        autocomplete="current-password">
+                    <button type="button" class="eye-btn eye-r" onclick="togglePwdField('cpOld',this)">
+                        <i class="fas fa-eye"></i>
+                    </button>
                 </div>
             </div>
+
+            <!-- New password + strength meter -->
             <div class="fg">
-                <label class="flabel">New Password</label>
+                <label class="flabel">New Password <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(min 5 characters)</span></label>
                 <div class="iwrap">
-                    <input type="password" id="cpNew" class="finput ipr" placeholder="Enter new password" autocomplete="new-password">
-                    <button type="button" class="eye-btn eye-r" onclick="togglePwdField('cpNew',this)"><i class="fas fa-eye"></i></button>
+                    <input type="password" id="cpNew" class="finput ipr"
+                        placeholder="Enter new password"
+                        autocomplete="new-password"
+                        oninput="updateStrengthBar(this.value);liveMatchCheck()">
+                    <button type="button" class="eye-btn eye-r" onclick="togglePwdField('cpNew',this)">
+                        <i class="fas fa-eye"></i>
+                    </button>
                 </div>
+                <!-- Strength bar -->
+                <div class="pwd-strength-wrap">
+                    <div class="pwd-strength-track"><div id="cpStrengthBar" class="pwd-strength-bar"></div></div>
+                    <span id="cpStrengthLabel" class="pwd-strength-label"></span>
+                </div>
+                <!-- Rules checklist -->
+                <ul class="pwd-rules">
+                    <li id="ruleLen"  class="rule"><i class="fas fa-circle-dot"></i> At least 5 characters</li>
+                    <li id="ruleUpper"class="rule"><i class="fas fa-circle-dot"></i> One uppercase letter (recommended)</li>
+                    <li id="ruleNum"  class="rule"><i class="fas fa-circle-dot"></i> One number (recommended)</li>
+                </ul>
             </div>
+
+            <!-- Confirm password -->
             <div class="fg">
                 <label class="flabel">Confirm New Password</label>
                 <div class="iwrap">
-                    <input type="password" id="cpConfirm" class="finput ipr" placeholder="Re-enter new password" autocomplete="new-password">
-                    <button type="button" class="eye-btn eye-r" onclick="togglePwdField('cpConfirm',this)"><i class="fas fa-eye"></i></button>
+                    <input type="password" id="cpConfirm" class="finput ipr"
+                        placeholder="Re-enter new password"
+                        autocomplete="new-password"
+                        oninput="liveMatchCheck()">
+                    <button type="button" class="eye-btn eye-r" onclick="togglePwdField('cpConfirm',this)">
+                        <i class="fas fa-eye"></i>
+                    </button>
                 </div>
+                <div id="cpMatchHint" class="cp-match-hint hidden"></div>
             </div>
+
             <div id="cpError" class="cp-error hidden"></div>
         </form>
         <div class="modal-ft">
@@ -560,5 +593,5 @@
 </div>
 
 <script src="script.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a121de008e943dcf',t:'MTc4MjUzNjIwNw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a121ed80fd1d3dcf',t:'MTc4MjUzNjg0Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
