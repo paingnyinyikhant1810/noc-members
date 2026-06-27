@@ -442,8 +442,12 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 .sn-handover-title  { font-size:.78rem; font-weight:700; color:var(--accent-text); display:flex; align-items:center; gap:.4rem; }
 .sn-copy-btn        { display:inline-flex; align-items:center; gap:.35rem; padding:.3rem .75rem; border:none; border-radius:var(--radius-sm); background:var(--accent); color:#fff; font-size:.75rem; font-weight:700; cursor:pointer; transition:all var(--transition); }
 .sn-copy-btn:hover  { opacity:.88; }
-.sn-handover-pre    { margin:0; padding:.85rem; font-family:'Courier New',Courier,monospace; font-size:.82rem; line-height:1.9; color:var(--text); background:var(--surface); white-space:pre; overflow-x:auto; }
-.sn-handover-editable { display:block; width:100%; resize:vertical; border:none; outline:none; font-family:'Courier New',Courier,monospace; font-size:.82rem; line-height:1.9; color:var(--text); background:var(--surface); padding:.85rem; white-space:pre; min-height:120px; }
+.sn-handover-pre    { margin:0; padding:.7rem .85rem; background:var(--surface); }
+/* Individual handover field rows */
+.sn-ho-row   { display:flex; align-items:baseline; gap:.4rem; padding:.28rem 0; border-bottom:1px solid var(--border); }
+.sn-ho-row:last-child { border-bottom:none; }
+.sn-ho-label { font-family:'Courier New',Courier,monospace; font-size:.8rem; font-weight:700; color:var(--text2); white-space:pre; min-width:110px; flex-shrink:0; }
+.sn-ho-value { font-family:'Courier New',Courier,monospace; font-size:.85rem; font-weight:700; color:var(--accent); word-break:break-all; }
 
 /* Subnet Calculator */
 .subnet-results { display:grid; gap:.4rem; margin-top:.5rem; }
