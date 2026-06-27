@@ -94,11 +94,10 @@
             <button onclick="openUtilities();closeMobileMenu()" class="mob-nbtn mob-nbtn--util">
                 <i class="fas fa-tools"></i> NOC Utilities
             </button>
-            <!-- 4. Information — all categories listed inline -->
-            <div class="mob-sect">
-                <p class="mob-slabel"><i class="fas fa-info-circle"></i> Information</p>
-                <div id="mobileInfoMenu"></div>
-            </div>
+            <!-- 4. Information — click opens category picker -->
+            <button onclick="openInfoCategoryPicker();closeMobileMenu()" class="mob-nbtn" data-page="information">
+                <i class="fas fa-info-circle"></i> Information
+            </button>
             <!-- 5. Admin Panel — admin only -->
             <div id="mobileAdminBtn" class="hidden">
                 <div class="mob-divider"></div>
@@ -129,13 +128,11 @@
             <div class="tnav-right d-lg-flex">
                 <button onclick="navigateTo('home')" class="nav-btn" data-page="home"><i class="fas fa-home"></i> Home</button>
                 <button onclick="navigateTo('learning')" class="nav-btn" data-page="learning"><i class="fas fa-book"></i> Learning</button>
-                <div class="dd-wrap">
-                    <button onclick="toggleInfoDropdown()" class="nav-btn" data-page="information">
-                        <i class="fas fa-info-circle"></i> Information <i class="fas fa-chevron-down caret"></i>
-                    </button>
-                    <div id="infoDropdown" class="hidden dd-menu"></div>
-                </div>
-                <!-- NOC Utilities — sits right next to Information -->
+                <!-- Information — click opens category picker popup -->
+                <button onclick="openInfoCategoryPicker()" class="nav-btn" data-page="information">
+                    <i class="fas fa-info-circle"></i> Information <i class="fas fa-chevron-down caret"></i>
+                </button>
+                <!-- NOC Utilities -->
                 <button onclick="openUtilities()" class="nav-btn nav-btn--util"><i class="fas fa-tools"></i> NOC Utilities</button>
                 <button id="adminBtn" onclick="navigateTo('admin')" class="nav-btn hidden" data-page="admin"><i class="fas fa-cog"></i> Admin</button>
                 <!-- Settings -->
@@ -495,15 +492,6 @@
                     <button onclick="applyFont('lg')" data-font="lg" class="btn-secondary font-opt">Large</button>
                 </div>
             </div>
-            <!-- Modal Size -->
-            <div class="set-row set-col">
-                <div class="set-label">Modal Size</div>
-                <div class="btn-group">
-                    <button onclick="applyModalSize('sm')" data-msize="sm" class="btn-secondary msize-opt">Compact</button>
-                    <button onclick="applyModalSize('md')" data-msize="md" class="btn-secondary msize-opt">Normal</button>
-                    <button onclick="applyModalSize('lg')" data-msize="lg" class="btn-secondary msize-opt">Large</button>
-                </div>
-            </div>
             <!-- Change Password -->
             <div class="set-row">
                 <div><div class="set-label">Change Password</div><div class="set-sub">Update your login password</div></div>
@@ -575,6 +563,56 @@
             </div>
             <div id="stickyBoard" class="sticky-board"></div>
         </div>
+    </div>
+</div>
+
+<!-- ════════ UPDATE DETAIL POPUP ════════ -->
+<div id="updateViewModal" class="hidden modal-bd">
+    <div class="modal-box modal-wide">
+        <div class="modal-hdr">
+            <div>
+                <h3 id="updateViewTitle" class="modal-title"></h3>
+                <div id="updateViewMeta" style="font-size:.78rem;color:var(--text2);margin-top:.2rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;"></div>
+            </div>
+            <button onclick="closeModal('updateViewModal')" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="updateViewBody" class="modal-body" style="line-height:1.8;color:var(--text2);white-space:pre-wrap;word-break:break-word;"></div>
+        <div id="updateViewActions" class="modal-ft"></div>
+    </div>
+</div>
+
+<!-- ════════ INFORMATION CATEGORY PICKER ════════ -->
+<div id="infoCategoryPickerModal" class="hidden modal-bd">
+    <div class="modal-box modal-sm">
+        <div class="modal-hdr">
+            <h3 class="modal-title"><i class="fas fa-info-circle"></i> Information</h3>
+            <div class="modal-hdr-actions">
+                <!-- Admin can manage categories from here -->
+                <button id="manageCatsBtn" onclick="openCategoryManagerModal()" class="hidden btn-secondary btn-sm" title="Manage Categories">
+                    <i class="fas fa-cog"></i> Manage
+                </button>
+            </div>
+            <button onclick="closeModal('infoCategoryPickerModal')" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="categoryPickerList" class="modal-body cat-picker-list"></div>
+    </div>
+</div>
+
+<!-- ════════ CATEGORY MANAGER (drag to sort, add/edit/delete) ════════ -->
+<div id="categoryManagerModal" class="hidden modal-bd">
+    <div class="modal-box modal-sm">
+        <div class="modal-hdr">
+            <h3 class="modal-title"><i class="fas fa-cog"></i> Manage Categories</h3>
+            <button onclick="closeModal('categoryManagerModal')" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="tab-tb" style="margin-bottom:.75rem">
+                <button onclick="openCategoryModal()" class="btn-primary btn-sm"><i class="fas fa-plus"></i> Add Category</button>
+                <span class="txt-sm txt-muted" style="margin-left:.5rem"><i class="fas fa-grip-vertical"></i> Drag to reorder</span>
+            </div>
+            <div id="categoryManagerList" class="cat-mgr-list"></div>
+        </div>
+        <div class="modal-ft"><button onclick="closeModal('categoryManagerModal')" class="btn-primary">Done</button></div>
     </div>
 </div>
 
