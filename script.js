@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   NOC Portal — script.js  v3
+   NOC Portal — script.js  v4
    ═══════════════════════════════════════════════════════════ */
 'use strict';
 
@@ -13,16 +13,21 @@ let appData = { users:[], updates:[], categories:[], infoCards:[], learningItems
 // Learning state
 let currentFolderId     = null;
 let currentInfoCategory = null;
-let contextItem         = null;   // { kind:'folder'|'item', id }
+let contextItem         = null;
 let searchDebounceTimer = null;
 
-// ── Role helpers ────────────────────────────────────────────
-const ROLE_RANK = { admin:4, leader:3, member:2, intern:1 };
-const myRank = () => ROLE_RANK[currentUser?.role] ?? 1;
-const isAdmin  = () => currentUser?.role === 'admin';
-const canSee   = (perm) => myRank() >= (ROLE_RANK[perm] ?? 1);
+// Sticky notes (D1-backed)
+let stickyNotes = [];
 
-// ── Spin keyframe (injected once) ──────────────────────────
+// ── Role helpers ────────────────────────────────────────────
+const ROLE_RANK  = { admin:4, leader:3, member:2, intern:1 };
+const myRank     = () => ROLE_RANK[currentUser?.role] ?? 1;
+const isAdmin    = () => currentUser?.role === 'admin';
+const isLeader   = () => myRank() >= ROLE_RANK.leader;  // leader+
+const canSee     = (perm) => myRank() >= (ROLE_RANK[perm] ?? 1);
+const canManageInfo = () => myRank() >= ROLE_RANK.leader; // leader+ can manage info cards
+
+// ── Spin keyframe ───────────────────────────────────────────
 (()=>{
   if(!document.getElementById('_kf')){
     const s=document.createElement('style');s.id='_kf';
@@ -39,7 +44,7 @@ function showLoading(prog=false){
   const o=document.createElement('div');o.id='loadingOverlay';
   o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;';
   if(prog){
-    o.innerHTML=`<div style="background:var(--surface);border-radius:14px;padding:2rem;box-shadow:0 16px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;align-items:center;gap:1rem;min-width:260px;">
+    o.innerHTML=`<div style="background:var(--surface);border-radius:14px;padding:2rem;box-shadow:0 16px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;align-items:center;gap:1rem;min-width:260px;max-width:90vw;">
       <div style="width:52px;height:52px;border:4px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;"></div>
       <div style="text-align:center;"><p style="font-weight:700;color:var(--text);margin-bottom:.2rem;">Please wait...</p><p style="color:var(--text2);font-size:.82rem;" id="loadingStatus">Loading</p></div>
       <div style="width:100%;background:var(--border);border-radius:50px;height:6px;overflow:hidden;"><div id="progressBar" style="background:var(--accent);height:6px;border-radius:50px;transition:width .3s;width:0%;"></div></div>
@@ -52,11 +57,11 @@ function showLoading(prog=false){
   document.body.appendChild(o);
 }
 function updateProgress(pct,status=''){
-  const b=document.getElementById('progressBar'),p=document.getElementById('progressPercent'),s=document.getElementById('loadingStatus');
+  const b=el('progressBar'),p=el('progressPercent'),s=el('loadingStatus');
   if(b)b.style.width=`${pct}%`;if(p)p.textContent=`${Math.round(pct)}%`;if(s&&status)s.textContent=status;
 }
 function hideLoading(){
-  const o=document.getElementById('loadingOverlay');
+  const o=el('loadingOverlay');
   if(o){o.classList.add('animate-fadeOut');setTimeout(()=>o.remove(),200);}
 }
 
@@ -64,7 +69,7 @@ function hideLoading(){
    TOAST
 ══════════════════════════════════════════════════════════ */
 function showToast(msg,type='error'){
-  const c=document.getElementById('toastContainer');
+  const c=el('toastContainer');
   const t=document.createElement('div');t.className='toast';
   t.style.background=type==='error'?'#ef4444':type==='info'?'var(--accent)':'#10b981';
   const icon=type==='error'?'fa-exclamation-circle':type==='info'?'fa-info-circle':'fa-check-circle';
@@ -79,13 +84,16 @@ const getHeaders = ()=>({'Authorization':authHeader||'','Content-Type':'applicat
 
 async function fetchAPI(endpoint,opts={}){
   try{
-    const res=await fetch(`${API_URL}/${endpoint}`,{...opts,headers:{...getHeaders(),...opts.headers}});
+    const res=await fetch(`${API_URL}/${endpoint}`,{...opts,headers:{...getHeaders(),...(opts.headers||{})}});
     if(res.status===401){if(!opts.silentFail)logout();return null;}
-    if(!res.ok)throw new Error(`HTTP ${res.status}`);
+    if(!res.ok){
+      const data=await res.json().catch(()=>({}));
+      throw new Error(data.error||`HTTP ${res.status}`);
+    }
     return res.json();
   }catch(e){
     console.error(e);
-    if(!opts.silentFail)showToast('Connection error: '+e.message);
+    if(!opts.silentFail)showToast('Error: '+e.message);
     return null;
   }
 }
@@ -155,25 +163,44 @@ function doShowApp(){
   el('mainApp').classList.remove('hidden');
   el('welcomeUser').textContent=currentUser.accountName;
   el('mobileWelcome').textContent=currentUser.accountName;
+  // Mobile user info strip
+  const mobileUserInfo=el('mobUserInfo');
+  if(mobileUserInfo){
+    mobileUserInfo.innerHTML=`<span class="fw7">${escHtml(currentUser.accountName)}</span>
+      <span class="role-badge rb-${currentUser.role||'intern'}">${currentUser.role}</span>`;
+  }
   const rb=el('userRoleBadge');
-  rb.textContent=currentUser.role;
-  rb.className='role-badge rb-'+(currentUser.role||'intern');
+  if(rb){rb.textContent=currentUser.role;rb.className='role-badge rb-'+(currentUser.role||'intern');}
   updateAdminUI();renderMobileInfoMenu();renderInfoDropdown();
   navigateTo('home');
 }
 
 function updateAdminUI(){
-  ['adminBtn','mobileAdminBtn','addUpdateBtn','learningAdminBtns','addInfoCardBtn'].forEach(id=>{
+  // Admin-only
+  ['adminBtn','mobileAdminBtn'].forEach(id=>{
     const e=el(id);if(e)isAdmin()?e.classList.remove('hidden'):e.classList.add('hidden');
   });
+  // All roles can add updates — button always visible after login
+  // (handled in HTML — no hidden class)
+
+  // Info card add button — leader+
+  const addInfo=el('addInfoCardBtn');
+  if(addInfo) canManageInfo()?addInfo.classList.remove('hidden'):addInfo.classList.add('hidden');
+
+  // Learning admin buttons — admin only
+  const lrn=el('learningAdminBtns');
+  if(lrn) isAdmin()?lrn.classList.remove('hidden'):lrn.classList.add('hidden');
 }
+
+function delay(ms){return new Promise(r=>setTimeout(r,ms));}
+async function simulateProgress(pct,status){updateProgress(pct,status);await delay(200);}
+
 function showLoginPage(){
   el('mainApp').classList.add('hidden');el('loginPage').classList.remove('hidden');
   el('username').value='';el('password').value='';
 }
 function logout(){
   localStorage.removeItem('authHeader');authHeader=null;currentUser=null;
-  // Close ALL modals before returning to login
   document.querySelectorAll('.modal-bd').forEach(m=>m.classList.add('hidden'));
   showLoginPage();closeMobileMenu();
 }
@@ -203,15 +230,18 @@ async function initApp(){
 ══════════════════════════════════════════════════════════ */
 function openMobileMenu(){
   el('mobileMenu').classList.remove('hidden');el('mobileOverlay').classList.remove('hidden');
-  setTimeout(()=>el('mobileMenu').classList.add('show'),10);renderMobileInfoMenu();
+  setTimeout(()=>el('mobileMenu').classList.add('show'),10);
+  renderMobileInfoMenu();
 }
 function closeMobileMenu(){
   el('mobileMenu').classList.remove('show');
   setTimeout(()=>{el('mobileMenu').classList.add('hidden');el('mobileOverlay').classList.add('hidden');},280);
 }
+
 function renderMobileInfoMenu(){
+  // Each category becomes a direct nav button (not a nested dropdown)
   el('mobileInfoMenu').innerHTML=appData.categories.map(cat=>`
-    <button onclick="showInfoCategory(${cat.id},'${escAttr(cat.name)}');closeMobileMenu();" class="mob-nbtn" style="padding-left:1.5rem;">
+    <button onclick="showInfoCategory(${cat.id},'${escAttr(cat.name)}');closeMobileMenu();" class="mob-nbtn mob-nbtn--sub">
       <i class="fas ${cat.icon}"></i> ${escHtml(cat.name)}
     </button>`).join('');
 }
@@ -222,9 +252,19 @@ function renderMobileInfoMenu(){
 function navigateTo(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
   document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active'));
-  if(page==='home'){el('homePage').classList.remove('hidden');renderUpdates();}
-  else if(page==='learning'){el('learningPage').classList.remove('hidden');currentFolderId=null;el('learningSearch').value='';el('clearSearch').classList.add('hidden');el('searchResults').classList.add('hidden');el('learningContainer').classList.remove('hidden');renderLearning();}
-  else if(page==='admin'){if(!isAdmin())return;el('adminPage').classList.remove('hidden');showAdminTab('users');}
+  if(page==='home'){
+    el('homePage').classList.remove('hidden');renderUpdates();
+  } else if(page==='learning'){
+    el('learningPage').classList.remove('hidden');
+    currentFolderId=null;
+    if(el('learningSearch'))el('learningSearch').value='';
+    if(el('clearSearch'))el('clearSearch').classList.add('hidden');
+    if(el('searchResults'))el('searchResults').classList.add('hidden');
+    if(el('learningContainer'))el('learningContainer').classList.remove('hidden');
+    renderLearning();
+  } else if(page==='admin'){
+    if(!isAdmin())return;el('adminPage').classList.remove('hidden');showAdminTab('users');
+  }
   document.querySelectorAll(`[data-page="${page}"]`).forEach(b=>b.classList.add('active'));
 }
 
@@ -236,10 +276,13 @@ function renderInfoDropdown(){
     </button>`).join('');
 }
 function showInfoCategory(catId,catName){
-  currentInfoCategory=catId;el('infoDropdown').classList.add('hidden');
+  currentInfoCategory=catId;
+  if(el('infoDropdown'))el('infoDropdown').classList.add('hidden');
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
-  el('informationPage').classList.remove('hidden');el('infoTitleText').textContent=catName;
-  if(isAdmin())el('addInfoCardBtn').classList.remove('hidden');
+  el('informationPage').classList.remove('hidden');
+  el('infoTitleText').textContent=catName;
+  if(canManageInfo())el('addInfoCardBtn').classList.remove('hidden');
+  else el('addInfoCardBtn').classList.add('hidden');
   renderInfoCards();
 }
 document.addEventListener('click',e=>{
@@ -248,7 +291,7 @@ document.addEventListener('click',e=>{
 });
 
 /* ══════════════════════════════════════════════════════════
-   SAVE / DELETE (generic API wrappers)
+   GENERIC API WRAPPERS (legacy saveToApi / deleteFromApi for admin CRUD)
 ══════════════════════════════════════════════════════════ */
 async function saveToApi(table,data){
   if(isProcessing){showToast('Please wait…','info');return false;}
@@ -268,46 +311,103 @@ async function deleteFromApi(table,id){
     updateProgress(50,'Refreshing...');await refreshData(true);
     updateProgress(100,'Deleted!');await delay(300);hideLoading();
     showToast('Deleted!','success');isProcessing=false;return true;
-  }catch(e){hideLoading();showToast('Delete failed');isProcessing=false;return false;}
+  }catch(e){hideLoading();showToast('Delete failed: '+e.message);isProcessing=false;return false;}
 }
 
 /* ══════════════════════════════════════════════════════════
-   UPDATES
+   UPDATES — all roles can create; delete = own only (admin = any)
 ══════════════════════════════════════════════════════════ */
 function renderUpdates(){
   const bmap={important:'b-important',general:'b-general',announcement:'b-announcement',reminder:'b-reminder'};
   const bicon={important:'🔴',general:'🔵',announcement:'🟢',reminder:'🟡'};
-  el('updatesContainer').innerHTML=appData.updates.map(u=>`
-    <div class="upd-card">
+  el('updatesContainer').innerHTML=appData.updates.map(u=>{
+    const canEdit   = isAdmin() || u.created_by===currentUser?.id;
+    const canDelete = isAdmin() || u.created_by===currentUser?.id;
+    return `<div class="upd-card">
       <div class="upd-hdr">
         <h3 class="upd-topic">${escHtml(u.topic)}</h3>
         <div class="upd-meta">
           <span class="badge ${bmap[u.badge]||'b-general'}">${bicon[u.badge]||''} ${escHtml(u.badge)}</span>
-          ${isAdmin()?`<button onclick="editUpdate(${u.id})" class="icon-btn"><i class="fas fa-edit"></i></button>
-          <button onclick="deleteUpdate(${u.id})" class="icon-btn" style="color:#ef4444"><i class="fas fa-trash"></i></button>`:''}
+          ${canEdit?`<button onclick="editUpdate(${u.id})" class="icon-btn" title="Edit"><i class="fas fa-edit"></i></button>`:''}
+          ${canDelete?`<button onclick="deleteUpdate(${u.id})" class="icon-btn" style="color:#ef4444" title="Delete"><i class="fas fa-trash"></i></button>`:''}
         </div>
       </div>
       <div class="upd-body card-link">${linkify(escHtml(u.message))}</div>
-      <div class="upd-foot"><span><i class="fas fa-user-circle"></i> ${escHtml(u.author)}</span><span><i class="fas fa-calendar"></i> ${escHtml(u.date)}</span></div>
-    </div>`).join('')||'<div style="text-align:center;padding:3rem;color:var(--text2)"><i class="fas fa-inbox" style="font-size:2rem;display:block;margin-bottom:.5rem"></i>No updates yet</div>';
+      <div class="upd-foot">
+        <span><i class="fas fa-user-circle"></i> ${escHtml(u.author||'')}</span>
+        <span><i class="fas fa-calendar"></i> ${escHtml(u.date||'')}</span>
+      </div>
+    </div>`;
+  }).join('')||'<div class="empty-state"><i class="fas fa-inbox"></i><p>No updates yet</p></div>';
 }
 function linkify(t){return t.replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g,'<br>');}
+
 function openUpdateModal(id=null){
-  if(!isAdmin())return;
+  // All roles can open the create modal
   el('updateModal').classList.remove('hidden');
   el('updateModalTitle').textContent=id?'Edit Update':'Add Update';
   el('updateId').value=id||'';
   if(id){const u=appData.updates.find(x=>x.id===id);el('updateTopic').value=u.topic;el('updateBadge').value=u.badge;el('updateMessage').value=u.message;}
   else el('updateForm').reset();
 }
+
 async function saveUpdate(){
-  if(!isAdmin())return;
   const id=el('updateId').value;
-  const data={id:id?parseInt(id):null,topic:el('updateTopic').value,badge:el('updateBadge').value,message:el('updateMessage').value,author:currentUser.accountName,date:new Date().toISOString().slice(0,10)};
-  if(await saveToApi('updates',data))closeModal('updateModal');
+  const topic=el('updateTopic').value.trim();
+  const badge=el('updateBadge').value;
+  const message=el('updateMessage').value.trim();
+  if(!topic||!message)return showToast('Topic and message are required','error');
+
+  if(isProcessing){showToast('Please wait…','info');return;}
+  isProcessing=true;showLoading(true);updateProgress(20,'Saving...');
+
+  try{
+    let res;
+    if(id){
+      // Edit — PUT to new endpoint
+      res=await fetch(`${API_URL}/updates/${id}`,{
+        method:'PUT',headers:getHeaders(),body:JSON.stringify({topic,badge,message})
+      });
+    } else {
+      // Create — POST to new endpoint (all roles)
+      res=await fetch(`${API_URL}/updates`,{
+        method:'POST',headers:getHeaders(),body:JSON.stringify({topic,badge,message})
+      });
+    }
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);
+    updateProgress(60,'Refreshing...');await refreshData(true);
+    updateProgress(100,'Saved!');await delay(300);hideLoading();
+    showToast('Update saved!','success');
+    closeModal('updateModal');
+  }catch(e){
+    hideLoading();showToast('Failed: '+e.message);
+  }
+  isProcessing=false;
 }
-function editUpdate(id){if(isAdmin())openUpdateModal(id);}
-async function deleteUpdate(id){if(isAdmin()&&confirm('Delete update?'))await deleteFromApi('updates',id);}
+
+function editUpdate(id){
+  const u=appData.updates.find(x=>x.id===id);if(!u)return;
+  if(!isAdmin()&&u.created_by!==currentUser?.id)return showToast('You can only edit your own updates','error');
+  openUpdateModal(id);
+}
+
+async function deleteUpdate(id){
+  const u=appData.updates.find(x=>x.id===id);if(!u)return;
+  if(!isAdmin()&&u.created_by!==currentUser?.id)return showToast('You can only delete your own updates','error');
+  if(!confirm('Delete this update?'))return;
+  if(isProcessing){showToast('Please wait…','info');return;}
+  isProcessing=true;showLoading(true);updateProgress(20,'Deleting...');
+  try{
+    const res=await fetch(`${API_URL}/updates/${id}`,{method:'DELETE',headers:getHeaders()});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);
+    updateProgress(60,'Refreshing...');await refreshData(true);
+    updateProgress(100,'Deleted!');await delay(300);hideLoading();
+    showToast('Deleted!','success');
+  }catch(e){hideLoading();showToast('Failed: '+e.message);}
+  isProcessing=false;
+}
 
 /* ══════════════════════════════════════════════════════════
    LEARNING — Search
@@ -321,31 +421,28 @@ el('learningSearch').addEventListener('input',function(){
 });
 
 function clearLearningSearch(){
-  el('learningSearch').value='';el('clearSearch').classList.add('hidden');
-  el('searchResults').classList.add('hidden');el('learningContainer').classList.remove('hidden');
+  if(el('learningSearch'))el('learningSearch').value='';
+  if(el('clearSearch'))el('clearSearch').classList.add('hidden');
+  if(el('searchResults'))el('searchResults').classList.add('hidden');
+  if(el('learningContainer'))el('learningContainer').classList.remove('hidden');
   renderLearning();
 }
 
 function doLearningSearch(q){
   const ql=q.toLowerCase();
-  // Filter folders visible to user
   const matchFolders=appData.folders.filter(f=>canSee(f.min_role_required||'intern')&&f.name.toLowerCase().includes(ql));
-  // Filter items visible to user
   const matchItems=appData.learningItems.filter(i=>{
-    const parentFolder=appData.folders.find(f=>f.id===i.folderId);
-    const folderOk=!parentFolder||canSee(parentFolder.min_role_required||'intern');
+    const pf=appData.folders.find(f=>f.id===i.folderId);
+    const folderOk=!pf||canSee(pf.min_role_required||'intern');
     const itemOk=canSee(i.min_role_required||'intern');
     return folderOk&&itemOk&&(i.topic.toLowerCase().includes(ql)||(i.content||'').toLowerCase().includes(ql));
   });
-
   el('searchResults').classList.remove('hidden');
   el('learningContainer').classList.add('hidden');
   el('searchQuery').textContent=`"${q}"`;
-
   const grid=el('searchResultsGrid');
   if(!matchFolders.length&&!matchItems.length){
-    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--text2)"><i class="fas fa-search" style="font-size:1.5rem;display:block;margin-bottom:.5rem"></i>No results found</div>';
-    return;
+    grid.innerHTML='<div class="empty-state"><i class="fas fa-search"></i><p>No results found</p></div>';return;
   }
   grid.innerHTML=matchFolders.map(f=>makeFolderCard(f)).join('')+matchItems.map(i=>makeItemCard(i)).join('');
 }
@@ -355,7 +452,6 @@ function doLearningSearch(q){
 ══════════════════════════════════════════════════════════ */
 function renderLearning(){
   renderBreadcrumb();
-  // RBAC filter: only show items the current user can see
   const folders=appData.folders
     .filter(f=>(f.parentId===currentFolderId)&&canSee(f.min_role_required||'intern'))
     .sort((a,b)=>a.name.localeCompare(b.name));
@@ -368,14 +464,12 @@ function renderLearning(){
       return true;
     })
     .sort((a,b)=>a.topic.localeCompare(b.topic));
-
   const html=folders.map(f=>makeFolderCard(f)).join('')+items.map(i=>makeItemCard(i)).join('');
-  el('learningContainer').innerHTML=html||'<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text2)"><i class="fas fa-folder-open" style="font-size:2rem;display:block;margin-bottom:.5rem"></i>Empty folder</div>';
+  el('learningContainer').innerHTML=html||'<div class="empty-state"><i class="fas fa-folder-open"></i><p>Empty folder</p></div>';
 }
 
 function makeFolderCard(f){
   const perm=f.min_role_required||'intern';
-  // Only show permission badge to admins
   const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
   return `<div class="file-card" onclick="openFolder(${f.id})" oncontextmenu="showCtx(event,'folder',${f.id})">
     ${isAdmin()?`<div class="card-actions">
@@ -392,7 +486,6 @@ function makeFolderCard(f){
 function makeItemCard(i){
   const isPdf=i.type==='pdf';
   const perm=i.min_role_required||'intern';
-  // PDF/link → red PDF icon  |  text → blue file icon
   const fiCls=isPdf?'fi-pdf':'fi-txt';
   const faIcon=isPdf?'fa-file-pdf':'fa-file-alt';
   const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
@@ -409,7 +502,8 @@ function makeItemCard(i){
 }
 
 function renderBreadcrumb(){
-  const bc=el('breadcrumb');let path=[],fid=currentFolderId;
+  const bc=el('breadcrumb');if(!bc)return;
+  let path=[],fid=currentFolderId;
   while(fid){const f=appData.folders.find(x=>x.id===fid);if(f){path.unshift(f);fid=f.parentId;}else break;}
   let h=`<button onclick="currentFolderId=null;clearLearningSearch();renderLearning();" class="bc-btn"><i class="fas fa-home"></i> Root</button>`;
   path.forEach(f=>{h+=`<span class="bc-sep">›</span><button onclick="currentFolderId=${f.id};clearLearningSearch();renderLearning();" class="bc-btn">${escHtml(f.name)}</button>`;});
@@ -419,15 +513,12 @@ function renderBreadcrumb(){
 function openFolder(id){currentFolderId=id;clearLearningSearch();renderLearning();}
 
 function openLearningItem(id){
-  const item=appData.learningItems.find(i=>i.id===id);
-  if(!item)return;
+  const item=appData.learningItems.find(i=>i.id===id);if(!item)return;
   if(item.type==='pdf'){window.open(item.link,'_blank');}
   else{el('textViewTitle').textContent=item.topic;el('textViewContent').textContent=item.content;el('textViewModal').classList.remove('hidden');}
 }
 
-/* ══════════════════════════════════════════════════════════
-   LEARNING — Context Menu
-══════════════════════════════════════════════════════════ */
+/* Context menu */
 function showCtx(e,kind,id){
   if(!isAdmin())return;e.preventDefault();e.stopPropagation();
   contextItem={kind,id};
@@ -441,27 +532,20 @@ function ctxMove(){el('contextMenu').classList.add('hidden');if(contextItem)open
 function ctxDelete(){el('contextMenu').classList.add('hidden');if(contextItem)ctxDeleteDirect(contextItem.kind==='folder'?'folders':'learning_items',contextItem.id);}
 async function ctxDeleteDirect(table,id){if(confirm('Delete this item?'))await deleteFromApi(table,id);}
 
-/* ══════════════════════════════════════════════════════════
-   LEARNING — Edit (unified modal)
-══════════════════════════════════════════════════════════ */
+/* Edit */
 function openEditItem(kind,id){
   const isFolder=kind==='folder';
   const obj=isFolder?appData.folders.find(f=>f.id===id):appData.learningItems.find(i=>i.id===id);
   if(!obj)return;
-
   el('editItemTitle').textContent=isFolder?'Edit Folder':'Edit Item';
-  el('editItemId').value=id;
-  el('editItemKind').value=kind;
+  el('editItemId').value=id;el('editItemKind').value=kind;
   el('editItemName').value=isFolder?obj.name:obj.topic;
   setRadio('editPerm',obj.min_role_required||'intern');
-
   el('editItemTypeGroup').classList.toggle('hidden',isFolder);
-  el('editItemLinkGroup').classList.toggle('hidden',true);
-  el('editItemContentGroup').classList.toggle('hidden',true);
-
+  el('editItemLinkGroup').classList.add('hidden');
+  el('editItemContentGroup').classList.add('hidden');
   if(!isFolder){
-    el('editItemType').value=obj.type||'pdf';
-    onEditItemTypeChange();
+    el('editItemType').value=obj.type||'pdf';onEditItemTypeChange();
     if(obj.type==='pdf')el('editItemLink').value=obj.link||'';
     else el('editItemContent').value=obj.content||'';
   }
@@ -473,29 +557,22 @@ function onEditItemTypeChange(){
   el('editItemContentGroup').classList.toggle('hidden',t!=='text');
 }
 async function saveEditItem(){
-  const kind=el('editItemKind').value;
-  const id=parseInt(el('editItemId').value);
-  const name=el('editItemName').value.trim();
-  const perm=getRadio('editPerm');
+  const kind=el('editItemKind').value,id=parseInt(el('editItemId').value);
+  const name=el('editItemName').value.trim(),perm=getRadio('editPerm');
   if(!name)return showToast('Name is required','error');
-
   if(kind==='folder'){
     const orig=appData.folders.find(f=>f.id===id);
-    const data={...orig,id,name,min_role_required:perm};
-    if(await saveToApi('folders',data))closeModal('editItemModal');
+    if(await saveToApi('folders',{...orig,id,name,min_role_required:perm}))closeModal('editItemModal');
   } else {
     const orig=appData.learningItems.find(i=>i.id===id);
     const type=el('editItemType').value;
-    const data={...orig,id,topic:name,type,min_role_required:perm,
+    if(await saveToApi('learning_items',{...orig,id,topic:name,type,min_role_required:perm,
       link:type==='pdf'?el('editItemLink').value:null,
-      content:type==='text'?el('editItemContent').value:null};
-    if(await saveToApi('learning_items',data))closeModal('editItemModal');
+      content:type==='text'?el('editItemContent').value:null}))closeModal('editItemModal');
   }
 }
 
-/* ══════════════════════════════════════════════════════════
-   LEARNING — Move
-══════════════════════════════════════════════════════════ */
+/* Move */
 function openMoveItem(kind,id){
   const available=appData.folders.filter(f=>{
     if(kind==='folder'&&f.id===id)return false;
@@ -504,49 +581,32 @@ function openMoveItem(kind,id){
   });
   let h=`<button onclick="confirmMove('${kind}',${id},null)"><i class="fas fa-home" style="color:var(--text2)"></i> Root</button>`;
   available.forEach(f=>{h+=`<button onclick="confirmMove('${kind}',${id},${f.id})"><i class="fas fa-folder" style="color:#d97706"></i> ${escHtml(f.name)}</button>`;});
-  el('moveFolderList').innerHTML=h;
-  el('moveModal').classList.remove('hidden');
+  el('moveFolderList').innerHTML=h;el('moveModal').classList.remove('hidden');
 }
 function isChildFolder(targetId,parentId){
-  let cur=targetId;
-  while(cur){const f=appData.folders.find(x=>x.id===cur);if(!f)break;if(f.parentId===parentId)return true;cur=f.parentId;}
-  return false;
+  let cur=targetId;while(cur){const f=appData.folders.find(x=>x.id===cur);if(!f)break;if(f.parentId===parentId)return true;cur=f.parentId;}return false;
 }
 async function confirmMove(kind,id,targetId){
   closeModal('moveModal');
   const table=kind==='folder'?'folders':'learning_items';
   let data;
-  if(kind==='folder'){const orig=appData.folders.find(f=>f.id===id);data={...orig,parentId:targetId};}
-  else{const orig=appData.learningItems.find(i=>i.id===id);data={...orig,folderId:targetId};}
+  if(kind==='folder'){data={...appData.folders.find(f=>f.id===id),parentId:targetId};}
+  else{data={...appData.learningItems.find(i=>i.id===id),folderId:targetId};}
   await saveToApi(table,data);
 }
 
-/* ══════════════════════════════════════════════════════════
-   LEARNING — Create Folder / Item
-══════════════════════════════════════════════════════════ */
-// Helper: read selected radio value by name
-function getRadio(name){
-  const checked=document.querySelector(`input[name="${name}"]:checked`);
-  return checked?checked.value:'intern';
-}
-// Helper: set radio by name + value
-function setRadio(name,value){
-  const r=document.querySelector(`input[name="${name}"][value="${value}"]`);
-  if(r)r.checked=true;
-}
-
+/* Create */
 function openFolderModal(){
   if(!isAdmin())return;
   el('folderModal').classList.remove('hidden');el('folderModalTitle').textContent='Create Folder';
-  el('folderForm').reset();el('folderId').value='';
-  setRadio('folderPerm','intern');
+  el('folderForm').reset();el('folderId').value='';setRadio('folderPerm','intern');
 }
 async function saveFolder(){
-  const id=el('folderId').value;const name=el('folderName').value.trim();
+  const id=el('folderId').value,name=el('folderName').value.trim();
   if(!name)return showToast('Name required','error');
   const perm=getRadio('folderPerm');
-  const data={id:id?parseInt(id):null,name,parentId:currentFolderId,min_role_required:perm};
-  if(await saveToApi('folders',data))closeModal('folderModal');
+  if(await saveToApi('folders',{id:id?parseInt(id):null,name,parentId:currentFolderId,min_role_required:perm}))
+    closeModal('folderModal');
 }
 el('folderForm').addEventListener('submit',e=>e.preventDefault());
 el('folderForm').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveFolder();}});
@@ -561,10 +621,7 @@ function openLearningItemModal(id=null){
     el('learningItemTopic').value=item.topic;el('learningItemType').value=item.type;
     el('learningItemLink').value=item.link||'';el('learningItemContent').value=item.content||'';
     setRadio('itemPerm',item.min_role_required||'intern');
-  } else {
-    el('learningItemForm').reset();
-    setRadio('itemPerm','intern');
-  }
+  } else {el('learningItemForm').reset();setRadio('itemPerm','intern');}
   toggleLearningItemFields();
 }
 function toggleLearningItemFields(){
@@ -573,7 +630,7 @@ function toggleLearningItemFields(){
   el('textContentField').classList.toggle('hidden',t!=='text');
 }
 async function saveLearningItem(){
-  const id=el('learningItemId').value;const type=el('learningItemType').value;
+  const id=el('learningItemId').value,type=el('learningItemType').value;
   const data={id:id?parseInt(id):null,topic:el('learningItemTopic').value,type,
     link:type==='pdf'?el('learningItemLink').value:null,
     content:type==='text'?el('learningItemContent').value:null,
@@ -581,59 +638,120 @@ async function saveLearningItem(){
   if(await saveToApi('learning_items',data))closeModal('learningItemModal');
 }
 
-/* rename modal (legacy — kept for compat) */
+/* Rename (legacy) */
 function renameItem(){if(!isAdmin()||!contextItem)return;const name=contextItem.kind==='folder'?appData.folders.find(f=>f.id===contextItem.id)?.name:appData.learningItems.find(i=>i.id===contextItem.id)?.topic;el('renameInput').value=name||'';el('renameModal').classList.remove('hidden');}
 async function confirmRename(){
   if(!isAdmin()||!contextItem)return;const newName=el('renameInput').value.trim();if(!newName)return;
   const table=contextItem.kind==='folder'?'folders':'learning_items';
-  let data;if(contextItem.kind==='folder'){const f=appData.folders.find(x=>x.id===contextItem.id);data={...f,name:newName};}
-  else{const i=appData.learningItems.find(x=>x.id===contextItem.id);data={...i,topic:newName};}
+  let data;if(contextItem.kind==='folder'){data={...appData.folders.find(x=>x.id===contextItem.id),name:newName};}
+  else{data={...appData.learningItems.find(x=>x.id===contextItem.id),topic:newName};}
   if(await saveToApi(table,data))closeModal('renameModal');
 }
-document.querySelector('#renameModal form').addEventListener('submit',e=>e.preventDefault());
-el('renameInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();confirmRename();}});
+if(document.querySelector('#renameModal form'))
+  document.querySelector('#renameModal form').addEventListener('submit',e=>e.preventDefault());
+if(el('renameInput'))
+  el('renameInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();confirmRename();}});
 
 /* ══════════════════════════════════════════════════════════
-   INFO CARDS
+   INFO CARDS — leader+ can manage
 ══════════════════════════════════════════════════════════ */
 let longPressTimer,longPressCardId,isLongPress,imageSource='url';
+
 function renderInfoCards(){
   const container=el('infoCardsContainer');
   const cards=appData.infoCards.filter(c=>c.categoryId===currentInfoCategory);
   container.innerHTML=cards.map(card=>`
-    <div class="relative" id="ic-${card.id}" style="position:relative">
+    <div id="ic-${card.id}" style="position:relative">
       <div class="info-card" data-cid="${card.id}"
            onclick="handleInfoCardClick(event,${card.id},'${escAttr(card.link)}')"
-           ${isAdmin()?`oncontextmenu="showInfoCardCtx(event,${card.id})"`:''}>
+           ${canManageInfo()?`oncontextmenu="showInfoCardCtx(event,${card.id})"`:''}>
         ${card.displayType==='image'&&card.image
           ?`<img src="${escAttr(card.image)}" alt="${escAttr(card.title)}" class="info-card-img" onerror="this.style.display='none'">`
           :`<div class="info-icon"><i class="fas ${card.icon||'fa-link'}"></i></div>`}
         <span style="font-size:.8rem;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(card.title)}</span>
       </div>
-      ${isAdmin()?`<div style="position:absolute;top:.35rem;right:.35rem;opacity:0;transition:opacity .15s" class="ica-wrap">
+      ${canManageInfo()?`<div style="position:absolute;top:.35rem;right:.35rem;opacity:0;transition:opacity .15s" class="ica-wrap">
         <button onclick="editInfoCard(event,${card.id})" class="ca-btn"><i class="fas fa-edit"></i></button>
       </div>`:''}
-    </div>`).join('')||'<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text2)">No items yet</div>';
+    </div>`).join('')||'<div class="empty-state"><i class="fas fa-layer-group"></i><p>No items yet</p></div>';
+
   container.querySelectorAll('[id^="ic-"]').forEach(el=>{const w=el.querySelector('.ica-wrap');if(w){el.addEventListener('mouseenter',()=>w.style.opacity='1');el.addEventListener('mouseleave',()=>w.style.opacity='0');}});
-  if(isAdmin()){cards.forEach(card=>{const e=document.querySelector(`[data-cid="${card.id}"]`);if(e){e.addEventListener('touchstart',ev=>startLongPress(ev,card.id),{passive:true});e.addEventListener('touchend',endLongPress);e.addEventListener('touchmove',cancelLongPress);}});}
+  if(canManageInfo()){cards.forEach(card=>{const e=document.querySelector(`[data-cid="${card.id}"]`);if(e){e.addEventListener('touchstart',ev=>startLongPress(ev,card.id),{passive:true});e.addEventListener('touchend',endLongPress);e.addEventListener('touchmove',cancelLongPress);}});}
 }
+
 function handleInfoCardClick(event,cardId,link){if(isLongPress){event.preventDefault();isLongPress=false;return;}window.open(link,'_blank');}
-function startLongPress(e,id){if(!isAdmin())return;isLongPress=false;longPressCardId=id;longPressTimer=setTimeout(()=>{isLongPress=true;if(navigator.vibrate)navigator.vibrate(50);showInfoCardCtx(e,id);},500);}
+function startLongPress(e,id){if(!canManageInfo())return;isLongPress=false;longPressCardId=id;longPressTimer=setTimeout(()=>{isLongPress=true;if(navigator.vibrate)navigator.vibrate(50);showInfoCardCtx(e,id);},500);}
 function endLongPress(){clearTimeout(longPressTimer);}
 function cancelLongPress(){clearTimeout(longPressTimer);isLongPress=false;}
-function showInfoCardCtx(e,id){if(!isAdmin())return;longPressCardId=id;const m=el('infoCardContextMenu');m.classList.remove('hidden');const x=e.touches?e.touches[0].clientX:e.clientX,y=e.touches?e.touches[0].clientY:e.clientY;m.style.left=Math.min(x,window.innerWidth-180)+'px';m.style.top=Math.min(y,window.innerHeight-120)+'px';}
+function showInfoCardCtx(e,id){if(!canManageInfo())return;longPressCardId=id;const m=el('infoCardContextMenu');m.classList.remove('hidden');const x=e.touches?e.touches[0].clientX:e.clientX,y=e.touches?e.touches[0].clientY:e.clientY;m.style.left=Math.min(x,window.innerWidth-180)+'px';m.style.top=Math.min(y,window.innerHeight-120)+'px';}
 document.addEventListener('click',e=>{const m=el('infoCardContextMenu');if(m&&!m.classList.contains('hidden')&&!m.contains(e.target))m.classList.add('hidden');});
 function editInfoCardFromContext(){el('infoCardContextMenu').classList.add('hidden');openInfoCardModal(longPressCardId);}
-async function deleteInfoCardFromContext(){el('infoCardContextMenu').classList.add('hidden');if(confirm('Delete?'))await deleteFromApi('info_cards',longPressCardId);}
+async function deleteInfoCardFromContext(){
+  el('infoCardContextMenu').classList.add('hidden');
+  if(!canManageInfo())return showToast('Insufficient permissions','error');
+  if(!confirm('Delete?'))return;
+  // Use new endpoint
+  if(isProcessing){showToast('Please wait…','info');return;}
+  isProcessing=true;showLoading(true);
+  try{
+    const res=await fetch(`${API_URL}/infoCards/${longPressCardId}`,{method:'DELETE',headers:getHeaders()});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||'Delete failed');
+    await refreshData(true);hideLoading();showToast('Deleted!','success');
+  }catch(e){hideLoading();showToast(e.message);}
+  isProcessing=false;
+}
 function setImageSource(src){imageSource=src;el('imageUrlField').classList.toggle('hidden',src!=='url');el('imageUploadField').classList.toggle('hidden',src!=='upload');const u=el('imgSourceUrl'),up=el('imgSourceUpload');if(src==='url'){u.className='btn-primary flex1';up.className='btn-secondary flex1';}else{up.className='btn-primary flex1';u.className='btn-secondary flex1';}}
 function handleImageUpload(event){const file=event.target.files[0];if(!file||file.size>2*1024*1024)return showToast('Image too large (>2MB)');const r=new FileReader();r.onload=e=>{el('infoCardImage').value=e.target.result;el('previewImg').src=e.target.result;el('uploadPlaceholder').classList.add('hidden');el('uploadPreview').classList.remove('hidden');};r.readAsDataURL(file);}
-function openInfoCardModal(id=null){if(!isAdmin())return;el('infoCardModal').classList.remove('hidden');el('infoCardModalTitle').textContent=id?'Edit':'Add';el('infoCardId').value=id||'';el('uploadPreview').classList.add('hidden');el('uploadPlaceholder').classList.remove('hidden');if(id){const c=appData.infoCards.find(x=>x.id===id);el('infoCardTitle').value=c.title;el('infoCardDisplayType').value=c.displayType;el('infoCardIcon').value=c.icon;el('infoCardLink').value=c.link;el('infoCardImage').value=c.image||'';el('infoCardImageUrl').value=c.image||'';if(c.image&&c.image.startsWith('data:')){setImageSource('upload');el('previewImg').src=c.image;el('uploadPlaceholder').classList.add('hidden');el('uploadPreview').classList.remove('hidden');}else setImageSource('url');}else{el('infoCardForm').reset();setImageSource('url');}toggleInfoCardFields();}
+
+function openInfoCardModal(id=null){
+  if(!canManageInfo())return showToast('Leader or above required','error');
+  el('infoCardModal').classList.remove('hidden');
+  el('infoCardModalTitle').textContent=id?'Edit':'Add';
+  el('infoCardId').value=id||'';
+  el('uploadPreview').classList.add('hidden');el('uploadPlaceholder').classList.remove('hidden');
+  if(id){
+    const c=appData.infoCards.find(x=>x.id===id);
+    el('infoCardTitle').value=c.title;el('infoCardDisplayType').value=c.displayType;
+    el('infoCardIcon').value=c.icon;el('infoCardLink').value=c.link;
+    el('infoCardImage').value=c.image||'';el('infoCardImageUrl').value=c.image||'';
+    if(c.image&&c.image.startsWith('data:')){setImageSource('upload');el('previewImg').src=c.image;el('uploadPlaceholder').classList.add('hidden');el('uploadPreview').classList.remove('hidden');}
+    else setImageSource('url');
+  } else {el('infoCardForm').reset();setImageSource('url');}
+  toggleInfoCardFields();
+}
 function toggleInfoCardFields(){const t=el('infoCardDisplayType').value;el('iconField').classList.toggle('hidden',t!=='icon');el('imageField').classList.toggle('hidden',t!=='image');}
-async function saveInfoCard(){const id=el('infoCardId').value;const dt=el('infoCardDisplayType').value;const img=dt==='image'?(imageSource==='url'?el('infoCardImageUrl').value:el('infoCardImage').value):null;const data={id:id?parseInt(id):null,title:el('infoCardTitle').value,displayType:dt,icon:el('infoCardIcon').value,image:img,link:el('infoCardLink').value,categoryId:currentInfoCategory};if(await saveToApi('info_cards',data))closeModal('infoCardModal');}
+
+async function saveInfoCard(){
+  if(!canManageInfo())return showToast('Leader or above required','error');
+  const id=el('infoCardId').value;
+  const dt=el('infoCardDisplayType').value;
+  const img=dt==='image'?(imageSource==='url'?el('infoCardImageUrl').value:el('infoCardImage').value):null;
+  const payload={
+    title:el('infoCardTitle').value,displayType:dt,icon:el('infoCardIcon').value,
+    image:img,link:el('infoCardLink').value,categoryId:currentInfoCategory,min_role_required:'intern'
+  };
+  if(isProcessing){showToast('Please wait…','info');return;}
+  isProcessing=true;showLoading(true);updateProgress(20,'Saving...');
+  try{
+    let res;
+    if(id){
+      res=await fetch(`${API_URL}/infoCards/${id}`,{method:'PUT',headers:getHeaders(),body:JSON.stringify(payload)});
+    } else {
+      res=await fetch(`${API_URL}/infoCards`,{method:'POST',headers:getHeaders(),body:JSON.stringify(payload)});
+    }
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||'Save failed');
+    updateProgress(60,'Refreshing...');await refreshData(true);
+    updateProgress(100,'Saved!');await delay(300);hideLoading();
+    showToast('Saved!','success');closeModal('infoCardModal');
+  }catch(e){hideLoading();showToast(e.message);}
+  isProcessing=false;
+}
 function editInfoCard(e,id){e.preventDefault();e.stopPropagation();openInfoCardModal(id);}
 
 /* ══════════════════════════════════════════════════════════
-   ADMIN
+   ADMIN CRUD
 ══════════════════════════════════════════════════════════ */
 let visiblePwds={};
 function togglePasswordVisibility(id){visiblePwds[id]=!visiblePwds[id];renderUsers();}
@@ -652,22 +770,19 @@ function showAdminTab(tab){if(!isAdmin())return;document.querySelectorAll('.admi
 function renderCategories(){el('categoriesList').innerHTML=appData.categories.map(cat=>`<div class="cat-card"><div style="display:flex;align-items:center;gap:.65rem"><div class="cat-icon"><i class="fas ${cat.icon}"></i></div><span style="font-weight:600">${escHtml(cat.name)}</span></div><div style="display:flex;gap:.35rem"><button onclick="openCategoryModal(${cat.id})" class="icon-btn" style="color:var(--accent)"><i class="fas fa-edit"></i></button><button onclick="deleteFromApi('categories',${cat.id})" class="icon-btn" style="color:#ef4444"><i class="fas fa-trash"></i></button></div></div>`).join('');}
 function openCategoryModal(id=null){el('categoryModal').classList.remove('hidden');el('categoryId').value=id||'';if(id){const c=appData.categories.find(x=>x.id===id);el('categoryName').value=c.name;el('categoryIcon').value=c.icon;}else el('categoryForm').reset();}
 async function saveCategory(){const id=el('categoryId').value;const data={id:id?parseInt(id):null,name:el('categoryName').value,icon:el('categoryIcon').value};if(await saveToApi('categories',data))closeModal('categoryModal');}
-function openUserModal(id=null){el('userModal').classList.remove('hidden');el('userModalTitle').textContent=id?'Edit User':'Add User';el('userId').value=id||'';const p=el('userPassword');p.type='password';const ti=el('toggleEditPassword');if(ti){ti.querySelector('i').className='fas fa-eye';}if(id){const u=appData.users.find(x=>x.id===id);el('userAccountName').value=u.accountName||u.account_name||'';el('userUsername').value=u.username;el('userPassword').value=u.password;el('userRole').value=u.role;}else el('userForm').reset();}
+function openUserModal(id=null){el('userModal').classList.remove('hidden');el('userModalTitle').textContent=id?'Edit User':'Add User';el('userId').value=id||'';const p=el('userPassword');p.type='password';const ti=el('toggleEditPassword');if(ti)ti.querySelector('i').className='fas fa-eye';if(id){const u=appData.users.find(x=>x.id===id);el('userAccountName').value=u.accountName||u.account_name||'';el('userUsername').value=u.username;el('userPassword').value=u.password;el('userRole').value=u.role;}else el('userForm').reset();}
 async function saveUser(){const id=el('userId').value;const data={id:id?parseInt(id):null,accountName:el('userAccountName').value,username:el('userUsername').value,password:el('userPassword').value,role:el('userRole').value};if(await saveToApi('users',data))closeModal('userModal');}
 function editUser(id){openUserModal(id);}
 
 /* ══════════════════════════════════════════════════════════
    SETTINGS
 ══════════════════════════════════════════════════════════ */
-function openSettings(){
-  loadPreferencesUI();
-  el('settingsModal').classList.remove('hidden');
-}
+function openSettings(){loadPreferencesUI();el('settingsModal').classList.remove('hidden');}
 function loadPreferencesUI(){
-  const prefs=getPrefs();
-  el('darkModeToggle').checked=prefs.dark;
-  document.querySelectorAll('.font-opt').forEach(b=>b.classList.toggle('active',b.dataset.font===prefs.font));
-  document.querySelectorAll('.msize-opt').forEach(b=>b.classList.toggle('active',b.dataset.msize===prefs.modal));
+  const p=getPrefs();
+  el('darkModeToggle').checked=p.dark;
+  document.querySelectorAll('.font-opt').forEach(b=>b.classList.toggle('active',b.dataset.font===p.font));
+  document.querySelectorAll('.msize-opt').forEach(b=>b.classList.toggle('active',b.dataset.msize===p.modal));
 }
 function getPrefs(){return{dark:localStorage.getItem('noc_dark')==='1',color:localStorage.getItem('noc_color')||'blue',font:localStorage.getItem('noc_font')||'md',modal:localStorage.getItem('noc_modal')||'md'};}
 function loadPreferences(){const p=getPrefs();applyDarkMode(p.dark,false);applyColor(p.color,false);applyFont(p.font,false);applyModalSize(p.modal,false);}
@@ -675,6 +790,56 @@ function applyDarkMode(on,save=true){document.documentElement.setAttribute('data
 function applyColor(c,save=true){document.documentElement.setAttribute('data-color',c);if(save)localStorage.setItem('noc_color',c);}
 function applyFont(f,save=true){document.documentElement.setAttribute('data-font',f);if(save)localStorage.setItem('noc_font',f);if(save)loadPreferencesUI();}
 function applyModalSize(m,save=true){document.documentElement.setAttribute('data-modal',m);if(save)localStorage.setItem('noc_modal',m);if(save)loadPreferencesUI();}
+
+/* ══════════════════════════════════════════════════════════
+   CHANGE PASSWORD
+══════════════════════════════════════════════════════════ */
+function openChangePassword(){
+  el('changePwdModal').classList.remove('hidden');el('changePwdForm').reset();
+  ['cpOld','cpNew','cpConfirm'].forEach(id=>{el(id).type='password';});
+  document.querySelectorAll('#changePwdForm .eye-btn i').forEach(i=>i.className='fas fa-eye');
+  showCpMsg('','');updateStrengthBar('');
+}
+function togglePwdField(inputId,btn){const inp=el(inputId),icon=btn.querySelector('i');if(inp.type==='password'){inp.type='text';icon.classList.replace('fa-eye','fa-eye-slash');}else{inp.type='password';icon.classList.replace('fa-eye-slash','fa-eye');}}
+function showCpMsg(msg,type){const box=el('cpError');if(!msg){box.className='cp-error hidden';box.innerHTML='';return;}box.className=type==='success'?'cp-success':'cp-error';const icon=type==='success'?'fa-check-circle':'fa-exclamation-circle';box.innerHTML=`<i class="fas ${icon}"></i> ${escHtml(msg)}`;}
+function updateStrengthBar(pwd){
+  const bar=el('cpStrengthBar'),label=el('cpStrengthLabel');
+  if(!bar||!label)return;
+  const setRule=(id,pass)=>{const li=el(id);if(!li)return;li.classList.toggle('rule-pass',pass);li.classList.toggle('rule-fail',pwd.length>0&&!pass);li.querySelector('i').className='fas '+(pass?'fa-check-circle':'fa-circle-dot');};
+  setRule('ruleLen',pwd.length>=5);setRule('ruleUpper',/[A-Z]/.test(pwd));setRule('ruleNum',/[0-9]/.test(pwd));
+  if(!pwd){bar.style.width='0%';bar.style.background='var(--border)';label.textContent='';return;}
+  let score=0;
+  if(pwd.length>=5)score++;if(pwd.length>=8)score++;if(/[A-Z]/.test(pwd))score++;if(/[0-9]/.test(pwd))score++;if(/[^A-Za-z0-9]/.test(pwd))score++;
+  const levels=[{w:'20%',color:'#ef4444',text:'Very weak'},{w:'40%',color:'#f97316',text:'Weak'},{w:'60%',color:'#eab308',text:'Fair'},{w:'80%',color:'#22c55e',text:'Strong'},{w:'100%',color:'#16a34a',text:'Very strong'}];
+  const lvl=levels[Math.min(score,4)];bar.style.width=lvl.w;bar.style.background=lvl.color;label.textContent=lvl.text;label.style.color=lvl.color;
+}
+function liveMatchCheck(){
+  const np=el('cpNew').value,cp=el('cpConfirm').value,hint=el('cpMatchHint');if(!hint)return;
+  if(!cp){hint.className='cp-match-hint hidden';hint.innerHTML='';return;}
+  if(np===cp){hint.className='cp-match-hint match-ok';hint.innerHTML='<i class="fas fa-check-circle"></i> Passwords match';}
+  else{hint.className='cp-match-hint match-no';hint.innerHTML='<i class="fas fa-times-circle"></i> Passwords do not match';}
+}
+async function submitChangePassword(){
+  const oldPwd=el('cpOld').value,newPwd=el('cpNew').value,confirmPwd=el('cpConfirm').value;
+  if(!oldPwd){showCpMsg('Please enter your current password.','error');el('cpOld').focus();return;}
+  if(!newPwd){showCpMsg('Please enter a new password.','error');el('cpNew').focus();return;}
+  if(newPwd.length<5){showCpMsg('New password must be at least 5 characters.','error');el('cpNew').focus();return;}
+  if(!confirmPwd){showCpMsg('Please confirm your new password.','error');el('cpConfirm').focus();return;}
+  if(newPwd!==confirmPwd){showCpMsg('New passwords do not match.','error');el('cpConfirm').focus();return;}
+  if(oldPwd===newPwd){showCpMsg('New password must differ from current.','error');el('cpNew').focus();return;}
+  const submitBtn=document.querySelector('#changePwdModal .btn-primary');
+  if(submitBtn){submitBtn.disabled=true;submitBtn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Changing…';}
+  try{
+    const res=await fetch(`${API_URL}/changePassword`,{method:'POST',headers:getHeaders(),body:JSON.stringify({oldPassword:oldPwd,newPassword:newPwd})});
+    const data=await res.json().catch(()=>({}));
+    if(res.ok&&data.success){
+      currentUser.password=newPwd;authHeader='Basic '+btoa(currentUser.username+':'+newPwd);localStorage.setItem('authHeader',authHeader);
+      showCpMsg('Password changed successfully!','success');
+      setTimeout(()=>{closeModal('changePwdModal');closeModal('settingsModal');showToast('Password changed — please sign in again with your new password.','info');setTimeout(()=>logout(),2200);},1200);
+    } else showCpMsg(data.error||'Failed to change password.','error');
+  }catch(e){showCpMsg('Connection error. Please try again.','error');}
+  if(submitBtn){submitBtn.disabled=false;submitBtn.innerHTML='<i class="fas fa-check"></i> Change Password';}
+}
 
 /* ══════════════════════════════════════════════════════════
    NOC UTILITIES
@@ -686,115 +851,119 @@ function switchUtilTab(tab){
   el('util'+tab.charAt(0).toUpperCase()+tab.slice(1)).classList.remove('hidden');
 }
 
-/* ── Time Converter ─────────────────────────────────────── */
-// Offsets in minutes from UTC
+/* Time Converter */
 const TZ_LIST=[
-  {id:'MMT', label:'MMT', name:'Myanmar   UTC+6:30', offset:390},
-  {id:'UTC', label:'UTC', name:'Universal UTC+0',    offset:0},
-  {id:'IST', label:'IST', name:'India     UTC+5:30', offset:330},
-  {id:'ICT', label:'ICT', name:'Indochina UTC+7:00', offset:420},
-  {id:'SGT', label:'SGT', name:'Singapore UTC+8:00', offset:480},
+  {id:'MMT',label:'MMT',name:'Myanmar   UTC+6:30',offset:390},
+  {id:'UTC',label:'UTC',name:'Universal UTC+0',offset:0},
+  {id:'IST',label:'IST',name:'India     UTC+5:30',offset:330},
+  {id:'ICT',label:'ICT',name:'Indochina UTC+7:00',offset:420},
+  {id:'SGT',label:'SGT',name:'Singapore UTC+8:00',offset:480},
 ];
-
 function convertTime(){
-  const h=parseInt(el('tcHour').value);
-  const m=parseInt(el('tcMin').value);
+  const h=parseInt(el('tcHour').value),m=parseInt(el('tcMin').value);
   const inputZoneId=el('tcInputZone').value;
-
-  // Validate
   if(isNaN(h)||isNaN(m)||h<0||h>23||m<0||m>59){
     if(el('tcHour').value!==''||el('tcMin').value!=='')
-      el('timeResults').innerHTML='<div style="color:#ef4444;font-size:.85rem;padding:.5rem 0">⚠ Invalid time — hour 0–23, minute 0–59</div>';
-    else el('timeResults').innerHTML='';
-    return;
+      el('timeResults').innerHTML='<div style="color:#ef4444;font-size:.85rem;padding:.5rem 0">⚠ Invalid time</div>';
+    else el('timeResults').innerHTML='';return;
   }
-
-  // Convert input to UTC minutes
   const inputZone=TZ_LIST.find(z=>z.id===inputZoneId)||TZ_LIST[0];
-  const inputTotalMin=h*60+m;
-  const utcMin=inputTotalMin-inputZone.offset;  // subtract offset to get UTC
-
+  const utcMin=(h*60+m)-inputZone.offset;
   el('timeResults').innerHTML=TZ_LIST.map(tz=>{
-    let mins=((utcMin+tz.offset)%1440+1440)%1440; // normalise to 0–1439
+    let mins=((utcMin+tz.offset)%1440+1440)%1440;
     const th=Math.floor(mins/60),tm=mins%60;
-    const ampm=th>=12?'PM':'AM';
-    const h12=th%12||12;
-    const t24=`${pad(th)}:${pad(tm)}`;
-    const t12=`${pad(h12)}:${pad(tm)} ${ampm}`;
+    const ampm=th>=12?'PM':'AM',h12=th%12||12;
     const isInput=tz.id===inputZoneId;
     return `<div class="tz-row${isInput?' tz-row--active':''}">
       <div><div class="tz-label">${tz.label}${isInput?' <span class="tz-source">source</span>':''}</div><div class="tz-name">${tz.name}</div></div>
-      <div style="text-align:right"><div class="tz-time">${t24}</div><div class="tz-time12">${t12}</div></div>
+      <div style="text-align:right"><div class="tz-time">${pad(th)}:${pad(tm)}</div><div class="tz-time12">${pad(h12)}:${pad(tm)} ${ampm}</div></div>
     </div>`;
   }).join('');
 }
 function pad(n){return String(n).padStart(2,'0');}
 
-/* ── Subnet Calculator ──────────────────────────────────── */
+/* Subnet Calculator */
 el('subnetInput').addEventListener('input',calcSubnet);
 function calcSubnet(){
-  const raw=el('subnetInput').value.trim();
-  const out=el('subnetResults');
+  const raw=el('subnetInput').value.trim(),out=el('subnetResults');
   if(!raw){out.innerHTML='';return;}
   try{
-    const [ipPart,cidrPart]=raw.split('/');
-    if(!cidrPart)throw new Error('Enter CIDR notation, e.g. 192.168.1.0/24');
-    const cidr=parseInt(cidrPart);
-    if(cidr<0||cidr>32)throw new Error('CIDR must be 0–32');
+    const[ipPart,cidrPart]=raw.split('/');
+    if(!cidrPart)throw new Error('Enter CIDR notation e.g. 192.168.1.0/24');
+    const cidr=parseInt(cidrPart);if(cidr<0||cidr>32)throw new Error('CIDR must be 0–32');
     const ipNums=ipPart.split('.').map(Number);
     if(ipNums.length!==4||ipNums.some(n=>isNaN(n)||n<0||n>255))throw new Error('Invalid IP address');
-
-    const ipInt=ipNums.reduce((acc,b)=>(acc<<8)+b,0)>>>0;
+    const ipInt=ipNums.reduce((a,b)=>(a<<8)+b,0)>>>0;
     const mask=cidr===0?0:(0xFFFFFFFF<<(32-cidr))>>>0;
-    const network=(ipInt&mask)>>>0;
-    const broadcast=(network|(~mask>>>0))>>>0;
-    const first=(network+1)>>>0;
-    const last=(broadcast-1)>>>0;
-    const total=Math.pow(2,32-cidr);
-    const usable=cidr>=31?total:Math.max(0,total-2);
-
+    const network=(ipInt&mask)>>>0,broadcast=(network|(~mask>>>0))>>>0;
+    const first=(network+1)>>>0,last=(broadcast-1)>>>0;
+    const total=Math.pow(2,32-cidr),usable=cidr>=31?total:Math.max(0,total-2);
     const i2s=n=>[24,16,8,0].map(s=>(n>>s)&0xFF).join('.');
-    const maskStr=i2s(mask);
-    const wild=i2s(~mask>>>0);
-
-    const rows=[
-      ['Network Address',i2s(network)],
-      ['Subnet Mask',maskStr],
-      ['Wildcard Mask',wild],
-      ['Broadcast',i2s(broadcast)],
-      ['First Host',cidr>=31?'N/A':i2s(first)],
-      ['Last Host',cidr>=31?'N/A':i2s(last)],
-      ['Total IPs',total.toLocaleString()],
-      ['Usable Hosts',usable.toLocaleString()],
-      ['CIDR',`/${cidr}`],
-    ];
+    const rows=[['Network',i2s(network)],['Subnet Mask',i2s(mask)],['Wildcard',i2s(~mask>>>0)],['Broadcast',i2s(broadcast)],['First Host',cidr>=31?'N/A':i2s(first)],['Last Host',cidr>=31?'N/A':i2s(last)],['Total IPs',total.toLocaleString()],['Usable Hosts',usable.toLocaleString()],['CIDR',`/${cidr}`]];
     out.innerHTML=rows.map(([l,v])=>`<div class="sn-row"><span class="sn-label">${l}</span><span class="sn-val">${v}</span></div>`).join('');
   }catch(e){out.innerHTML=`<div class="sn-error"><i class="fas fa-exclamation-circle"></i> ${escHtml(e.message)}</div>`;}
 }
 
-/* ── Handover Sticky Notes ──────────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   STICKY NOTES — D1-backed
+══════════════════════════════════════════════════════════ */
 const STICKY_COLORS=['#fef9c3','#fce7f3','#dbeafe','#d1fae5','#ede9fe','#fee2e2'];
-const STICKY_TEXT_COLORS=['#1e293b','#1e293b','#1e293b','#1e293b','#1e293b','#1e293b'];
-let stickyNotes=[];
 
-function loadStickyNotes(){stickyNotes=JSON.parse(localStorage.getItem('noc_sticky')||'[]');renderStickyNotes();}
-function saveStickyNotes(){localStorage.setItem('noc_sticky',JSON.stringify(stickyNotes));}
-function addStickyNote(){
-  stickyNotes.push({id:Date.now(),text:'',color:STICKY_COLORS[Math.floor(Math.random()*STICKY_COLORS.length)]});
-  saveStickyNotes();renderStickyNotes();
+async function loadStickyNotes(){
+  const board=el('stickyBoard');
+  board.innerHTML='<div style="text-align:center;padding:1rem;color:var(--text3);font-size:.82rem"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';
+  try{
+    const data=await fetchAPI('sticky',{silentFail:true});
+    stickyNotes=(data?.notes)||[];
+  } catch{ stickyNotes=[]; }
+  renderStickyNotes();
 }
-function deleteSticky(id){stickyNotes=stickyNotes.filter(n=>n.id!==id);saveStickyNotes();renderStickyNotes();}
-function updateStickyText(id,text){const n=stickyNotes.find(x=>x.id===id);if(n){n.text=text;saveStickyNotes();}}
-function updateStickyColor(id,color){const n=stickyNotes.find(x=>x.id===id);if(n){n.color=color;saveStickyNotes();renderStickyNotes();}}
+
+async function addStickyNote(){
+  const color=STICKY_COLORS[Math.floor(Math.random()*STICKY_COLORS.length)];
+  try{
+    const data=await fetchAPI('sticky',{method:'POST',body:JSON.stringify({text:'',color,sort_order:stickyNotes.length})});
+    if(data?.note){stickyNotes.push(data.note);renderStickyNotes();}
+  }catch(e){showToast('Failed to add note: '+e.message);}
+}
+
+async function deleteSticky(id){
+  try{
+    await fetch(`${API_URL}/sticky/${id}`,{method:'DELETE',headers:getHeaders()});
+    stickyNotes=stickyNotes.filter(n=>n.id!==id);renderStickyNotes();
+  }catch(e){showToast('Failed to delete note');}
+}
+
+// Debounced text save
+const stickyTextTimers={};
+function updateStickyText(id,text){
+  const note=stickyNotes.find(n=>n.id===id);if(note)note.text=text;
+  clearTimeout(stickyTextTimers[id]);
+  stickyTextTimers[id]=setTimeout(async()=>{
+    try{await fetch(`${API_URL}/sticky/${id}`,{method:'PUT',headers:getHeaders(),body:JSON.stringify({text})});}
+    catch(e){console.warn('Sticky save failed',e);}
+  },600);
+}
+
+async function updateStickyColor(id,color){
+  const note=stickyNotes.find(n=>n.id===id);if(note)note.color=color;
+  renderStickyNotes();
+  try{await fetch(`${API_URL}/sticky/${id}`,{method:'PUT',headers:getHeaders(),body:JSON.stringify({color})});}
+  catch(e){console.warn('Sticky color save failed',e);}
+}
+
 function renderStickyNotes(){
   const board=el('stickyBoard');
-  if(!stickyNotes.length){board.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--text2);font-size:.85rem"><i class="fas fa-sticky-note" style="font-size:1.5rem;display:block;margin-bottom:.5rem"></i>No notes yet. Click + Add Note</div>';return;}
+  if(!stickyNotes.length){
+    board.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--text2);font-size:.85rem"><i class="fas fa-sticky-note" style="font-size:1.5rem;display:block;margin-bottom:.5rem"></i>No notes yet. Click + Add Note</div>';
+    return;
+  }
   board.innerHTML=stickyNotes.map(n=>`
     <div class="sticky-note" style="background:${n.color}">
-      <textarea placeholder="Type your note…" oninput="updateStickyText(${n.id},this.value)">${escHtml(n.text)}</textarea>
+      <textarea placeholder="Type your note…" oninput="updateStickyText(${n.id},this.value)">${escHtml(n.text||'')}</textarea>
       <div class="sticky-note-actions">
         <div class="sticky-color-pick">
-          ${STICKY_COLORS.map((c,i)=>`<button class="sc-dot" style="background:${c};border:${n.color===c?'2px solid #1e293b':'1px solid rgba(0,0,0,.15)'}" onclick="updateStickyColor(${n.id},'${c}')"></button>`).join('')}
+          ${STICKY_COLORS.map(c=>`<button class="sc-dot" style="background:${c};border:${n.color===c?'2px solid #1e293b':'1px solid rgba(0,0,0,.15)'}" onclick="updateStickyColor(${n.id},'${c}')"></button>`).join('')}
         </div>
         <button class="sticky-del" onclick="deleteSticky(${n.id})"><i class="fas fa-times"></i></button>
       </div>
@@ -802,181 +971,15 @@ function renderStickyNotes(){
 }
 
 /* ══════════════════════════════════════════════════════════
-   CHANGE PASSWORD
+   RADIO HELPERS
 ══════════════════════════════════════════════════════════ */
-function openChangePassword(){
-  el('changePwdModal').classList.remove('hidden');
-  el('changePwdForm').reset();
-  // Reset all password fields to type=password and eye icons
-  ['cpOld','cpNew','cpConfirm'].forEach(id=>{
-    el(id).type='password';
-  });
-  document.querySelectorAll('#changePwdForm .eye-btn i').forEach(i=>{
-    i.className='fas fa-eye';
-  });
-  showCpMsg('','');
-  // Clear strength bar
-  updateStrengthBar('');
-}
-
-// Generic eye toggle for any password field
-function togglePwdField(inputId, btn){
-  const inp=el(inputId);
-  const icon=btn.querySelector('i');
-  if(inp.type==='password'){
-    inp.type='text';
-    icon.classList.replace('fa-eye','fa-eye-slash');
-  } else {
-    inp.type='password';
-    icon.classList.replace('fa-eye-slash','fa-eye');
-  }
-}
-
-// Show inline message in the password modal
-function showCpMsg(msg, type){
-  const box=el('cpError');
-  if(!msg){ box.className='cp-error hidden'; box.innerHTML=''; return; }
-  box.className=type==='success'?'cp-success':'cp-error';
-  const icon=type==='success'?'fa-check-circle':'fa-exclamation-circle';
-  box.innerHTML=`<i class="fas ${icon}"></i> ${escHtml(msg)}`;
-}
-
-// Password strength meter + rules checklist
-function updateStrengthBar(pwd){
-  const bar=el('cpStrengthBar'), label=el('cpStrengthLabel');
-  if(!bar||!label) return;
-
-  // Update rules checklist
-  const setRule=(id,pass)=>{
-    const li=el(id); if(!li) return;
-    li.classList.toggle('rule-pass', pass);
-    li.classList.toggle('rule-fail', pwd.length>0 && !pass);
-    li.querySelector('i').className='fas '+(pass?'fa-check-circle':'fa-circle-dot');
-  };
-  setRule('ruleLen',  pwd.length>=5);
-  setRule('ruleUpper',/[A-Z]/.test(pwd));
-  setRule('ruleNum',  /[0-9]/.test(pwd));
-
-  if(!pwd){ bar.style.width='0%'; bar.style.background='var(--border)'; label.textContent=''; return; }
-
-  let score=0;
-  if(pwd.length>=5)  score++;
-  if(pwd.length>=8)  score++;
-  if(/[A-Z]/.test(pwd)) score++;
-  if(/[0-9]/.test(pwd)) score++;
-  if(/[^A-Za-z0-9]/.test(pwd)) score++;
-
-  const levels=[
-    {w:'20%', color:'#ef4444', text:'Very weak'},
-    {w:'40%', color:'#f97316', text:'Weak'},
-    {w:'60%', color:'#eab308', text:'Fair'},
-    {w:'80%', color:'#22c55e', text:'Strong'},
-    {w:'100%',color:'#16a34a', text:'Very strong'},
-  ];
-  const lvl=levels[Math.min(score,4)];
-  bar.style.width=lvl.w; bar.style.background=lvl.color;
-  label.textContent=lvl.text; label.style.color=lvl.color;
-}
-
-// Live confirm-password match hint
-function liveMatchCheck(){
-  const np=el('cpNew').value, cp=el('cpConfirm').value;
-  const hint=el('cpMatchHint');
-  if(!hint) return;
-  if(!cp){ hint.className='cp-match-hint hidden'; hint.innerHTML=''; return; }
-  if(np===cp){
-    hint.className='cp-match-hint match-ok';
-    hint.innerHTML='<i class="fas fa-check-circle"></i> Passwords match';
-  } else {
-    hint.className='cp-match-hint match-no';
-    hint.innerHTML='<i class="fas fa-times-circle"></i> Passwords do not match';
-  }
-}
-
-async function submitChangePassword(){
-  const oldPwd=el('cpOld').value;
-  const newPwd=el('cpNew').value;
-  const confirmPwd=el('cpConfirm').value;
-
-  // ── Client-side validation ──────────────────────────────
-  if(!oldPwd)            { showCpMsg('Please enter your current password.','error'); el('cpOld').focus(); return; }
-  if(!newPwd)            { showCpMsg('Please enter a new password.','error'); el('cpNew').focus(); return; }
-  if(newPwd.length<5)    { showCpMsg('New password must be at least 5 characters long.','error'); el('cpNew').focus(); return; }
-  if(!confirmPwd)        { showCpMsg('Please confirm your new password.','error'); el('cpConfirm').focus(); return; }
-  if(newPwd!==confirmPwd){ showCpMsg('New passwords do not match. Please re-enter.','error'); el('cpConfirm').focus(); return; }
-  if(oldPwd===newPwd)    { showCpMsg('New password must be different from your current password.','error'); el('cpNew').focus(); return; }
-
-  // ── Disable button during request ───────────────────────
-  const submitBtn=document.querySelector('#changePwdModal .btn-primary');
-  if(submitBtn){ submitBtn.disabled=true; submitBtn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Changing…'; }
-
-  try {
-    // Call the dedicated changePassword endpoint (works for ALL roles)
-    const res=await fetch(`${API_URL}/changePassword`,{
-      method:'POST',
-      headers:{'Authorization':authHeader,'Content-Type':'application/json'},
-      body:JSON.stringify({oldPassword:oldPwd,newPassword:newPwd})
-    });
-    const data=await res.json().catch(()=>({}));
-
-    if(res.ok && data.success){
-      // Update local auth so next auto-refresh still works
-      currentUser.password=newPwd;
-      authHeader='Basic '+btoa(currentUser.username+':'+newPwd);
-      localStorage.setItem('authHeader',authHeader);
-
-      showCpMsg('Password changed successfully!','success');
-
-      // After short delay: show toast, close modal, sign out
-      setTimeout(()=>{
-        closeModal('changePwdModal');
-        closeModal('settingsModal');
-        showToast('Password changed — please sign in again with your new password.','info');
-        setTimeout(()=>logout(), 2200);
-      }, 1200);
-
-    } else {
-      // Show server error message
-      showCpMsg(data.error||'Failed to change password. Please try again.','error');
-    }
-  } catch(e){
-    showCpMsg('Connection error. Please check your internet and try again.','error');
-  } finally {
-    if(submitBtn){ submitBtn.disabled=false; submitBtn.innerHTML='<i class="fas fa-check"></i> Change Password'; }
-  }
-}
+function getRadio(name){const c=document.querySelector(`input[name="${name}"]:checked`);return c?c.value:'intern';}
+function setRadio(name,value){const r=document.querySelector(`input[name="${name}"][value="${value}"]`);if(r)r.checked=true;}
 
 /* ══════════════════════════════════════════════════════════
-   SHIFT TIMER
+   MODALS
 ══════════════════════════════════════════════════════════ */
-let shiftSeconds=0,shiftInterval=null,shiftRunning=false;
-function shiftStart(){
-  if(shiftRunning)return;
-  shiftRunning=true;
-  el('btnShiftStart').classList.add('hidden');
-  el('btnShiftPause').classList.remove('hidden');
-  shiftInterval=setInterval(()=>{shiftSeconds++;renderShiftClock();},1000);
-}
-function shiftPause(){
-  clearInterval(shiftInterval);shiftRunning=false;
-  el('btnShiftStart').classList.remove('hidden');
-  el('btnShiftPause').classList.add('hidden');
-}
-function shiftReset(){
-  shiftPause();shiftSeconds=0;renderShiftClock();
-}
-function renderShiftClock(){
-  const h=Math.floor(shiftSeconds/3600);
-  const m=Math.floor((shiftSeconds%3600)/60);
-  const s=shiftSeconds%60;
-  const clock=el('shiftClock');
-  if(clock)clock.textContent=`${pad(h)}:${pad(m)}:${pad(s)}`;
-}
-
-/* ══════════════════════════════════════════════════════════
-   MODALS — general
-══════════════════════════════════════════════════════════ */
-function closeModal(id){el(id).classList.add('hidden');}
+function closeModal(id){const e=el(id);if(e)e.classList.add('hidden');}
 document.querySelectorAll('.modal-bd').forEach(bd=>{bd.addEventListener('click',e=>{if(e.target===bd)bd.classList.add('hidden');});});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-bd').forEach(m=>m.classList.add('hidden'));});
 
@@ -986,8 +989,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelect
 function el(id){return document.getElementById(id);}
 function escHtml(s){if(s==null)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function escAttr(s){if(s==null)return'';return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;');}
-function delay(ms){return new Promise(r=>setTimeout(r,ms));}
-async function simulateProgress(pct,status){updateProgress(pct,status);await delay(200);}
 
 /* ══════════════════════════════════════════════════════════
    BOOT
