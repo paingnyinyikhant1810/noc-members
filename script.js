@@ -662,26 +662,153 @@ async function saveEditItem(){
 }
 
 /* Move */
-function openMoveItem(kind,id){
-  const available=appData.folders.filter(f=>{
-    if(kind==='folder'&&f.id===id)return false;
-    if(kind==='folder'&&isChildFolder(f.id,id))return false;
-    return canSee(f.min_role_required||'intern');
+/* ── Move — tree navigator state ───────────────── */
+let moveKind    = null;   // 'folder' | 'item'
+let moveItemId  = null;   // id of the thing being moved
+let moveCurFolder = null; // null = root; number = current folder id in the tree
+let movePathStack = [];   // [{id, name}, ...] breadcrumb stack
+
+function openMoveItem(kind, id){
+  moveKind      = kind;
+  moveItemId    = id;
+  moveCurFolder = null;   // always start at root
+  movePathStack = [];
+  renderMoveTree();
+  el('moveModal').classList.remove('hidden');
+}
+
+function isChildFolder(targetId, parentId){
+  let cur = targetId;
+  while(cur){
+    const f = appData.folders.find(x => x.id === cur);
+    if(!f) break;
+    if(f.parentId === parentId) return true;
+    cur = f.parentId;
+  }
+  return false;
+}
+
+function renderMoveTree(){
+  // ── Breadcrumb ─────────────────────────────────
+  const bc = el('moveBreadcrumb');
+  let bcHtml = `<button class="move-bc-btn" onclick="moveNavTo(null)"><i class="fas fa-home"></i> Root</button>`;
+  movePathStack.forEach((seg, i) => {
+    bcHtml += `<span class="move-bc-sep">›</span>
+      <button class="move-bc-btn" onclick="moveNavTo(${seg.id},${i})">${escHtml(seg.name)}</button>`;
   });
-  let h=`<button onclick="confirmMove('${kind}',${id},null)"><i class="fas fa-home" style="color:var(--text2)"></i> Root</button>`;
-  available.forEach(f=>{h+=`<button onclick="confirmMove('${kind}',${id},${f.id})"><i class="fas fa-folder" style="color:#d97706"></i> ${escHtml(f.name)}</button>`;});
-  el('moveFolderList').innerHTML=h;el('moveModal').classList.remove('hidden');
+  bc.innerHTML = bcHtml;
+
+  // ── Current destination label on the button ────
+  const btn = el('moveHereBtn');
+  if(btn){
+    const label = moveCurFolder === null ? 'Root'
+      : (movePathStack[movePathStack.length-1]?.name || 'Here');
+    btn.innerHTML = `<i class="fas fa-check"></i> Move into "${escHtml(label)}"`;
+  }
+
+  // ── Folder list for this level ─────────────────
+  // All direct children of moveCurFolder, excluding:
+  //  - the item itself (if it's a folder)
+  //  - any descendant of the item (if it's a folder — can't move into own child)
+  const children = appData.folders.filter(f => {
+    const parent = f.parentId ?? null;
+    if(parent !== moveCurFolder) return false;          // not in this level
+    if(!canSee(f.min_role_required || 'intern')) return false; // no permission
+    if(moveKind === 'folder' && f.id === moveItemId) return false;  // self
+    if(moveKind === 'folder' && isChildFolder(f.id, moveItemId)) return false; // descendant
+    return true;
+  }).sort((a,b) => a.name.localeCompare(b.name));
+
+  let listHtml = '';
+
+  // "Go up" button — show if we're inside a folder
+  if(moveCurFolder !== null){
+    const parentId = movePathStack.length >= 2
+      ? movePathStack[movePathStack.length - 2].id
+      : null;
+    listHtml += `<button class="move-row move-row--up" onclick="moveNavUp()">
+      <i class="fas fa-level-up-alt"></i> <span>.. (go up)</span>
+    </button>`;
+  }
+
+  if(children.length === 0 && moveCurFolder === null){
+    listHtml += `<div class="move-empty"><i class="fas fa-folder-open"></i> No folders at root</div>`;
+  } else if(children.length === 0){
+    listHtml += `<div class="move-empty"><i class="fas fa-folder-open"></i> No sub-folders here</div>`;
+  }
+
+  children.forEach(f => {
+    // Check if this folder has any accessible sub-folders (show chevron if yes)
+    const hasSubs = appData.folders.some(sub => {
+      const p = sub.parentId ?? null;
+      return p === f.id && canSee(sub.min_role_required || 'intern')
+        && !(moveKind === 'folder' && sub.id === moveItemId)
+        && !(moveKind === 'folder' && isChildFolder(sub.id, moveItemId));
+    });
+    listHtml += `<div class="move-row">
+      <div class="move-row-left" onclick="moveNavInto(${f.id},'${escAttr(f.name)}')">
+        <i class="fas fa-folder move-folder-icon"></i>
+        <span class="move-folder-name">${escHtml(f.name)}</span>
+      </div>
+      ${hasSubs
+        ? `<button class="move-row-open" onclick="moveNavInto(${f.id},'${escAttr(f.name)}')" title="Open folder">
+            <i class="fas fa-chevron-right"></i>
+           </button>`
+        : `<div class="move-row-open-placeholder"></div>`}
+    </div>`;
+  });
+
+  el('moveFolderList').innerHTML = listHtml;
 }
-function isChildFolder(targetId,parentId){
-  let cur=targetId;while(cur){const f=appData.folders.find(x=>x.id===cur);if(!f)break;if(f.parentId===parentId)return true;cur=f.parentId;}return false;
+
+// Navigate into a sub-folder
+function moveNavInto(folderId, folderName){
+  movePathStack.push({ id: folderId, name: folderName });
+  moveCurFolder = folderId;
+  renderMoveTree();
 }
-async function confirmMove(kind,id,targetId){
+
+// Navigate up one level
+function moveNavUp(){
+  movePathStack.pop();
+  moveCurFolder = movePathStack.length > 0 ? movePathStack[movePathStack.length-1].id : null;
+  renderMoveTree();
+}
+
+// Navigate to a specific breadcrumb segment (or root)
+function moveNavTo(folderId, stackIndex){
+  if(folderId === null){
+    moveCurFolder = null;
+    movePathStack = [];
+  } else {
+    movePathStack = movePathStack.slice(0, stackIndex + 1);
+    moveCurFolder = folderId;
+  }
+  renderMoveTree();
+}
+
+// Confirm — move item into the currently displayed folder (moveCurFolder)
+async function doConfirmMove(){
   closeModal('moveModal');
-  const table=kind==='folder'?'folders':'learning_items';
+  const targetId = moveCurFolder; // null = root
+  const table = moveKind === 'folder' ? 'folders' : 'learning_items';
   let data;
-  if(kind==='folder'){data={...appData.folders.find(f=>f.id===id),parentId:targetId};}
-  else{data={...appData.learningItems.find(i=>i.id===id),folderId:targetId};}
-  await saveToApi(table,data);
+  if(moveKind === 'folder'){
+    data = { ...appData.folders.find(f => f.id === moveItemId), parentId: targetId };
+  } else {
+    data = { ...appData.learningItems.find(i => i.id === moveItemId), folderId: targetId };
+  }
+  await saveToApi(table, data);
+}
+
+// Legacy stub kept so old code references don't break
+async function confirmMove(kind, id, targetId){
+  closeModal('moveModal');
+  const table = kind === 'folder' ? 'folders' : 'learning_items';
+  let data;
+  if(kind === 'folder'){ data = { ...appData.folders.find(f => f.id === id), parentId: targetId }; }
+  else { data = { ...appData.learningItems.find(i => i.id === id), folderId: targetId }; }
+  await saveToApi(table, data);
 }
 
 /* Create */
