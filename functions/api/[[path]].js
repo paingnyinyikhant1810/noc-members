@@ -338,6 +338,36 @@ export const onRequest = async (context) => {
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
+  //  CHANGE PASSWORD — available to ALL authenticated users (self only)
+  //  POST /api/changePassword  { oldPassword, newPassword }
+  // ══════════════════════════════════════════════════════════════════════════════
+  if (path === "changePassword" && method === "POST") {
+    let body;
+    try { body = await request.json(); } catch { return errRes("Invalid JSON"); }
+
+    const { oldPassword, newPassword } = body;
+
+    if (!oldPassword || !newPassword) return errRes("Both oldPassword and newPassword are required");
+    if (newPassword.length < 5) return errRes("New password must be at least 5 characters");
+
+    // Verify old password against DB (re-fetch to be safe)
+    const dbUser = await env.DB.prepare(
+      "SELECT id, password FROM users WHERE id = ?"
+    ).bind(user.id).first();
+
+    if (!dbUser) return errRes("User not found", 404);
+    if (dbUser.password !== oldPassword) return errRes("Current password is incorrect", 403);
+    if (oldPassword === newPassword) return errRes("New password must be different from current password");
+
+    // Update only this user's own password — scoped by their own id
+    await env.DB.prepare(
+      "UPDATE users SET password = ? WHERE id = ?"
+    ).bind(newPassword, user.id).run();
+
+    return jsonRes({ success: true, message: "Password changed successfully" });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
   //  ORIGINAL — Admin CRUD  (POST with action=save|delete)
   //  Exactly as the original code — admin only
   // ══════════════════════════════════════════════════════════════════════════════
