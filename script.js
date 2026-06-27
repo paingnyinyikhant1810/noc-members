@@ -239,11 +239,7 @@ function closeMobileMenu(){
 }
 
 function renderMobileInfoMenu(){
-  // Each category becomes a direct nav button (not a nested dropdown)
-  el('mobileInfoMenu').innerHTML=appData.categories.map(cat=>`
-    <button onclick="showInfoCategory(${cat.id},'${escAttr(cat.name)}');closeMobileMenu();" class="mob-nbtn mob-nbtn--sub">
-      <i class="fas ${cat.icon}"></i> ${escHtml(cat.name)}
-    </button>`).join('');
+  // kept for compatibility but no longer used in sidebar (sidebar now opens picker)
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -268,13 +264,39 @@ function navigateTo(page){
   document.querySelectorAll(`[data-page="${page}"]`).forEach(b=>b.classList.add('active'));
 }
 
-function toggleInfoDropdown(){const d=el('infoDropdown');d.classList.toggle('hidden');renderInfoDropdown();}
-function renderInfoDropdown(){
-  el('infoDropdown').innerHTML=appData.categories.map(cat=>`
-    <button onclick="showInfoCategory(${cat.id},'${escAttr(cat.name)}')" class="dd-item">
-      <i class="fas ${cat.icon}"></i> ${escHtml(cat.name)}
+// Legacy stub (dropdown removed — picker modal used instead)
+function toggleInfoDropdown(){}
+function renderInfoDropdown(){}
+
+/* ── Information Category Picker Modal ──────────────────── */
+function openInfoCategoryPicker(){
+  renderCategoryPickerList();
+  el('infoCategoryPickerModal').classList.remove('hidden');
+  // Show manage button for admin
+  const mb=el('manageCatsBtn');
+  if(mb) isAdmin()?mb.classList.remove('hidden'):mb.classList.add('hidden');
+}
+
+function renderCategoryPickerList(){
+  const list=el('categoryPickerList');
+  const cats=appData.categories.filter(c=>canSee(c.min_role_required||'intern'));
+  if(!cats.length){
+    list.innerHTML='<div class="empty-state" style="padding:1.5rem"><i class="fas fa-tags"></i><p>No categories yet</p></div>';
+    return;
+  }
+  list.innerHTML=cats.map(cat=>`
+    <button onclick="pickCategory(${cat.id},'${escAttr(cat.name)}')" class="cat-pick-btn">
+      <div class="cat-pick-icon"><i class="fas ${cat.icon}"></i></div>
+      <span class="cat-pick-name">${escHtml(cat.name)}</span>
+      <i class="fas fa-chevron-right cat-pick-arrow"></i>
     </button>`).join('');
 }
+
+function pickCategory(catId,catName){
+  closeModal('infoCategoryPickerModal');
+  showInfoCategory(catId,catName);
+}
+
 function showInfoCategory(catId,catName){
   currentInfoCategory=catId;
   if(el('infoDropdown'))el('infoDropdown').classList.add('hidden');
@@ -321,24 +343,41 @@ function renderUpdates(){
   const bmap={important:'b-important',general:'b-general',announcement:'b-announcement',reminder:'b-reminder'};
   const bicon={important:'🔴',general:'🔵',announcement:'🟢',reminder:'🟡'};
   el('updatesContainer').innerHTML=appData.updates.map(u=>{
-    const canEdit   = isAdmin() || u.created_by===currentUser?.id;
-    const canDelete = isAdmin() || u.created_by===currentUser?.id;
-    return `<div class="upd-card">
+    return `<div class="upd-card upd-card--fixed" onclick="openUpdateView(${u.id})" title="Click to read">
       <div class="upd-hdr">
         <h3 class="upd-topic">${escHtml(u.topic)}</h3>
-        <div class="upd-meta">
-          <span class="badge ${bmap[u.badge]||'b-general'}">${bicon[u.badge]||''} ${escHtml(u.badge)}</span>
-          ${canEdit?`<button onclick="editUpdate(${u.id})" class="icon-btn" title="Edit"><i class="fas fa-edit"></i></button>`:''}
-          ${canDelete?`<button onclick="deleteUpdate(${u.id})" class="icon-btn" style="color:#ef4444" title="Delete"><i class="fas fa-trash"></i></button>`:''}
-        </div>
+        <span class="badge ${bmap[u.badge]||'b-general'}">${bicon[u.badge]||''} ${escHtml(u.badge)}</span>
       </div>
-      <div class="upd-body card-link">${linkify(escHtml(u.message))}</div>
+      <div class="upd-body upd-body--clamp card-link">${linkify(escHtml(u.message))}</div>
       <div class="upd-foot">
         <span><i class="fas fa-user-circle"></i> ${escHtml(u.author||'')}</span>
         <span><i class="fas fa-calendar"></i> ${escHtml(u.date||'')}</span>
+        <span class="upd-read-more">Click to read <i class="fas fa-arrow-right"></i></span>
       </div>
     </div>`;
   }).join('')||'<div class="empty-state"><i class="fas fa-inbox"></i><p>No updates yet</p></div>';
+}
+
+function openUpdateView(id){
+  const u=appData.updates.find(x=>x.id===id);if(!u)return;
+  const bmap={important:'b-important',general:'b-general',announcement:'b-announcement',reminder:'b-reminder'};
+  const bicon={important:'🔴',general:'🔵',announcement:'🟢',reminder:'🟡'};
+  el('updateViewTitle').textContent=u.topic;
+  el('updateViewMeta').innerHTML=`
+    <span class="badge ${bmap[u.badge]||'b-general'}">${bicon[u.badge]||''} ${escHtml(u.badge)}</span>
+    <span><i class="fas fa-user-circle"></i> ${escHtml(u.author||'')}</span>
+    <span><i class="fas fa-calendar"></i> ${escHtml(u.date||'')}</span>`;
+  el('updateViewBody').innerHTML=linkify(escHtml(u.message));
+
+  // Edit/Delete actions for owner or admin
+  const canEdit  =isAdmin()||u.created_by===currentUser?.id;
+  const canDelete=isAdmin()||u.created_by===currentUser?.id;
+  el('updateViewActions').innerHTML=`
+    <button onclick="closeModal('updateViewModal')" class="btn-secondary">Close</button>
+    ${canEdit  ?`<button onclick="closeModal('updateViewModal');editUpdate(${u.id})" class="btn-secondary"><i class="fas fa-edit"></i> Edit</button>`:''}
+    ${canDelete?`<button onclick="closeModal('updateViewModal');deleteUpdate(${u.id})" class="btn-secondary" style="color:#ef4444;border-color:#fecaca"><i class="fas fa-trash"></i> Delete</button>`:''}`;
+
+  el('updateViewModal').classList.remove('hidden');
 }
 function linkify(t){return t.replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g,'<br>');}
 
@@ -825,6 +864,74 @@ function renderUsers(){
 }
 function showAdminTab(tab){if(!isAdmin())return;document.querySelectorAll('.admin-tab').forEach(t=>t.classList.remove('active','bg-white','shadow-sm'));document.querySelectorAll('.admin-tc').forEach(c=>c.classList.add('hidden'));document.querySelector(`[data-tab="${tab}"]`).classList.add('active','bg-white','shadow-sm');el(`${tab}Tab`).classList.remove('hidden');if(tab==='users')renderUsers();if(tab==='categories')renderCategories();}
 function renderCategories(){el('categoriesList').innerHTML=appData.categories.map(cat=>`<div class="cat-card"><div style="display:flex;align-items:center;gap:.65rem"><div class="cat-icon"><i class="fas ${cat.icon}"></i></div><span style="font-weight:600">${escHtml(cat.name)}</span></div><div style="display:flex;gap:.35rem"><button onclick="openCategoryModal(${cat.id})" class="icon-btn" style="color:var(--accent)"><i class="fas fa-edit"></i></button><button onclick="deleteFromApi('categories',${cat.id})" class="icon-btn" style="color:#ef4444"><i class="fas fa-trash"></i></button></div></div>`).join('');}
+/* ── Category Manager (drag to sort) ────────────────────── */
+let catDragSrc=null;
+
+function openCategoryManagerModal(){
+  renderCategoryManagerList();
+  el('categoryManagerModal').classList.remove('hidden');
+}
+
+function renderCategoryManagerList(){
+  const list=el('categoryManagerList');
+  list.innerHTML=appData.categories.map(cat=>`
+    <div class="cat-mgr-item" draggable="true" data-cat-id="${cat.id}"
+         ondragstart="catDragStart(event,${cat.id})"
+         ondragover="catDragOver(event)"
+         ondrop="catDrop(event,${cat.id})"
+         ondragend="catDragEnd()">
+      <div class="cat-mgr-drag"><i class="fas fa-grip-vertical"></i></div>
+      <div class="cat-mgr-icon"><i class="fas ${cat.icon}"></i></div>
+      <span class="cat-mgr-name">${escHtml(cat.name)}</span>
+      <span class="cat-mgr-perm perm-${cat.min_role_required||'intern'}">${cat.min_role_required||'intern'}</span>
+      <div class="cat-mgr-actions">
+        <button onclick="openCategoryModal(${cat.id})" class="icon-btn" title="Edit"><i class="fas fa-edit"></i></button>
+        <button onclick="deleteCategoryConfirm(${cat.id})" class="icon-btn" style="color:#ef4444" title="Delete"><i class="fas fa-trash"></i></button>
+      </div>
+    </div>`).join('');
+}
+
+function catDragStart(e,id){
+  catDragSrc=id;
+  e.dataTransfer.effectAllowed='move';
+  e.currentTarget.classList.add('cat-dragging');
+}
+function catDragOver(e){
+  e.preventDefault();e.dataTransfer.dropEffect='move';
+  document.querySelectorAll('.cat-mgr-item').forEach(el=>el.classList.remove('cat-drag-over'));
+  e.currentTarget.classList.add('cat-drag-over');
+}
+function catDragEnd(){document.querySelectorAll('.cat-mgr-item').forEach(el=>el.classList.remove('cat-dragging','cat-drag-over'));}
+async function catDrop(e,targetId){
+  e.preventDefault();
+  if(catDragSrc===targetId)return;
+  catDragEnd();
+
+  // Reorder locally
+  const cats=[...appData.categories];
+  const fromIdx=cats.findIndex(c=>c.id===catDragSrc);
+  const toIdx  =cats.findIndex(c=>c.id===targetId);
+  if(fromIdx<0||toIdx<0)return;
+  const [moved]=cats.splice(fromIdx,1);
+  cats.splice(toIdx,0,moved);
+  appData.categories=cats;
+  renderCategoryManagerList();
+  renderCategoryPickerList();
+
+  // Persist sort order — save each category with updated sort_order
+  for(let i=0;i<cats.length;i++){
+    // fire-and-forget; best effort
+    fetchAPI('',{method:'POST',body:JSON.stringify({action:'save',table:'categories',data:{...cats[i],sort_order:i}})}).catch(()=>{});
+  }
+}
+
+async function deleteCategoryConfirm(id){
+  if(!confirm('Delete this category and all its info cards?'))return;
+  await deleteFromApi('categories',id);
+  renderCategoryManagerList();
+  renderCategoryPickerList();
+}
+
 function openCategoryModal(id=null){
   el('categoryModal').classList.remove('hidden');
   el('categoryId').value=id||'';
@@ -834,7 +941,11 @@ function openCategoryModal(id=null){
 async function saveCategory(){
   const id=el('categoryId').value;
   const data={id:id?parseInt(id):null,name:el('categoryName').value,icon:el('categoryIcon').value,min_role_required:getRadio('catPerm')};
-  if(await saveToApi('categories',data))closeModal('categoryModal');
+  if(await saveToApi('categories',data)){
+    closeModal('categoryModal');
+    // Refresh manager list if open
+    if(!el('categoryManagerModal').classList.contains('hidden'))renderCategoryManagerList();
+  }
 }
 function openUserModal(id=null){el('userModal').classList.remove('hidden');el('userModalTitle').textContent=id?'Edit User':'Add User';el('userId').value=id||'';const p=el('userPassword');p.type='password';const ti=el('toggleEditPassword');if(ti)ti.querySelector('i').className='fas fa-eye';if(id){const u=appData.users.find(x=>x.id===id);el('userAccountName').value=u.accountName||u.account_name||'';el('userUsername').value=u.username;el('userPassword').value=u.password;el('userRole').value=u.role;}else el('userForm').reset();}
 async function saveUser(){const id=el('userId').value;const data={id:id?parseInt(id):null,accountName:el('userAccountName').value,username:el('userUsername').value,password:el('userPassword').value,role:el('userRole').value};if(await saveToApi('users',data))closeModal('userModal');}
@@ -848,7 +959,6 @@ function loadPreferencesUI(){
   const p=getPrefs();
   el('darkModeToggle').checked=p.dark;
   document.querySelectorAll('.font-opt').forEach(b=>b.classList.toggle('active',b.dataset.font===p.font));
-  document.querySelectorAll('.msize-opt').forEach(b=>b.classList.toggle('active',b.dataset.msize===p.modal));
 }
 function getPrefs(){return{dark:localStorage.getItem('noc_dark')==='1',color:localStorage.getItem('noc_color')||'blue',font:localStorage.getItem('noc_font')||'md',modal:localStorage.getItem('noc_modal')||'md'};}
 function loadPreferences(){const p=getPrefs();applyDarkMode(p.dark,false);applyColor(p.color,false);applyFont(p.font,false);applyModalSize(p.modal,false);}
@@ -987,8 +1097,6 @@ function calcSubnet(){
     ];
 
     // ── NOC Handover text block ───────────────────────────
-    // Gateway  = first usable IP
-    // Customer = last usable IP  (last usable, not broadcast, not gateway)
     const gateway   = cidr>=31 ? 'N/A' : i2s(first);
     const customerIP= cidr>=31 ? 'N/A' : i2s(last);
     const subnetDisplay=`${i2s(network)}/${cidr} (${maskStr})`;
@@ -997,8 +1105,8 @@ function calcSubnet(){
 `Customer IP : ${customerIP}
 Gateway     : ${gateway}
 Subnet      : ${subnetDisplay}
-DNS1        - 59.153.88.210
-DNS2        - 59.153.90.34`;
+DNS1        : 59.153.88.210
+DNS2        : 59.153.90.34`;
 
     out.innerHTML=`
       ${rows.map(([l,v])=>`<div class="sn-row"><span class="sn-label">${l}</span><span class="sn-val">${v}</span></div>`).join('')}
@@ -1010,7 +1118,7 @@ DNS2        - 59.153.90.34`;
             <i class="fas fa-copy"></i> Copy
           </button>
         </div>
-        <pre id="handoverText" class="sn-handover-pre">${escHtml(handoverText)}</pre>
+        <textarea id="handoverText" class="sn-handover-pre sn-handover-editable" spellcheck="false">${escHtml(handoverText)}</textarea>
       </div>`;
 
   }catch(e){
@@ -1021,7 +1129,7 @@ DNS2        - 59.153.90.34`;
 function copyHandoverText(){
   const pre=el('handoverText');
   if(!pre)return;
-  const text=pre.textContent;
+  const text=pre.value||pre.textContent;
   navigator.clipboard.writeText(text).then(()=>{
     const btn=document.querySelector('.sn-copy-btn');
     if(btn){
