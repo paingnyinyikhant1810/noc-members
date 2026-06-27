@@ -532,10 +532,10 @@ export const onRequest = async (context) => {
         }
         else if (table==="learning_items") {
           data.id
-            ? await env.DB.prepare("UPDATE learning_items SET topic=?,type=?,link=?,content=?,folderId=? WHERE id=?")
-                .bind(data.topic,data.type,data.link,data.content,data.folderId,data.id).run()
-            : await env.DB.prepare("INSERT INTO learning_items (topic,type,link,content,folderId) VALUES (?,?,?,?,?)")
-                .bind(data.topic,data.type,data.link,data.content,data.folderId).run();
+            ? await env.DB.prepare("UPDATE learning_items SET topic=?,type=?,link=?,content=?,folderId=?,min_role_required=? WHERE id=?")
+                .bind(data.topic,data.type,data.link,data.content,data.folderId,data.min_role_required??"intern",data.id).run()
+            : await env.DB.prepare("INSERT INTO learning_items (topic,type,link,content,folderId,min_role_required) VALUES (?,?,?,?,?,?)")
+                .bind(data.topic,data.type,data.link,data.content,data.folderId,data.min_role_required??"intern").run();
         }
         return ok({success:true});
       }
