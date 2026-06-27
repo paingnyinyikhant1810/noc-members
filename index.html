@@ -91,7 +91,7 @@
                 <i class="fas fa-book"></i> Learning
             </button>
             <!-- 3. NOC Utilities -->
-            <button onclick="openUtilities();closeMobileMenu()" class="mob-nbtn mob-nbtn--util">
+            <button onclick="closeMobileMenu();openUtilities()" class="mob-nbtn">
                 <i class="fas fa-tools"></i> NOC Utilities
             </button>
             <!-- 4. Information — shows sub-list inline -->
@@ -99,11 +99,14 @@
                 <p class="mob-slabel"><i class="fas fa-info-circle"></i> Information</p>
                 <div id="mobileInfoMenu"></div>
             </div>
-            <!-- 5. Admin Panel — admin only -->
+            <!-- 5. Admin Panel + Categories Setting — admin only -->
             <div id="mobileAdminBtn" class="hidden">
                 <div class="mob-divider"></div>
-                <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn mob-nbtn--admin" data-page="admin">
+                <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn" data-page="admin">
                     <i class="fas fa-shield-alt"></i> Admin Panel
+                </button>
+                <button onclick="closeMobileMenu();openCategoryManagerModal()" class="mob-nbtn">
+                    <i class="fas fa-tags"></i> Categories Setting
                 </button>
             </div>
             <!-- 6. Settings -->
@@ -697,5 +700,5 @@
 </div>
 
 <script src="script.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1241a94ded92fbd',t:'MTc4MjU1OTY2MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
