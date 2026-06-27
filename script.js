@@ -393,7 +393,7 @@ function renderUpdates(){
       <div class="upd-body upd-body--clamp card-link">${linkify(escHtml(u.message))}</div>
       <div class="upd-foot">
         <span><i class="fas fa-user-circle"></i> ${escHtml(u.author||'')}</span>
-        <span><i class="fas fa-calendar"></i> ${escHtml(u.date||'')}</span>
+        <span><i class="fas fa-calendar"></i> ${escHtml(fmtDate(u.date))}</span>
         <span class="upd-read-more">Click to read <i class="fas fa-arrow-right"></i></span>
       </div>
     </div>`;
@@ -408,7 +408,7 @@ function openUpdateView(id){
   el('updateViewMeta').innerHTML=`
     <span class="badge ${bmap[u.badge]||'b-general'}">${bicon[u.badge]||''} ${escHtml(u.badge)}</span>
     <span><i class="fas fa-user-circle"></i> ${escHtml(u.author||'')}</span>
-    <span><i class="fas fa-calendar"></i> ${escHtml(u.date||'')}</span>`;
+    <span><i class="fas fa-calendar"></i> ${escHtml(fmtDate(u.date))}</span>`;
   el('updateViewBody').innerHTML=linkify(escHtml(u.message));
 
   // Edit/Delete actions for owner or admin
@@ -422,6 +422,18 @@ function openUpdateView(id){
   el('updateViewModal').classList.remove('hidden');
 }
 function linkify(t){return t.replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g,'<br>');}
+
+// Format YYYY-MM-DD stored date into readable MMT local date
+// e.g. "2025-06-28" → "28 Jun 2025"
+function fmtDate(d){
+  if(!d) return '';
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const parts=d.split('-');
+  if(parts.length!==3) return d;
+  const y=parseInt(parts[0]),m=parseInt(parts[1])-1,day=parseInt(parts[2]);
+  if(isNaN(y)||isNaN(m)||isNaN(day)) return d;
+  return day+' '+months[m]+' '+y;
+}
 
 function openUpdateModal(id=null){
   // All roles can open the create modal
@@ -1307,114 +1319,92 @@ el('subnetInput').addEventListener('input',()=>{
 });
 
 function calcSubnet(){
-  const raw=el('subnetInput').value.trim(), out=el('subnetResults');
-  if(!raw){
-    out.innerHTML='';
-    const hb=el('handoverBlock');if(hb)hb.classList.add('hidden');
-    return;
-  }
+  const raw=el('subnetInput').value.trim();
+  const out=el('subnetResults');
+  const hb=el('handoverBlock');
+
+  if(!raw){ out.innerHTML=''; if(hb)hb.classList.add('hidden'); return; }
+
   try{
-    const[ipPart,cidrPart]=raw.split('/');
-    if(!cidrPart)throw new Error('Enter CIDR notation e.g. 192.168.1.0/24');
-    const cidr=parseInt(cidrPart);
-    if(cidr<0||cidr>32)throw new Error('CIDR must be 0–32');
-    const ipNums=ipPart.split('.').map(Number);
-    if(ipNums.length!==4||ipNums.some(n=>isNaN(n)||n<0||n>255))throw new Error('Invalid IP address');
+    const parts=raw.split('/');
+    if(parts.length<2) throw new Error('Enter CIDR e.g. 192.168.1.0/24');
+    const cidr=parseInt(parts[1]);
+    if(isNaN(cidr)||cidr<0||cidr>32) throw new Error('CIDR must be 0-32');
+    const oct=parts[0].split('.').map(Number);
+    if(oct.length!==4||oct.some(function(n){return isNaN(n)||n<0||n>255;}))
+      throw new Error('Invalid IP address');
 
-    const ipInt=ipNums.reduce((a,b)=>(a<<8)+b,0)>>>0;
-    const mask=cidr===0?0:(0xFFFFFFFF<<(32-cidr))>>>0;
-    const network =(ipInt&mask)>>>0;
-    const broadcast=(network|(~mask>>>0))>>>0;
-    const first=(network+1)>>>0;
-    const last =(broadcast-1)>>>0;
-    const total=Math.pow(2,32-cidr);
-    const usable=cidr>=31?total:Math.max(0,total-2);
-    const i2s=n=>[24,16,8,0].map(s=>(n>>s)&0xFF).join('.');
-    const maskStr=i2s(mask);
+    var ipInt=((oct[0]*256+oct[1])*256+oct[2])*256+oct[3];
+    ipInt=ipInt>>>0;
+    var mask=cidr===0?0:(0xFFFFFFFF<<(32-cidr))>>>0;
+    var network=(ipInt&mask)>>>0;
+    var broadcast=(network|(~mask>>>0))>>>0;
+    var first=(network+1)>>>0;
+    var last=(broadcast-1)>>>0;
+    var total=Math.pow(2,32-cidr);
+    var usable=cidr>=31?total:Math.max(0,total-2);
+    function i2s(n){return [n>>>24&255,(n>>>16)&255,(n>>>8)&255,n&255].join('.');}
+    var maskStr=i2s(mask);
 
-    // ── Subnet info rows ─────────────────────────────────
-    const rows=[
+    /* ── Subnet info table — always shown ───────── */
+    var tableRows=[
       ['Network Address', i2s(network)],
       ['Subnet Mask',     maskStr],
-      ['Wildcard Mask',   i2s(~mask>>>0)],
+      ['Wildcard Mask',   i2s((~mask)>>>0)],
       ['Broadcast',       i2s(broadcast)],
-      ['First Usable IP', cidr>=31?'N/A':i2s(first)],
-      ['Last Usable IP',  cidr>=31?'N/A':i2s(last)],
+      ['First Usable',    cidr>=31?'N/A':i2s(first)],
+      ['Last Usable',     cidr>=31?'N/A':i2s(last)],
       ['Total IPs',       total.toLocaleString()],
       ['Usable Hosts',    usable.toLocaleString()],
-      ['CIDR',            `/${cidr}`],
+      ['CIDR',            '/'+cidr],
+    ];
+    out.innerHTML=tableRows.map(function(r){
+      return '<div class="sn-row"><span class="sn-label">'+escHtml(r[0])+'</span><span class="sn-val">'+escHtml(r[1])+'</span></div>';
+    }).join('');
+
+    /* ── Handover block — ONLY /29 and /30 ──────── */
+    if(cidr!==29&&cidr!==30){ if(hb)hb.classList.add('hidden'); return; }
+
+    var gateway=i2s(first);
+    var custCount=usable-1;
+    var custIPs=[];
+    for(var n=1;n<=custCount;n++){ custIPs.push(i2s((first+n)>>>0)); }
+    var custStr=custIPs.join(', ');
+    var subnetStr=i2s(network)+'/'+cidr+' ('+maskStr+')';
+
+    var lines=[
+      ['Customer IP', custStr],
+      ['Gateway    ', gateway],
+      ['Subnet     ', subnetStr],
+      ['DNS1       ', '59.153.88.210'],
+      ['DNS2       ', '59.153.90.34'],
     ];
 
-    // ── NOC Handover text block ───────────────────────────
-    const gateway      = cidr>=31 ? 'N/A' : i2s(first);
-    const subnetDisplay= `${i2s(network)}/${cidr} (${maskStr})`;
-
-    const hoRows = [];
-
-    if(cidr >= 31){
-      hoRows.push(['Gateway    ', 'N/A']);
-      hoRows.push(['Customer IP', 'N/A']);
-    } else {
-      hoRows.push(['Gateway    ', gateway]);
-
-      const customerCount = usable - 1; // all usable IPs after gateway
-      const MAX_SHOW = 10;              // cap DOM rows to avoid lag
-
-      if(customerCount <= 0){
-        hoRows.push(['Customer IP', 'N/A']);
-      } else if(customerCount === 1){
-        // /30 — single customer
-        hoRows.push(['Customer IP', i2s(last)]);
-      } else {
-        // List customers — cap at MAX_SHOW to prevent browser freeze
-        const showCount = Math.min(customerCount, MAX_SHOW);
-        for(let n=1; n<=showCount; n++){
-          const ip=(first+n)>>>0;
-          hoRows.push([`Customer ${n} `.padEnd(11), i2s(ip)]);
-        }
-        if(customerCount > MAX_SHOW){
-          hoRows.push(['...        ', `+${customerCount - MAX_SHOW} more hosts`]);
-        }
-      }
+    var htEl=el('handoverText');
+    if(htEl){
+      htEl.innerHTML=lines.map(function(r){
+        return '<div class="sn-ho-row">'+
+          '<span class="sn-ho-label">'+escHtml(r[0])+' : </span>'+
+          '<span class="sn-ho-value">'+escHtml(r[1])+'</span>'+
+          '</div>';
+      }).join('');
     }
-
-    hoRows.push(['Subnet     ', subnetDisplay]);
-    hoRows.push(['DNS1       ', '59.153.88.210']);
-    hoRows.push(['DNS2       ', '59.153.90.34']);
-
-    // ── Handover block (above subnet rows) ───────────────
-    const handoverEl=el('handoverText');
-    const handoverBlock=el('handoverBlock');
-    if(handoverEl){
-      handoverEl.innerHTML=hoRows.map(([label,value])=>
-        `<div class="sn-ho-row"><span class="sn-ho-label">${escHtml(label)} :</span><span class="sn-ho-value">${escHtml(value)}</span></div>`
-      ).join('');
-    }
-    if(handoverBlock) handoverBlock.classList.remove('hidden');
-
-    // ── Subnet detail rows ────────────────────────────────
-    out.innerHTML=rows.map(([l,v])=>
-      `<div class="sn-row"><span class="sn-label">${l}</span><span class="sn-val">${v}</span></div>`
-    ).join('');
+    if(hb)hb.classList.remove('hidden');
 
   }catch(e){
-    out.innerHTML=`<div class="sn-error"><i class="fas fa-exclamation-circle"></i> ${escHtml(e.message)}</div>`;
-    const hb=el('handoverBlock');if(hb)hb.classList.add('hidden');
+    el('subnetResults').innerHTML='<div class="sn-error"><i class="fas fa-exclamation-circle"></i> '+escHtml(e.message)+'</div>';
+    var hb2=el('handoverBlock'); if(hb2)hb2.classList.add('hidden');
   }
 }
 
 function copyHandoverText(){
   const pre=el('handoverText');
   if(!pre)return;
-  // Build plain text from the structured rows
   const rows=pre.querySelectorAll('.sn-ho-row');
-  const text=rows.length
-    ? Array.from(rows).map(r=>{
-        const label=r.querySelector('.sn-ho-label')?.textContent||'';
-        const value=r.querySelector('.sn-ho-value')?.textContent||'';
-        return label+' '+value;
-      }).join('\n')
-    : pre.textContent;
+  const text=Array.from(rows).map(function(r){
+    return (r.querySelector('.sn-ho-label')||{textContent:''}).textContent
+          +(r.querySelector('.sn-ho-value')||{textContent:''}).textContent;
+  }).join('\n');
   navigator.clipboard.writeText(text).then(()=>{
     const btn=document.querySelector('.sn-copy-btn');
     if(btn){
