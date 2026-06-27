@@ -267,7 +267,7 @@
 <!-- Category Modal -->
 <div id="categoryModal" class="hidden modal-bd">
     <div class="modal-box">
-        <div class="modal-hdr"><h3 id="categoryModalTitle" class="modal-title">Add Category</h3><button onclick="closeModal('categoryModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <div class="modal-hdr"><h3 id="categoryModalTitle" class="modal-title">Add Category</h3><button onclick="cancelCategoryModal()" class="modal-x"><i class="fas fa-times"></i></button></div>
         <form id="categoryForm" class="modal-body">
             <input type="hidden" id="categoryId">
             <div class="fg"><label class="flabel">Name</label><input type="text" id="categoryName" class="finput" required></div>
@@ -290,7 +290,7 @@
                 </div>
             </div>
         </form>
-        <div class="modal-ft"><button onclick="closeModal('categoryModal')" class="btn-secondary">Cancel</button><button onclick="saveCategory()" class="btn-primary">Save</button></div>
+        <div class="modal-ft"><button onclick="cancelCategoryModal()" class="btn-secondary">Cancel</button><button onclick="saveCategory()" class="btn-primary">Save</button></div>
     </div>
 </div>
 
