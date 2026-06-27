@@ -4,67 +4,67 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NOC Portal</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body>
     <!-- Toast Container -->
-    <div id="toastContainer" class="fixed top-4 right-4 z-[100]"></div>
+    <div id="toastContainer"></div>
 
     <!-- Context Menu -->
-    <div id="contextMenu" class="hidden fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[90] context-menu min-w-[160px]">
-        <button onclick="renameItem()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3">
-            <i class="fas fa-pen text-gray-400 w-4"></i> Rename
+    <div id="contextMenu" class="hidden context-menu">
+        <button onclick="renameItem()" class="ctx-btn">
+            <i class="fas fa-pen"></i> Rename
         </button>
-        
-        <hr class="my-2 border-gray-100">
-        <button onclick="deleteItem()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 flex items-center gap-3">
-            <i class="fas fa-trash w-4"></i> Delete
+        <hr class="ctx-divider">
+        <button onclick="deleteItem()" class="ctx-btn ctx-danger">
+            <i class="fas fa-trash"></i> Delete
         </button>
     </div>
 
     <!-- Info Card Context Menu -->
-    <div id="infoCardContextMenu" class="hidden fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[90] info-card-context-menu min-w-[160px]">
-        <button onclick="editInfoCardFromContext()" class="w-full text-left px-4 py-2.5 hover:bg-gray-100 text-gray-700 flex items-center gap-3">
-            <i class="fas fa-edit text-gray-400 w-4"></i> Edit
+    <div id="infoCardContextMenu" class="hidden context-menu">
+        <button onclick="editInfoCardFromContext()" class="ctx-btn">
+            <i class="fas fa-edit"></i> Edit
         </button>
-        <hr class="my-2 border-gray-100">
-        <button onclick="deleteInfoCardFromContext()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 flex items-center gap-3">
-            <i class="fas fa-trash w-4"></i> Delete
+        <hr class="ctx-divider">
+        <button onclick="deleteInfoCardFromContext()" class="ctx-btn ctx-danger">
+            <i class="fas fa-trash"></i> Delete
         </button>
     </div>
 
-    <!-- Login Page -->
-    <div id="loginPage" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
-        <div id="loginBox" class="bg-white p-8 rounded-3xl shadow-2xl shadow-gray-200/50 w-full max-w-md border border-gray-100">
-            <div class="text-center mb-8">
-                <div class="w-20 h-20 bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                    <i class="fas fa-users text-white text-3xl"></i>
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  LOGIN PAGE                                         -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div id="loginPage" class="login-page">
+        <div id="loginBox" class="login-box">
+            <div class="login-header">
+                <div class="login-logo">
+                    <i class="fas fa-users"></i>
                 </div>
-                <h1 class="text-3xl font-bold text-gray-800">NOC Portal</h1>
-        
-                <p class="text-gray-400 mt-2">Welcome , Sign in to continue</p>
+                <h1 class="login-title">NOC Portal</h1>
+                <p class="login-sub">Welcome, Sign in to continue</p>
             </div>
-            <form id="loginForm" class="space-y-5">
-                <div>
-                    <label class="block text-sm font-medium text-gray-600 mb-2">Username</label>
-                    <div class="relative">
-                        <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                        <input type="text" id="username" class="login-input w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="Enter username">
+            <form id="loginForm">
+                <div class="form-group">
+                    <label class="form-label">Username</label>
+                    <div class="input-wrap">
+                        <i class="fas fa-user input-icon"></i>
+                        <input type="text" id="username" class="form-input" placeholder="Enter username" autocomplete="username">
                     </div>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-600 mb-2">Password</label>
-                    <div class="relative">
-                        <i class="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                        <input type="password" id="password" class="login-input w-full pl-11 pr-12 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="Enter password">
-                        <button type="button" id="togglePassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition">
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <div class="input-wrap">
+                        <i class="fas fa-lock input-icon"></i>
+                        <input type="password" id="password" class="form-input form-input--pw" placeholder="Enter password" autocomplete="current-password">
+                        <button type="button" id="togglePassword" class="eye-btn">
                             <i class="fas fa-eye"></i>
                         </button>
                     </div>
                 </div>
-                <button type="submit" id="loginBtn" class="w-full bg-gradient-to-r from-gray-800 to-gray-900 text-white py-3.5 rounded-xl font-semibold hover:from-gray-900 hover:to-black transition-all shadow-lg shadow-gray-300 flex items-center justify-center gap-2">
+                <button type="submit" id="loginBtn" class="btn-login">
                     <span>Sign In</span>
                     <i class="fas fa-arrow-right"></i>
                 </button>
@@ -72,273 +72,253 @@
         </div>
     </div>
 
-    <!-- Main App -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  MAIN APP                                           -->
+    <!-- ═══════════════════════════════════════════════════ -->
     <div id="mainApp" class="hidden">
-        <!-- Mobile Menu -->
-        <div id="mobileOverlay" class="hidden fixed inset-0 bg-black/50 z-40 lg:hidden" onclick="closeMobileMenu()"></div>
-        
-        <div id="mobileMenu" class="mobile-menu hidden fixed left-0 top-0 h-full w-72 bg-white shadow-2xl z-50 lg:hidden">
-            <div class="p-5 border-b border-gray-100">
-                <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl flex items-center justify-center">
-                        <i class="fas fa-users text-white text-lg"></i>
-                    </div>
-                    <div>
-                        <h2 class="font-bold text-gray-800">NOC Portal</h2>
-                        <p class="text-sm text-gray-400" id="mobileWelcome">Welcome</p>
-                    </div>
+
+        <!-- Mobile Overlay -->
+        <div id="mobileOverlay" class="hidden mobile-overlay" onclick="closeMobileMenu()"></div>
+
+        <!-- Mobile Sidebar -->
+        <div id="mobileMenu" class="mobile-menu hidden">
+            <div class="mobile-menu-header">
+                <div class="mobile-menu-logo"><i class="fas fa-users"></i></div>
+                <div>
+                    <div class="fw-bold">NOC Portal</div>
+                    <div class="text-sm text-muted" id="mobileWelcome">Welcome</div>
                 </div>
             </div>
-            <nav class="p-4 space-y-2">
-                <button onclick="navigateTo('home'); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition" data-page="home">
-                    <i class="fas fa-home w-5"></i> Home
+            <nav class="mobile-nav">
+                <button onclick="navigateTo('home'); closeMobileMenu();" class="mobile-nav-btn" data-page="home">
+                    <i class="fas fa-home"></i> Home
                 </button>
-                <button onclick="navigateTo('learning'); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition" data-page="learning">
-                    <i class="fas fa-book w-5"></i> Learning
+                <button onclick="navigateTo('learning'); closeMobileMenu();" class="mobile-nav-btn" data-page="learning">
+                    <i class="fas fa-book"></i> Learning
                 </button>
                 <div id="mobileAdminBtn" class="hidden">
-                    <button onclick="navigateTo('admin'); closeMobileMenu();" class="mobile-nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition" data-page="admin">
-                        <i class="fas fa-cog w-5"></i> Admin Panel
+                    <button onclick="navigateTo('admin'); closeMobileMenu();" class="mobile-nav-btn" data-page="admin">
+                        <i class="fas fa-cog"></i> Admin Panel
                     </button>
                 </div>
-                <div class="pt-2">
-                    <p class="px-4 py-2 text-xs font-medium text-gray-400 uppercase">Information</p>
-                    <div id="mobileInfoMenu" class="space-y-1"></div>
+                <div class="mobile-nav-section">
+                    <p class="mobile-nav-label">Information</p>
+                    <div id="mobileInfoMenu"></div>
                 </div>
             </nav>
-            <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-100">
-                <button onclick="logout()" class="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition">
+            <div class="mobile-menu-footer">
+                <button onclick="logout()" class="mobile-logout-btn">
                     <i class="fas fa-sign-out-alt"></i> Logout
                 </button>
             </div>
         </div>
 
-        <!-- Navigation -->
-        <nav class="bg-white shadow-sm border-b border-gray-100 sticky top-0 z-30">
-            <div class="max-w-7xl mx-auto px-4">
-                <div class="flex items-center justify-between h-16">
-                    <div class="flex items-center gap-3">
-                        <button onclick="openMobileMenu()" class="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 transition">
-                            <i class="fas fa-bars text-gray-600"></i>
+        <!-- Top Navigation -->
+        <nav class="topnav">
+            <div class="topnav-inner">
+                <div class="topnav-left">
+                    <button onclick="openMobileMenu()" class="hamburger-btn desktop-hidden">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="topnav-logo"><i class="fas fa-users"></i></div>
+                    <span class="topnav-title mobile-hidden">NOC Portal</span>
+                </div>
+                <div class="topnav-right desktop-only">
+                    <button onclick="navigateTo('home')" class="nav-btn" data-page="home">
+                        <i class="fas fa-home"></i> Home
+                    </button>
+                    <button onclick="navigateTo('learning')" class="nav-btn" data-page="learning">
+                        <i class="fas fa-book"></i> Learning
+                    </button>
+                    <div class="dropdown-wrap">
+                        <button onclick="toggleInfoDropdown()" class="nav-btn" data-page="information">
+                            <i class="fas fa-info-circle"></i> Information <i class="fas fa-chevron-down caret"></i>
                         </button>
-                        <div class="w-10 h-10 bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-users text-white"></i>
-                        </div>
-                        <span class="font-bold text-xl text-gray-800 hidden sm:block">NOC Portal</span>
+                        <div id="infoDropdown" class="hidden dropdown-menu"></div>
                     </div>
-                    
-                    <!-- Desktop Navigation -->
-                    <div class="hidden lg:flex items-center gap-1">
-                        <button onclick="navigateTo('home')" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition font-medium" data-page="home">
-                            <i class="fas fa-home mr-2"></i>Home
-                        </button>
-                        <button onclick="navigateTo('learning')" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition font-medium" data-page="learning">
-                            <i class="fas fa-book mr-2"></i>Learning
-                        </button>
-                        <div class="relative">
-                            <button onclick="toggleInfoDropdown()" class="nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition font-medium" data-page="information">
-                                <i class="fas fa-info-circle mr-2"></i>Information
-                                <i class="fas fa-chevron-down ml-1 text-xs"></i>
-                            </button>
-                            <div id="infoDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50"></div>
-                        </div>
-                        <button id="adminBtn" onclick="navigateTo('admin')" class="hidden nav-btn px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 transition font-medium" data-page="admin">
-                            <i class="fas fa-cog mr-2"></i>Admin Panel
-                        </button>
-                        <button onclick="logout()" class="px-4 py-2 rounded-xl text-red-600 hover:bg-red-50 transition font-medium">
-                            <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                        </button>
-                    </div>
+                    <button id="adminBtn" onclick="navigateTo('admin')" class="nav-btn hidden" data-page="admin">
+                        <i class="fas fa-cog"></i> Admin Panel
+                    </button>
+                    <button onclick="logout()" class="nav-btn nav-btn--logout">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </button>
                 </div>
             </div>
         </nav>
 
         <!-- Welcome Banner -->
-        <div class="bg-gradient-to-r from-gray-800 to-gray-900 text-white">
-            <div class="max-w-7xl mx-auto px-4 py-5">
-                <p class="text-gray-300">Hi, <span id="welcomeUser" class="font-semibold text-white"></span>! 👋</p>
+        <div class="welcome-banner">
+            <div class="welcome-inner">
+                <p class="welcome-text">Hi, <span id="welcomeUser" class="fw-bold"></span>! 👋</p>
             </div>
         </div>
 
-        <!-- Home Page -->
-        <div id="homePage" class="page max-w-7xl mx-auto px-4 py-6 sm:py-8">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <h2 class="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-3">
-                    <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                        <i class="fas fa-bullhorn text-blue-600"></i>
-                    </div>
+        <!-- ── Home Page ──────────────────────────────────── -->
+        <div id="homePage" class="page page-container">
+            <div class="page-header">
+                <h2 class="page-title">
+                    <div class="page-icon page-icon--blue"><i class="fas fa-bullhorn"></i></div>
                     Team Updates
                 </h2>
-                <button id="addUpdateBtn" onclick="openUpdateModal()" class="hidden btn-primary bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 font-medium shadow-lg shadow-gray-200">
-                    <i class="fas fa-plus mr-2"></i>Add Update
+                <button id="addUpdateBtn" onclick="openUpdateModal()" class="hidden btn-primary">
+                    <i class="fas fa-plus"></i> Add Update
                 </button>
             </div>
-            <div id="updatesContainer" class="grid gap-4"></div>
+            <div id="updatesContainer" class="updates-grid"></div>
         </div>
 
-        <!-- Learning Page -->
-        <div id="learningPage" class="page hidden max-w-7xl mx-auto px-4 py-6 sm:py-8">
-            <div class="flex flex-col gap-4 mb-6">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <h2 class="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-3">
-                        <div class="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
-                            <i class="fas fa-folder-open text-amber-600"></i>
-                        </div>
-                        Learning
-                    </h2>
-                    <div id="learningAdminBtns" class="hidden flex gap-2">
-                        <button onclick="openFolderModal()" class="btn-secondary bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium">
-                            <i class="fas fa-folder-plus mr-2"></i>New Folder
-                        </button>
-                        <button onclick="openLearningItemModal()" class="btn-primary bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-800 font-medium shadow-lg shadow-gray-200">
-                            <i class="fas fa-plus mr-2"></i>Add Item
-                        </button>
-                    </div>
+        <!-- ── Learning Page ──────────────────────────────── -->
+        <div id="learningPage" class="page page-container hidden">
+            <div class="page-header">
+                <h2 class="page-title">
+                    <div class="page-icon page-icon--amber"><i class="fas fa-folder-open"></i></div>
+                    Learning
+                </h2>
+                <div id="learningAdminBtns" class="hidden btn-group">
+                    <button onclick="openFolderModal()" class="btn-secondary">
+                        <i class="fas fa-folder-plus"></i> New Folder
+                    </button>
+                    <button onclick="openLearningItemModal()" class="btn-primary">
+                        <i class="fas fa-plus"></i> Add Item
+                    </button>
                 </div>
-                <div id="breadcrumb" class="flex items-center gap-2 text-gray-500 text-sm flex-wrap"></div>
             </div>
-            <div id="learningContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4"></div>
+            <div id="breadcrumb" class="breadcrumb"></div>
+            <div id="learningContainer" class="file-grid"></div>
         </div>
 
-        <!-- Information Page -->
-        <div id="informationPage" class="page hidden max-w-7xl mx-auto px-4 py-6 sm:py-8">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <h2 id="infoPageTitle" class="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-3">
-                    <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                        <i class="fas fa-layer-group text-blue-600"></i>
-                    </div>
+        <!-- ── Information Page ───────────────────────────── -->
+        <div id="informationPage" class="page page-container hidden">
+            <div class="page-header">
+                <h2 id="infoPageTitle" class="page-title">
+                    <div class="page-icon page-icon--blue"><i class="fas fa-layer-group"></i></div>
                     <span id="infoTitleText">Information</span>
                 </h2>
-                <button id="addInfoCardBtn" onclick="openInfoCardModal()" class="hidden btn-primary bg-gray-900 text-white px-5 py-2.5 rounded-xl hover:bg-gray-800 font-medium shadow-lg shadow-gray-200">
-                    <i class="fas fa-plus mr-2"></i>Add Item
+                <button id="addInfoCardBtn" onclick="openInfoCardModal()" class="hidden btn-primary">
+                    <i class="fas fa-plus"></i> Add Item
                 </button>
             </div>
-            <div id="infoCardsContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"></div>
+            <div id="infoCardsContainer" class="file-grid"></div>
         </div>
 
-        <!-- Admin Page -->
-        <div id="adminPage" class="page hidden max-w-7xl mx-auto px-4 py-6 sm:py-8">
-            <h2 class="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-3 mb-6">
-                <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                    <i class="fas fa-shield-alt text-blue-600"></i>
-                </div>
+        <!-- ── Admin Page ─────────────────────────────────── -->
+        <div id="adminPage" class="page page-container hidden">
+            <h2 class="page-title mb-6">
+                <div class="page-icon page-icon--blue"><i class="fas fa-shield-alt"></i></div>
                 Admin Panel
             </h2>
-            
-            <div class="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
-                <button onclick="showAdminTab('users')" class="admin-tab px-4 py-2.5 font-medium text-gray-600 rounded-lg transition" data-tab="users">
-                    <i class="fas fa-users mr-2"></i>Users
+            <div class="admin-tabs">
+                <button onclick="showAdminTab('users')" class="admin-tab" data-tab="users">
+                    <i class="fas fa-users"></i> Users
                 </button>
-                <button onclick="showAdminTab('categories')" class="admin-tab px-4 py-2.5 font-medium text-gray-600 rounded-lg transition" data-tab="categories">
-                    <i class="fas fa-tags mr-2"></i>Categories
+                <button onclick="showAdminTab('categories')" class="admin-tab" data-tab="categories">
+                    <i class="fas fa-tags"></i> Categories
                 </button>
             </div>
 
+            <!-- Users Tab -->
             <div id="usersTab" class="admin-tab-content">
-                <div class="flex justify-end mb-4">
-                    <button onclick="openUserModal()" class="bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-800 transition font-medium shadow-lg shadow-gray-200">
-                        <i class="fas fa-user-plus mr-2"></i>Add User
+                <div class="tab-toolbar">
+                    <button onclick="openUserModal()" class="btn-primary">
+                        <i class="fas fa-user-plus"></i> Add User
                     </button>
                 </div>
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div class="overflow-x-auto">
-                        <table class="w-full">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-4 sm:px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Account</th>
-                                    <th class="px-4 sm:px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell">Username</th>
-                                    <th class="px-4 sm:px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Password</th>
-                                    <th class="px-4 sm:px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Role</th>
-                                    <th class="px-4 sm:px-6 py-4 text-right text-xs font-semibold text-gray-500 uppercase">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="usersTable" class="divide-y divide-gray-100"></tbody>
-                        </table>
-                    </div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th class="col-hide-sm">Username</th>
+                                <th>Password</th>
+                                <th>Role</th>
+                                <th class="text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTable"></tbody>
+                    </table>
                 </div>
             </div>
 
+            <!-- Categories Tab -->
             <div id="categoriesTab" class="admin-tab-content hidden">
-                <div class="flex justify-end mb-4">
-                    <button onclick="openCategoryModal()" class="bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-800 transition font-medium shadow-lg shadow-gray-200">
-                        <i class="fas fa-plus mr-2"></i>Add Category
+                <div class="tab-toolbar">
+                    <button onclick="openCategoryModal()" class="btn-primary">
+                        <i class="fas fa-plus"></i> Add Category
                     </button>
                 </div>
-                <div id="categoriesList" class="grid gap-3"></div>
+                <div id="categoriesList" class="categories-grid"></div>
             </div>
         </div>
-    </div>
 
-    <!-- Modals (Update, User, Category, Folder, Learning Item, Text View, Info Card, Move, Rename) -->
+    </div><!-- /mainApp -->
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!--  MODALS                                             -->
+    <!-- ═══════════════════════════════════════════════════ -->
+
     <!-- Update Modal -->
-    <div id="updateModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 id="updateModalTitle" class="text-xl font-bold text-gray-800">Add Update</h3>
-                <button onclick="closeModal('updateModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
+    <div id="updateModal" class="hidden modal-backdrop">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="updateModalTitle" class="modal-title">Add Update</h3>
+                <button onclick="closeModal('updateModal')" class="modal-close"><i class="fas fa-times"></i></button>
             </div>
-            <form id="updateForm" class="p-5 space-y-4 overflow-y-auto flex-1">
+            <form id="updateForm" class="modal-body">
                 <input type="hidden" id="updateId">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Topic</label>
-                    <input type="text" id="updateTopic" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" required>
+                <div class="form-group">
+                    <label class="form-label">Topic</label>
+                    <input type="text" id="updateTopic" class="form-input" required>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Badge</label>
-                    <select id="updateBadge" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition">
+                <div class="form-group">
+                    <label class="form-label">Badge</label>
+                    <select id="updateBadge" class="form-input">
                         <option value="important">🔴 Important</option>
                         <option value="general">🔵 General</option>
                         <option value="announcement">🟢 Announcement</option>
                         <option value="reminder">🟡 Reminder</option>
                     </select>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Message</label>
-                    <textarea id="updateMessage" rows="4" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition resize-none" required></textarea>
-                    
+                <div class="form-group">
+                    <label class="form-label">Message</label>
+                    <textarea id="updateMessage" rows="4" class="form-input" required></textarea>
                 </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
-                <button onclick="closeModal('updateModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button onclick="saveUpdate()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Save</button>
+            <div class="modal-footer">
+                <button onclick="closeModal('updateModal')" class="btn-secondary">Cancel</button>
+                <button onclick="saveUpdate()" class="btn-primary">Save</button>
             </div>
         </div>
     </div>
 
     <!-- User Modal -->
-    <div id="userModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 id="userModalTitle" class="text-xl font-bold text-gray-800">Add User</h3>
-                <button onclick="closeModal('userModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
+    <div id="userModal" class="hidden modal-backdrop">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="userModalTitle" class="modal-title">Add User</h3>
+                <button onclick="closeModal('userModal')" class="modal-close"><i class="fas fa-times"></i></button>
             </div>
-            <form id="userForm" class="p-5 space-y-4 overflow-y-auto flex-1">
+            <form id="userForm" class="modal-body">
                 <input type="hidden" id="userId">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Account Name (Display)</label>
-                    <input type="text" id="userAccountName" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="e.g. Operations User" required>
+                <div class="form-group">
+                    <label class="form-label">Account Name (Display)</label>
+                    <input type="text" id="userAccountName" class="form-input" placeholder="e.g. Operations User" required>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Username (Login)</label>
-                    <input type="text" id="userUsername" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="e.g. operations" required>
+                <div class="form-group">
+                    <label class="form-label">Username (Login)</label>
+                    <input type="text" id="userUsername" class="form-input" placeholder="e.g. operations" required>
                 </div>
-      <!-- User Modal - Find this section and replace password field -->
-<div>
-    <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
-    <div class="relative">
-        <input type="password" id="userPassword" class="w-full pl-4 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition font-mono" required>
-        <button type="button" id="toggleEditPassword" onclick="toggleEditPasswordVisibility()" class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition">
-            <i class="fas fa-eye"></i>
-        </button>
-    </div>
-</div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Role</label>
-                    <select id="userRole" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition">
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <div class="input-wrap">
+                        <input type="password" id="userPassword" class="form-input" required>
+                        <button type="button" id="toggleEditPassword" onclick="toggleEditPasswordVisibility()" class="eye-btn eye-btn--right">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Role</label>
+                    <select id="userRole" class="form-input">
                         <option value="intern">Intern</option>
                         <option value="member">Member</option>
                         <option value="leader">Leader</option>
@@ -346,31 +326,29 @@
                     </select>
                 </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
-                <button onclick="closeModal('userModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button onclick="saveUser()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Save</button>
+            <div class="modal-footer">
+                <button onclick="closeModal('userModal')" class="btn-secondary">Cancel</button>
+                <button onclick="saveUser()" class="btn-primary">Save</button>
             </div>
         </div>
     </div>
 
     <!-- Category Modal -->
-    <div id="categoryModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
-                <h3 id="categoryModalTitle" class="text-xl font-bold text-gray-800">Add Category</h3>
-                <button onclick="closeModal('categoryModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
+    <div id="categoryModal" class="hidden modal-backdrop">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="categoryModalTitle" class="modal-title">Add Category</h3>
+                <button onclick="closeModal('categoryModal')" class="modal-close"><i class="fas fa-times"></i></button>
             </div>
-            <form id="categoryForm" class="p-5 space-y-4">
+            <form id="categoryForm" class="modal-body">
                 <input type="hidden" id="categoryId">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Category Name</label>
-                    <input type="text" id="categoryName" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" required>
+                <div class="form-group">
+                    <label class="form-label">Category Name</label>
+                    <input type="text" id="categoryName" class="form-input" required>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Icon</label>
-                    <select id="categoryIcon" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition">
+                <div class="form-group">
+                    <label class="form-label">Icon</label>
+                    <select id="categoryIcon" class="form-input">
                         <option value="fa-users">👥 Team</option>
                         <option value="fa-clipboard-list">📋 Procedures</option>
                         <option value="fa-briefcase">💼 Business</option>
@@ -382,112 +360,104 @@
                     </select>
                 </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3">
-                <button onclick="closeModal('categoryModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button onclick="saveCategory()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Save</button>
+            <div class="modal-footer">
+                <button onclick="closeModal('categoryModal')" class="btn-secondary">Cancel</button>
+                <button onclick="saveCategory()" class="btn-primary">Save</button>
             </div>
         </div>
     </div>
 
     <!-- Folder Modal -->
-    <div id="folderModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
-                <h3 id="folderModalTitle" class="text-xl font-bold text-gray-800">Create Folder</h3>
-                <button onclick="closeModal('folderModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
+    <div id="folderModal" class="hidden modal-backdrop">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="folderModalTitle" class="modal-title">Create Folder</h3>
+                <button onclick="closeModal('folderModal')" class="modal-close"><i class="fas fa-times"></i></button>
             </div>
-            <form id="folderForm" class="p-5 space-y-4">
+            <form id="folderForm" class="modal-body">
                 <input type="hidden" id="folderId">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Folder Name</label>
-                    <input type="text" id="folderName" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" required>
+                <div class="form-group">
+                    <label class="form-label">Folder Name</label>
+                    <input type="text" id="folderName" class="form-input" required>
                 </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3">
-                <button onclick="closeModal('folderModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button onclick="saveFolder()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Save</button>
+            <div class="modal-footer">
+                <button onclick="closeModal('folderModal')" class="btn-secondary">Cancel</button>
+                <button onclick="saveFolder()" class="btn-primary">Save</button>
             </div>
         </div>
     </div>
 
     <!-- Learning Item Modal -->
-    <div id="learningItemModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 id="learningItemModalTitle" class="text-xl font-bold text-gray-800">Add Item</h3>
-                <button onclick="closeModal('learningItemModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
+    <div id="learningItemModal" class="hidden modal-backdrop">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="learningItemModalTitle" class="modal-title">Add Item</h3>
+                <button onclick="closeModal('learningItemModal')" class="modal-close"><i class="fas fa-times"></i></button>
             </div>
-            <form id="learningItemForm" class="p-5 space-y-4 overflow-y-auto flex-1">
+            <form id="learningItemForm" class="modal-body">
                 <input type="hidden" id="learningItemId">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                    <input type="text" id="learningItemTopic" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" required>
+                <div class="form-group">
+                    <label class="form-label">Topic / Title</label>
+                    <input type="text" id="learningItemTopic" class="form-input" required>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                    <select id="learningItemType" onchange="toggleLearningItemFields()" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition">
-                        <option value="pdf">PDF / Link</option>
+                <div class="form-group">
+                    <label class="form-label">Type</label>
+                    <select id="learningItemType" onchange="toggleLearningItemFields()" class="form-input">
+                        <option value="pdf">Link / PDF</option>
                         <option value="text">Text Note</option>
                     </select>
                 </div>
-                <div id="pdfLinkField">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Link URL</label>
-                    <input type="url" id="learningItemLink" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="https://...">
+                <div id="pdfLinkField" class="form-group">
+                    <label class="form-label">Link URL</label>
+                    <input type="url" id="learningItemLink" class="form-input" placeholder="https://...">
                 </div>
-                <div id="textContentField" class="hidden">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Content</label>
-                    <textarea id="learningItemContent" rows="6" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition font-mono text-sm resize-none"></textarea>
+                <div id="textContentField" class="form-group hidden">
+                    <label class="form-label">Content</label>
+                    <textarea id="learningItemContent" rows="6" class="form-input form-textarea"></textarea>
                 </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
-                <button onclick="closeModal('learningItemModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button onclick="saveLearningItem()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Save</button>
+            <div class="modal-footer">
+                <button onclick="closeModal('learningItemModal')" class="btn-secondary">Cancel</button>
+                <button onclick="saveLearningItem()" class="btn-primary">Save</button>
             </div>
         </div>
     </div>
 
     <!-- Text View Modal -->
-    <div id="textViewModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 id="textViewTitle" class="text-xl font-bold text-gray-800"></h3>
-                <button onclick="closeModal('textViewModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
+    <div id="textViewModal" class="hidden modal-backdrop">
+        <div class="modal-box modal-box--wide">
+            <div class="modal-header">
+                <h3 id="textViewTitle" class="modal-title"></h3>
+                <button onclick="closeModal('textViewModal')" class="modal-close"><i class="fas fa-times"></i></button>
             </div>
-            <div id="textViewContent" class="p-5 overflow-y-auto flex-1 whitespace-pre-wrap text-gray-700 font-mono text-sm bg-gray-50"></div>
+            <div id="textViewContent" class="text-view-content"></div>
         </div>
     </div>
 
     <!-- Info Card Modal -->
-    <div id="infoCardModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 id="infoCardModalTitle" class="text-xl font-bold text-gray-800">Add Item</h3>
-                <button onclick="closeModal('infoCardModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
+    <div id="infoCardModal" class="hidden modal-backdrop">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="infoCardModalTitle" class="modal-title">Add Item</h3>
+                <button onclick="closeModal('infoCardModal')" class="modal-close"><i class="fas fa-times"></i></button>
             </div>
-            <form id="infoCardForm" class="p-5 space-y-4 overflow-y-auto flex-1">
+            <form id="infoCardForm" class="modal-body">
                 <input type="hidden" id="infoCardId">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                    <input type="text" id="infoCardTitle" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" required>
+                <div class="form-group">
+                    <label class="form-label">Title</label>
+                    <input type="text" id="infoCardTitle" class="form-input" required>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Display Type</label>
-                    <select id="infoCardDisplayType" onchange="toggleInfoCardFields()" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition">
+                <div class="form-group">
+                    <label class="form-label">Display Type</label>
+                    <select id="infoCardDisplayType" onchange="toggleInfoCardFields()" class="form-input">
                         <option value="icon">Icon</option>
                         <option value="image">Image</option>
                     </select>
                 </div>
-                <div id="iconField">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Icon</label>
-                    <select id="infoCardIcon" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition">
+                <div id="iconField" class="form-group">
+                    <label class="form-label">Icon</label>
+                    <select id="infoCardIcon" class="form-input">
                         <option value="fa-link">🔗 Link</option>
                         <option value="fa-file-alt">📄 Document</option>
                         <option value="fa-globe">🌐 Website</option>
@@ -502,83 +472,79 @@
                         <option value="fa-code">💻 Code</option>
                     </select>
                 </div>
-                <div id="imageField" class="hidden space-y-3">
-                    <label class="block text-sm font-medium text-gray-700">Image Source</label>
-                    <div class="flex gap-2">
-                        <button type="button" onclick="setImageSource('url')" id="imgSourceUrl" class="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-800 bg-gray-800 text-white font-medium transition">
-                            <i class="fas fa-link mr-2"></i>URL
-                        </button>
-                        <button type="button" onclick="setImageSource('upload')" id="imgSourceUpload" class="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-gray-600 font-medium hover:border-gray-300 transition">
-                            <i class="fas fa-upload mr-2"></i>Upload
-                        </button>
+                <div id="imageField" class="hidden">
+                    <div class="form-group">
+                        <label class="form-label">Image Source</label>
+                        <div class="btn-group">
+                            <button type="button" onclick="setImageSource('url')" id="imgSourceUrl" class="btn-primary flex-1">
+                                <i class="fas fa-link"></i> URL
+                            </button>
+                            <button type="button" onclick="setImageSource('upload')" id="imgSourceUpload" class="btn-secondary flex-1">
+                                <i class="fas fa-upload"></i> Upload
+                            </button>
+                        </div>
                     </div>
-                    <div id="imageUrlField">
-                        <input type="url" id="infoCardImageUrl" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="https://example.com/image.jpg">
+                    <div id="imageUrlField" class="form-group">
+                        <input type="url" id="infoCardImageUrl" class="form-input" placeholder="https://example.com/image.jpg">
                     </div>
-                    <div id="imageUploadField" class="hidden">
-                        <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-200 border-dashed rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition">
-                            <div class="flex flex-col items-center justify-center pt-5 pb-6" id="uploadPlaceholder">
-                                <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
-                                <p class="text-sm text-gray-500">Click to upload image</p>
-                                <p class="text-xs text-gray-400 mt-1">PNG, JPG up to 2MB</p>
+                    <div id="imageUploadField" class="form-group hidden">
+                        <label class="upload-label">
+                            <div id="uploadPlaceholder">
+                                <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                                <p>Click to upload image</p>
+                                <p class="text-sm text-muted">PNG, JPG up to 2MB</p>
                             </div>
-                            <div id="uploadPreview" class="hidden w-full h-full flex items-center justify-center">
-                                <img id="previewImg" class="max-h-28 rounded-lg" src="" alt="Preview">
+                            <div id="uploadPreview" class="hidden">
+                                <img id="previewImg" class="upload-preview-img" src="" alt="Preview">
                             </div>
                             <input type="file" id="infoCardImageFile" class="hidden" accept="image/*" onchange="handleImageUpload(event)">
                         </label>
                     </div>
                     <input type="hidden" id="infoCardImage">
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Link URL</label>
-                    <input type="url" id="infoCardLink" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" placeholder="https://..." required>
+                <div class="form-group">
+                    <label class="form-label">Link URL</label>
+                    <input type="url" id="infoCardLink" class="form-input" placeholder="https://..." required>
                 </div>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
-                <button onclick="closeModal('infoCardModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button onclick="saveInfoCard()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Save</button>
+            <div class="modal-footer">
+                <button onclick="closeModal('infoCardModal')" class="btn-secondary">Cancel</button>
+                <button onclick="saveInfoCard()" class="btn-primary">Save</button>
             </div>
         </div>
     </div>
-
-   
 
     <!-- Rename Modal -->
-    <div id="renameModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
-                <h3 class="text-xl font-bold text-gray-800">Rename</h3>
-                <button onclick="closeModal('renameModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
+    <div id="renameModal" class="hidden modal-backdrop">
+        <div class="modal-box modal-box--sm">
+            <div class="modal-header">
+                <h3 class="modal-title">Rename</h3>
+                <button onclick="closeModal('renameModal')" class="modal-close"><i class="fas fa-times"></i></button>
             </div>
-            <form class="p-5">
-                <input type="text" id="renameInput" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-800 focus:border-transparent focus:bg-white outline-none transition" required>
+            <form class="modal-body">
+                <input type="text" id="renameInput" class="form-input" required>
             </form>
-            <div class="p-5 border-t border-gray-100 flex justify-end gap-3">
-                <button onclick="closeModal('renameModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
-                <button onclick="confirmRename()" class="px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition font-medium">Rename</button>
+            <div class="modal-footer">
+                <button onclick="closeModal('renameModal')" class="btn-secondary">Cancel</button>
+                <button onclick="confirmRename()" class="btn-primary">Rename</button>
             </div>
         </div>
     </div>
 
-    <!-- Move Modal (required by moveItem() in script.js) -->
-    <div id="moveModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-            <div class="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                <h3 class="text-xl font-bold text-gray-800">Move To...</h3>
-                <button onclick="closeModal('moveModal')" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">
-                    <i class="fas fa-times"></i>
-                </button>
+    <!-- Move Modal -->
+    <div id="moveModal" class="hidden modal-backdrop">
+        <div class="modal-box modal-box--sm">
+            <div class="modal-header">
+                <h3 class="modal-title">Move To...</h3>
+                <button onclick="closeModal('moveModal')" class="modal-close"><i class="fas fa-times"></i></button>
             </div>
-            <div id="moveFolderList" class="p-4 overflow-y-auto flex-1 space-y-1"></div>
-            <div class="p-5 border-t border-gray-100 flex justify-end flex-shrink-0">
-                <button onclick="closeModal('moveModal')" class="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
+            <div id="moveFolderList" class="modal-body move-list"></div>
+            <div class="modal-footer">
+                <button onclick="closeModal('moveModal')" class="btn-secondary">Cancel</button>
             </div>
         </div>
     </div>
 
     <script src="script.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a12192289df05ffd',t:'MTc4MjUzMzEwMA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
