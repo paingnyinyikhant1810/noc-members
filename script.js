@@ -450,6 +450,8 @@ function doLearningSearch(q){
 /* ══════════════════════════════════════════════════════════
    LEARNING — Render
 ══════════════════════════════════════════════════════════ */
+let lrnLongPressTimer=null, lrnLongPressKind=null, lrnLongPressId=null;
+
 function renderLearning(){
   renderBreadcrumb();
   const folders=appData.folders
@@ -466,17 +468,33 @@ function renderLearning(){
     .sort((a,b)=>a.topic.localeCompare(b.topic));
   const html=folders.map(f=>makeFolderCard(f)).join('')+items.map(i=>makeItemCard(i)).join('');
   el('learningContainer').innerHTML=html||'<div class="empty-state"><i class="fas fa-folder-open"></i><p>Empty folder</p></div>';
+
+  // Attach long-press for mobile on learning cards (admin only)
+  if(isAdmin()){
+    el('learningContainer').querySelectorAll('.file-card').forEach(card=>{
+      const kind=card.dataset.kind, id=parseInt(card.dataset.id);
+      if(!kind||!id)return;
+      card.addEventListener('touchstart',e=>{
+        lrnLongPressTimer=setTimeout(()=>{
+          lrnLongPressKind=kind;lrnLongPressId=id;
+          if(navigator.vibrate)navigator.vibrate(50);
+          const touch=e.touches[0];
+          const fakeE={clientX:touch.clientX,clientY:touch.clientY,preventDefault:()=>{},stopPropagation:()=>{}};
+          showCtx(fakeE,kind,id);
+        },500);
+      },{passive:true});
+      card.addEventListener('touchend',()=>clearTimeout(lrnLongPressTimer));
+      card.addEventListener('touchmove',()=>clearTimeout(lrnLongPressTimer));
+    });
+  }
 }
 
 function makeFolderCard(f){
   const perm=f.min_role_required||'intern';
   const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
-  return `<div class="file-card" onclick="openFolder(${f.id})" oncontextmenu="showCtx(event,'folder',${f.id})">
-    ${isAdmin()?`<div class="card-actions">
-      <button class="ca-btn" onclick="event.stopPropagation();openEditItem('folder',${f.id})" title="Edit"><i class="fas fa-edit"></i></button>
-      <button class="ca-btn" onclick="event.stopPropagation();openMoveItem('folder',${f.id})" title="Move"><i class="fas fa-arrows-alt"></i></button>
-      <button class="ca-btn" onclick="event.stopPropagation();ctxDeleteDirect('folders',${f.id})" title="Delete" style="color:#ef4444"><i class="fas fa-trash"></i></button>
-    </div>`:''}
+  // No hover icons — right-click (desktop) / long-press (mobile) only
+  return `<div class="file-card" data-kind="folder" data-id="${f.id}" onclick="openFolder(${f.id})"
+    ${isAdmin()?`oncontextmenu="showCtx(event,'folder',${f.id})"`:''}>
     <div class="fi fi-folder"><i class="fas fa-folder"></i></div>
     <span class="fc-name">${escHtml(f.name)}</span>
     ${permTag}
@@ -489,12 +507,9 @@ function makeItemCard(i){
   const fiCls=isPdf?'fi-pdf':'fi-txt';
   const faIcon=isPdf?'fa-file-pdf':'fa-file-alt';
   const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
-  return `<div class="file-card" onclick="openLearningItem(${i.id})" oncontextmenu="showCtx(event,'item',${i.id})">
-    ${isAdmin()?`<div class="card-actions">
-      <button class="ca-btn" onclick="event.stopPropagation();openEditItem('item',${i.id})" title="Edit"><i class="fas fa-edit"></i></button>
-      <button class="ca-btn" onclick="event.stopPropagation();openMoveItem('item',${i.id})" title="Move"><i class="fas fa-arrows-alt"></i></button>
-      <button class="ca-btn" onclick="event.stopPropagation();ctxDeleteDirect('learning_items',${i.id})" title="Delete" style="color:#ef4444"><i class="fas fa-trash"></i></button>
-    </div>`:''}
+  // No hover icons — right-click (desktop) / long-press (mobile) only
+  return `<div class="file-card" data-kind="item" data-id="${i.id}" onclick="openLearningItem(${i.id})"
+    ${isAdmin()?`oncontextmenu="showCtx(event,'item',${i.id})"`:''}>
     <div class="fi ${fiCls}"><i class="fas ${faIcon}"></i></div>
     <span class="fc-name">${escHtml(i.topic)}</span>
     ${permTag}
@@ -659,7 +674,8 @@ let longPressTimer,longPressCardId,isLongPress,imageSource='url';
 
 function renderInfoCards(){
   const container=el('infoCardsContainer');
-  const cards=appData.infoCards.filter(c=>c.categoryId===currentInfoCategory);
+  // Filter by permission
+  const cards=appData.infoCards.filter(c=>c.categoryId===currentInfoCategory && canSee(c.min_role_required||'intern'));
   container.innerHTML=cards.map(card=>`
     <div id="ic-${card.id}" style="position:relative">
       <div class="info-card" data-cid="${card.id}"
@@ -670,12 +686,10 @@ function renderInfoCards(){
           :`<div class="info-icon"><i class="fas ${card.icon||'fa-link'}"></i></div>`}
         <span style="font-size:.8rem;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(card.title)}</span>
       </div>
-      ${canManageInfo()?`<div style="position:absolute;top:.35rem;right:.35rem;opacity:0;transition:opacity .15s" class="ica-wrap">
-        <button onclick="editInfoCard(event,${card.id})" class="ca-btn"><i class="fas fa-edit"></i></button>
-      </div>`:''}
+      <!-- NO hover icons — context menu only (right-click / long-press) -->
     </div>`).join('')||'<div class="empty-state"><i class="fas fa-layer-group"></i><p>No items yet</p></div>';
 
-  container.querySelectorAll('[id^="ic-"]').forEach(el=>{const w=el.querySelector('.ica-wrap');if(w){el.addEventListener('mouseenter',()=>w.style.opacity='1');el.addEventListener('mouseleave',()=>w.style.opacity='0');}});
+  // Long-press for mobile (touch)
   if(canManageInfo()){cards.forEach(card=>{const e=document.querySelector(`[data-cid="${card.id}"]`);if(e){e.addEventListener('touchstart',ev=>startLongPress(ev,card.id),{passive:true});e.addEventListener('touchend',endLongPress);e.addEventListener('touchmove',cancelLongPress);}});}
 }
 
@@ -686,6 +700,35 @@ function cancelLongPress(){clearTimeout(longPressTimer);isLongPress=false;}
 function showInfoCardCtx(e,id){if(!canManageInfo())return;longPressCardId=id;const m=el('infoCardContextMenu');m.classList.remove('hidden');const x=e.touches?e.touches[0].clientX:e.clientX,y=e.touches?e.touches[0].clientY:e.clientY;m.style.left=Math.min(x,window.innerWidth-180)+'px';m.style.top=Math.min(y,window.innerHeight-120)+'px';}
 document.addEventListener('click',e=>{const m=el('infoCardContextMenu');if(m&&!m.classList.contains('hidden')&&!m.contains(e.target))m.classList.add('hidden');});
 function editInfoCardFromContext(){el('infoCardContextMenu').classList.add('hidden');openInfoCardModal(longPressCardId);}
+
+function moveInfoCardFromContext(){
+  el('infoCardContextMenu').classList.add('hidden');
+  const list=el('infoCategoryList');
+  // Show all categories except the current one
+  const cats=appData.categories.filter(c=>c.id!==currentInfoCategory);
+  if(!cats.length){showToast('No other categories to move to','info');return;}
+  list.innerHTML=cats.map(c=>`
+    <button onclick="confirmMoveInfoCard(${longPressCardId},${c.id})">
+      <i class="fas ${c.icon}" style="color:var(--accent)"></i> ${escHtml(c.name)}
+    </button>`).join('');
+  el('infoCardMoveModal').classList.remove('hidden');
+}
+
+async function confirmMoveInfoCard(cardId,targetCatId){
+  closeModal('infoCardMoveModal');
+  if(isProcessing){showToast('Please wait…','info');return;}
+  isProcessing=true;showLoading(true);updateProgress(20,'Moving…');
+  try{
+    const res=await fetch(`${API_URL}/infoCards/${cardId}`,{method:'PUT',headers:getHeaders(),body:JSON.stringify({categoryId:targetCatId})});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||'Move failed');
+    updateProgress(60,'Refreshing...');await refreshData(true);
+    updateProgress(100,'Moved!');await delay(300);hideLoading();
+    showToast('Item moved to new category','success');
+  }catch(e){hideLoading();showToast(e.message);}
+  isProcessing=false;
+}
+
 async function deleteInfoCardFromContext(){
   el('infoCardContextMenu').classList.add('hidden');
   if(!canManageInfo())return showToast('Insufficient permissions','error');
@@ -715,9 +758,10 @@ function openInfoCardModal(id=null){
     el('infoCardTitle').value=c.title;el('infoCardDisplayType').value=c.displayType;
     el('infoCardIcon').value=c.icon;el('infoCardLink').value=c.link;
     el('infoCardImage').value=c.image||'';el('infoCardImageUrl').value=c.image||'';
+    setRadio('infoCardPerm',c.min_role_required||'intern');
     if(c.image&&c.image.startsWith('data:')){setImageSource('upload');el('previewImg').src=c.image;el('uploadPlaceholder').classList.add('hidden');el('uploadPreview').classList.remove('hidden');}
     else setImageSource('url');
-  } else {el('infoCardForm').reset();setImageSource('url');}
+  } else {el('infoCardForm').reset();setRadio('infoCardPerm','intern');setImageSource('url');}
   toggleInfoCardFields();
 }
 function toggleInfoCardFields(){const t=el('infoCardDisplayType').value;el('iconField').classList.toggle('hidden',t!=='icon');el('imageField').classList.toggle('hidden',t!=='image');}
@@ -729,7 +773,8 @@ async function saveInfoCard(){
   const img=dt==='image'?(imageSource==='url'?el('infoCardImageUrl').value:el('infoCardImage').value):null;
   const payload={
     title:el('infoCardTitle').value,displayType:dt,icon:el('infoCardIcon').value,
-    image:img,link:el('infoCardLink').value,categoryId:currentInfoCategory,min_role_required:'intern'
+    image:img,link:el('infoCardLink').value,categoryId:currentInfoCategory,
+    min_role_required:getRadio('infoCardPerm')
   };
   if(isProcessing){showToast('Please wait…','info');return;}
   isProcessing=true;showLoading(true);updateProgress(20,'Saving...');
@@ -768,8 +813,17 @@ function renderUsers(){
 }
 function showAdminTab(tab){if(!isAdmin())return;document.querySelectorAll('.admin-tab').forEach(t=>t.classList.remove('active','bg-white','shadow-sm'));document.querySelectorAll('.admin-tc').forEach(c=>c.classList.add('hidden'));document.querySelector(`[data-tab="${tab}"]`).classList.add('active','bg-white','shadow-sm');el(`${tab}Tab`).classList.remove('hidden');if(tab==='users')renderUsers();if(tab==='categories')renderCategories();}
 function renderCategories(){el('categoriesList').innerHTML=appData.categories.map(cat=>`<div class="cat-card"><div style="display:flex;align-items:center;gap:.65rem"><div class="cat-icon"><i class="fas ${cat.icon}"></i></div><span style="font-weight:600">${escHtml(cat.name)}</span></div><div style="display:flex;gap:.35rem"><button onclick="openCategoryModal(${cat.id})" class="icon-btn" style="color:var(--accent)"><i class="fas fa-edit"></i></button><button onclick="deleteFromApi('categories',${cat.id})" class="icon-btn" style="color:#ef4444"><i class="fas fa-trash"></i></button></div></div>`).join('');}
-function openCategoryModal(id=null){el('categoryModal').classList.remove('hidden');el('categoryId').value=id||'';if(id){const c=appData.categories.find(x=>x.id===id);el('categoryName').value=c.name;el('categoryIcon').value=c.icon;}else el('categoryForm').reset();}
-async function saveCategory(){const id=el('categoryId').value;const data={id:id?parseInt(id):null,name:el('categoryName').value,icon:el('categoryIcon').value};if(await saveToApi('categories',data))closeModal('categoryModal');}
+function openCategoryModal(id=null){
+  el('categoryModal').classList.remove('hidden');
+  el('categoryId').value=id||'';
+  if(id){const c=appData.categories.find(x=>x.id===id);el('categoryName').value=c.name;el('categoryIcon').value=c.icon;setRadio('catPerm',c.min_role_required||'intern');}
+  else{el('categoryForm').reset();setRadio('catPerm','intern');}
+}
+async function saveCategory(){
+  const id=el('categoryId').value;
+  const data={id:id?parseInt(id):null,name:el('categoryName').value,icon:el('categoryIcon').value,min_role_required:getRadio('catPerm')};
+  if(await saveToApi('categories',data))closeModal('categoryModal');
+}
 function openUserModal(id=null){el('userModal').classList.remove('hidden');el('userModalTitle').textContent=id?'Edit User':'Add User';el('userId').value=id||'';const p=el('userPassword');p.type='password';const ti=el('toggleEditPassword');if(ti)ti.querySelector('i').className='fas fa-eye';if(id){const u=appData.users.find(x=>x.id===id);el('userAccountName').value=u.accountName||u.account_name||'';el('userUsername').value=u.username;el('userPassword').value=u.password;el('userRole').value=u.role;}else el('userForm').reset();}
 async function saveUser(){const id=el('userId').value;const data={id:id?parseInt(id):null,accountName:el('userAccountName').value,username:el('userUsername').value,password:el('userPassword').value,role:el('userRole').value};if(await saveToApi('users',data))closeModal('userModal');}
 function editUser(id){openUserModal(id);}
@@ -920,18 +974,49 @@ async function loadStickyNotes(){
 }
 
 async function addStickyNote(){
+  // Show inline spinner inside the board
+  const board=el('stickyBoard');
+  const ghost=document.createElement('div');
+  ghost.className='sticky-note sticky-adding';
+  ghost.innerHTML='<div class="sticky-spinner"><i class="fas fa-spinner fa-spin"></i><span>Adding…</span></div>';
+  ghost.style.background='#f1f5f9';
+  board.prepend(ghost);
+
   const color=STICKY_COLORS[Math.floor(Math.random()*STICKY_COLORS.length)];
   try{
     const data=await fetchAPI('sticky',{method:'POST',body:JSON.stringify({text:'',color,sort_order:stickyNotes.length})});
-    if(data?.note){stickyNotes.push(data.note);renderStickyNotes();}
-  }catch(e){showToast('Failed to add note: '+e.message);}
+    if(data?.note){
+      stickyNotes.push(data.note);
+      renderStickyNotes();
+      showToast('Note added','success');
+    } else throw new Error('No note returned');
+  }catch(e){
+    ghost.remove();
+    showToast('Failed to add note: '+e.message);
+  }
 }
 
 async function deleteSticky(id){
+  // Mark the note as deleting visually
+  const noteEl=document.querySelector(`.sticky-note[data-sid="${id}"]`);
+  if(noteEl){
+    noteEl.style.opacity='0.4';
+    noteEl.style.pointerEvents='none';
+    const spinner=document.createElement('div');
+    spinner.className='sticky-del-overlay';
+    spinner.innerHTML='<i class="fas fa-spinner fa-spin"></i>';
+    noteEl.appendChild(spinner);
+  }
   try{
-    await fetch(`${API_URL}/sticky/${id}`,{method:'DELETE',headers:getHeaders()});
-    stickyNotes=stickyNotes.filter(n=>n.id!==id);renderStickyNotes();
-  }catch(e){showToast('Failed to delete note');}
+    const res=await fetch(`${API_URL}/sticky/${id}`,{method:'DELETE',headers:getHeaders()});
+    if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error(d.error||'Delete failed');}
+    stickyNotes=stickyNotes.filter(n=>n.id!==id);
+    renderStickyNotes();
+    showToast('Note deleted','success');
+  }catch(e){
+    if(noteEl){noteEl.style.opacity='1';noteEl.style.pointerEvents='';noteEl.querySelector('.sticky-del-overlay')?.remove();}
+    showToast('Failed to delete: '+e.message);
+  }
 }
 
 // Debounced text save
@@ -959,7 +1044,7 @@ function renderStickyNotes(){
     return;
   }
   board.innerHTML=stickyNotes.map(n=>`
-    <div class="sticky-note" style="background:${n.color}">
+    <div class="sticky-note" data-sid="${n.id}" style="background:${n.color}">
       <textarea placeholder="Type your note…" oninput="updateStickyText(${n.id},this.value)">${escHtml(n.text||'')}</textarea>
       <div class="sticky-note-actions">
         <div class="sticky-color-pick">
