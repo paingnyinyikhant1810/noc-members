@@ -210,7 +210,12 @@ export const onRequest = async (context) => {
     ).bind(
       topic.trim(), badge, message.trim(),
       user.accountName || user.account_name || user.username,
-      new Date().toISOString().slice(0,10),
+      // Use MMT (UTC+6:30) for date — new Date() in UTC would show yesterday for Myanmar evening
+      (() => {
+        const now = new Date();
+        const mmt = new Date(now.getTime() + (6*60+30)*60*1000); // UTC+6:30
+        return mmt.toISOString().slice(0,10); // YYYY-MM-DD in MMT
+      })(),
       user.id
     ).run();
     return ok({ success:true, id: r.meta?.last_row_id }, 201);
