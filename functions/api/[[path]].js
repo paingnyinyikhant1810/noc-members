@@ -70,11 +70,22 @@ export const onRequest = async (context) => {
       liRows = isAdmin
         ? await env.DB.prepare("SELECT * FROM learning_items").all()
         : await env.DB.prepare(
+            // Filter by BOTH the item's own permission AND its parent folder's permission
             `SELECT li.* FROM learning_items li
               LEFT JOIN folders f ON f.id = li.folderId
-             WHERE (f.min_role_required IS NULL OR ${rbacWhere('f.min_role_required', uRank)})`
+             WHERE ${rbacWhere('li.min_role_required', uRank)}
+               AND (f.id IS NULL OR ${rbacWhere('f.min_role_required', uRank)})`
           ).all();
-    } catch { liRows = { results:[] }; }
+    } catch {
+      // Fallback if min_role_required column doesn't exist yet
+      liRows = isAdmin
+        ? await env.DB.prepare("SELECT * FROM learning_items").all()
+        : await env.DB.prepare(
+            `SELECT li.* FROM learning_items li
+              LEFT JOIN folders f ON f.id = li.folderId
+             WHERE (f.id IS NULL OR ${rbacWhere('f.min_role_required', uRank)})`
+          ).all();
+    }
 
     // Info cards — filter by min_role_required (column may not exist yet → fallback)
     let icRows;
