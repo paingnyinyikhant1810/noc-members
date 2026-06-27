@@ -88,16 +88,16 @@ export const onRequest = async (context) => {
       icRows = await env.DB.prepare("SELECT * FROM info_cards").all();
     }
 
-    // Categories — filter by min_role_required
+    // Categories — filter by min_role_required, ordered by sort_order
     let catRows;
     try {
       catRows = isAdmin
-        ? await env.DB.prepare("SELECT * FROM categories").all()
+        ? await env.DB.prepare("SELECT * FROM categories ORDER BY sort_order ASC, id ASC").all()
         : await env.DB.prepare(
-            `SELECT * FROM categories WHERE ${rbacWhere('min_role_required', uRank)}`
+            `SELECT * FROM categories WHERE ${rbacWhere('min_role_required', uRank)} ORDER BY sort_order ASC, id ASC`
           ).all();
     } catch {
-      catRows = await env.DB.prepare("SELECT * FROM categories").all();
+      catRows = await env.DB.prepare("SELECT * FROM categories ORDER BY id ASC").all();
     }
 
     // Updates — always return all (all roles can read)
@@ -264,6 +264,32 @@ export const onRequest = async (context) => {
     const icId = parseInt(path.split("/")[1]);
     await env.DB.prepare("DELETE FROM info_cards WHERE id=?").bind(icId).run();
     return ok({ success:true });
+  }
+
+  // POST /api/categories/sort — persist drag-sorted order (admin only)
+  // Body: { order: [id1, id2, id3, ...] }  — ordered array of category ids
+  if (path === "categories/sort" && method === "POST") {
+    if (!isAdmin) return err("Admin only", 403);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { order } = body;
+    if (!Array.isArray(order) || !order.length) return err("order must be a non-empty array of ids");
+    // Update each category's sort_order using its position in the array
+    for (let i = 0; i < order.length; i++) {
+      const catId = parseInt(order[i]);
+      if (isNaN(catId)) continue;
+      try {
+        await env.DB.prepare(
+          "UPDATE categories SET sort_order=? WHERE id=?"
+        ).bind(i, catId).run();
+      } catch {
+        // Column may not exist yet — try to add it first then retry
+        try {
+          await env.DB.prepare("ALTER TABLE categories ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0").run();
+          await env.DB.prepare("UPDATE categories SET sort_order=? WHERE id=?").bind(i, catId).run();
+        } catch { /* ignore */ }
+      }
+    }
+    return ok({ success: true });
   }
 
   // POST /api/categories
