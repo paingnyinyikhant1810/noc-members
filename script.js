@@ -984,7 +984,15 @@ async function deleteCategoryConfirm(id){
   renderCategoryPickerList();
 }
 
+// Cancel category form → close it and re-open the manager
+function cancelCategoryModal(){
+  closeModal('categoryModal');
+  openCategoryManagerModal();
+}
+
 function openCategoryModal(id=null){
+  // Hide the manager so the category form modal is clearly visible
+  el('categoryManagerModal').classList.add('hidden');
   el('categoryModal').classList.remove('hidden');
   el('categoryId').value=id||'';
   if(id){const c=appData.categories.find(x=>x.id===id);el('categoryName').value=c.name;el('categoryIcon').value=c.icon;setRadio('catPerm',c.min_role_required||'intern');}
@@ -995,8 +1003,8 @@ async function saveCategory(){
   const data={id:id?parseInt(id):null,name:el('categoryName').value,icon:el('categoryIcon').value,min_role_required:getRadio('catPerm')};
   if(await saveToApi('categories',data)){
     closeModal('categoryModal');
-    // Refresh manager list if open
-    if(!el('categoryManagerModal').classList.contains('hidden'))renderCategoryManagerList();
+    // Re-open the manager so user can continue sorting/editing
+    openCategoryManagerModal();
   }
 }
 function openUserModal(id=null){el('userModal').classList.remove('hidden');el('userModalTitle').textContent=id?'Edit User':'Add User';el('userId').value=id||'';const p=el('userPassword');p.type='password';const ti=el('toggleEditPassword');if(ti)ti.querySelector('i').className='fas fa-eye';if(id){const u=appData.users.find(x=>x.id===id);el('userAccountName').value=u.accountName||u.account_name||'';el('userUsername').value=u.username;el('userPassword').value=u.password;el('userRole').value=u.role;}else el('userForm').reset();}
