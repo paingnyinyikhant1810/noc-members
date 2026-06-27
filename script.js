@@ -177,7 +177,7 @@ function doShowApp(){
 
 function updateAdminUI(){
   // Admin-only elements
-  ['adminBtn','mobileAdminBtn','catSettingBtn'].forEach(id=>{
+  ['adminBtn','mobileAdminBtn'].forEach(id=>{
     const e=el(id);if(e)isAdmin()?e.classList.remove('hidden'):e.classList.add('hidden');
   });
   // All roles can add updates — button always visible after login
@@ -270,7 +270,7 @@ function navigateTo(page){
   document.querySelectorAll(`[data-page="${page}"]`).forEach(b=>b.classList.add('active'));
 }
 
-// Information dropdown (restored)
+// Information dropdown — categories list + "Categories Setting" at bottom for admin
 function toggleInfoDropdown(){
   const d=el('infoDropdown');
   if(!d) return;
@@ -281,11 +281,19 @@ function renderInfoDropdown(){
   const d=el('infoDropdown');
   if(!d) return;
   const cats=appData.categories.filter(c=>canSee(c.min_role_required||'intern'));
-  d.innerHTML=cats.map(cat=>`
+  let html=cats.map(cat=>`
     <button onclick="showInfoCategory(${cat.id},'${escAttr(cat.name)}')" class="dd-item">
       <i class="fas ${cat.icon}"></i> ${escHtml(cat.name)}
-    </button>`).join('')
-    || '<div style="padding:.6rem 1rem;font-size:.82rem;color:var(--text3)">No categories yet</div>';
+    </button>`).join('');
+  if(!cats.length) html='<div class="dd-empty">No categories yet</div>';
+  // "Categories Setting" separator + button — admin only
+  if(isAdmin()){
+    html+=`<div class="dd-sep"></div>
+      <button onclick="el('infoDropdown').classList.add('hidden');openCategoryManagerModal()" class="dd-item dd-item--setting">
+        <i class="fas fa-cog"></i> Categories Setting
+      </button>`;
+  }
+  d.innerHTML=html;
 }
 
 /* ── Information Category Picker Modal ──────────────────── */
@@ -937,7 +945,7 @@ function catDragOver(e){
 function catDragEnd(){document.querySelectorAll('.cat-mgr-item').forEach(el=>el.classList.remove('cat-dragging','cat-drag-over'));}
 async function catDrop(e,targetId){
   e.preventDefault();
-  if(catDragSrc===targetId)return;
+  if(catDragSrc===targetId){catDragEnd();return;}
   catDragEnd();
 
   // Reorder locally
@@ -948,13 +956,24 @@ async function catDrop(e,targetId){
   const [moved]=cats.splice(fromIdx,1);
   cats.splice(toIdx,0,moved);
   appData.categories=cats;
-  renderCategoryManagerList();
-  renderCategoryPickerList();
 
-  // Persist sort order — save each category with updated sort_order
-  for(let i=0;i<cats.length;i++){
-    // fire-and-forget; best effort
-    fetchAPI('',{method:'POST',body:JSON.stringify({action:'save',table:'categories',data:{...cats[i],sort_order:i}})}).catch(()=>{});
+  // Re-render immediately for instant visual feedback
+  renderCategoryManagerList();
+  renderInfoDropdown();
+
+  // Persist to D1 via dedicated sort endpoint
+  try{
+    const res=await fetch(`${API_URL}/categories/sort`,{
+      method:'POST',
+      headers:getHeaders(),
+      body:JSON.stringify({order:cats.map(c=>c.id)})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||'Sort failed');
+    // Silently refresh so appData stays in sync (no loading overlay)
+    refreshData(true);
+  }catch(e){
+    showToast('Failed to save sort order: '+e.message,'error');
   }
 }
 
