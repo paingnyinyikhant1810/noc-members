@@ -541,6 +541,13 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 .animate-fadeOut { animation:aFadeOut .2s ease forwards; }
 @keyframes aFadeOut { to{opacity:0;transform:scale(.97)} }
 
+/* ── Dropdown extras ───────────────────────────── */
+.dd-sep       { height:1px; background:var(--border); margin:.3rem 0; }
+.dd-empty     { padding:.55rem 1rem; font-size:.82rem; color:var(--text3); }
+.dd-item--setting { color:var(--accent); font-weight:600; }
+.dd-item--setting i { color:var(--accent); }
+.dd-item--setting:hover { background:var(--accent-light); }
+
 /* ── Information Category Picker ──────────────── */
 .cat-picker-list { display:flex; flex-direction:column; gap:.35rem; padding:.6rem !important; }
 .cat-pick-btn {
