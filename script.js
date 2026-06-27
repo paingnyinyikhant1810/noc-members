@@ -877,7 +877,10 @@ function renderInfoCards(){
   const container=el('infoCardsContainer');
   // Filter by permission
   const cards=appData.infoCards.filter(c=>c.categoryId===currentInfoCategory && canSee(c.min_role_required||'intern'));
-  container.innerHTML=cards.map(card=>`
+  container.innerHTML=cards.map(card=>{
+    const perm=card.min_role_required||'intern';
+    const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
+    return `
     <div id="ic-${card.id}" style="position:relative">
       <div class="info-card" data-cid="${card.id}"
            onclick="handleInfoCardClick(event,${card.id},'${escAttr(card.link)}')"
@@ -886,9 +889,11 @@ function renderInfoCards(){
           ?`<img src="${escAttr(card.image)}" alt="${escAttr(card.title)}" class="info-card-img" onerror="this.style.display='none'">`
           :`<div class="info-icon"><i class="fas ${card.icon||'fa-link'}"></i></div>`}
         <span style="font-size:.8rem;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(card.title)}</span>
+        ${permTag}
       </div>
       <!-- NO hover icons — context menu only (right-click / long-press) -->
-    </div>`).join('')||'<div class="empty-state"><i class="fas fa-layer-group"></i><p>No items yet</p></div>';
+    </div>`;
+  }).join('')||'<div class="empty-state"><i class="fas fa-layer-group"></i><p>No items yet</p></div>';
 
   // Long-press for mobile (touch)
   if(canManageInfo()){cards.forEach(card=>{const e=document.querySelector(`[data-cid="${card.id}"]`);if(e){e.addEventListener('touchstart',ev=>startLongPress(ev,card.id),{passive:true});e.addEventListener('touchend',endLongPress);e.addEventListener('touchmove',cancelLongPress);}});}
