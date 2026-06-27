@@ -1299,8 +1299,12 @@ function convertTime(){
 }
 function pad(n){return String(n).padStart(2,'0');}
 
-/* Subnet Calculator */
-el('subnetInput').addEventListener('input',calcSubnet);
+/* Subnet Calculator — debounced so large subnets don't lag on every keystroke */
+let subnetTimer=null;
+el('subnetInput').addEventListener('input',()=>{
+  clearTimeout(subnetTimer);
+  subnetTimer=setTimeout(calcSubnet, 180);
+});
 
 function calcSubnet(){
   const raw=el('subnetInput').value.trim(), out=el('subnetResults');
@@ -1345,31 +1349,31 @@ function calcSubnet(){
     const gateway      = cidr>=31 ? 'N/A' : i2s(first);
     const subnetDisplay= `${i2s(network)}/${cidr} (${maskStr})`;
 
-    // Build customer IP rows: all usable IPs after the gateway (2nd usable onward)
-    // /30 → 1 customer IP, /29 → 5 customer IPs, /28 → 13, etc.
     const hoRows = [];
 
     if(cidr >= 31){
-      // /31 or /32 — no real gateway/customer distinction
-      hoRows.push(['Customer IP', 'N/A']);
       hoRows.push(['Gateway    ', 'N/A']);
+      hoRows.push(['Customer IP', 'N/A']);
     } else {
-      // Gateway = first usable
       hoRows.push(['Gateway    ', gateway]);
 
-      // Customer IPs = all usable IPs from second usable onward
-      const customerCount = usable - 1; // exclude gateway
+      const customerCount = usable - 1; // all usable IPs after gateway
+      const MAX_SHOW = 10;              // cap DOM rows to avoid lag
+
       if(customerCount <= 0){
         hoRows.push(['Customer IP', 'N/A']);
       } else if(customerCount === 1){
-        // Only one customer slot (e.g. /30)
+        // /30 — single customer
         hoRows.push(['Customer IP', i2s(last)]);
       } else {
-        // Multiple customer slots — list each one
-        for(let n=1; n<=customerCount; n++){
-          const ip = (first + n) >>> 0;  // first+1, first+2, ...
-          const label = `Customer ${n}  `;
-          hoRows.push([label, i2s(ip)]);
+        // List customers — cap at MAX_SHOW to prevent browser freeze
+        const showCount = Math.min(customerCount, MAX_SHOW);
+        for(let n=1; n<=showCount; n++){
+          const ip=(first+n)>>>0;
+          hoRows.push([`Customer ${n} `.padEnd(11), i2s(ip)]);
+        }
+        if(customerCount > MAX_SHOW){
+          hoRows.push(['...        ', `+${customerCount - MAX_SHOW} more hosts`]);
         }
       }
     }
@@ -1383,7 +1387,7 @@ function calcSubnet(){
     const handoverBlock=el('handoverBlock');
     if(handoverEl){
       handoverEl.innerHTML=hoRows.map(([label,value])=>
-        `<div class="sn-ho-row"><span class="sn-ho-label">${label} :</span><span class="sn-ho-value">${escHtml(value)}</span></div>`
+        `<div class="sn-ho-row"><span class="sn-ho-label">${escHtml(label)} :</span><span class="sn-ho-value">${escHtml(value)}</span></div>`
       ).join('');
     }
     if(handoverBlock) handoverBlock.classList.remove('hidden');
