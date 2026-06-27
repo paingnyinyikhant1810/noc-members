@@ -94,15 +94,19 @@
             <button onclick="openUtilities();closeMobileMenu()" class="mob-nbtn mob-nbtn--util">
                 <i class="fas fa-tools"></i> NOC Utilities
             </button>
-            <!-- 4. Information — click opens category picker -->
-            <button onclick="openInfoCategoryPicker();closeMobileMenu()" class="mob-nbtn" data-page="information">
-                <i class="fas fa-info-circle"></i> Information
-            </button>
-            <!-- 5. Admin Panel — admin only -->
+            <!-- 4. Information — shows sub-list inline -->
+            <div class="mob-sect">
+                <p class="mob-slabel"><i class="fas fa-info-circle"></i> Information</p>
+                <div id="mobileInfoMenu"></div>
+            </div>
+            <!-- 5. Admin Panel + Categories Setting — admin only -->
             <div id="mobileAdminBtn" class="hidden">
                 <div class="mob-divider"></div>
                 <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn mob-nbtn--admin" data-page="admin">
                     <i class="fas fa-shield-alt"></i> Admin Panel
+                </button>
+                <button onclick="openCategoryManagerModal();closeMobileMenu()" class="mob-nbtn mob-nbtn--admin">
+                    <i class="fas fa-tags"></i> Categories Setting
                 </button>
             </div>
             <!-- 6. Settings -->
@@ -128,13 +132,17 @@
             <div class="tnav-right d-lg-flex">
                 <button onclick="navigateTo('home')" class="nav-btn" data-page="home"><i class="fas fa-home"></i> Home</button>
                 <button onclick="navigateTo('learning')" class="nav-btn" data-page="learning"><i class="fas fa-book"></i> Learning</button>
-                <!-- Information — click opens category picker popup -->
-                <button onclick="openInfoCategoryPicker()" class="nav-btn" data-page="information">
-                    <i class="fas fa-info-circle"></i> Information <i class="fas fa-chevron-down caret"></i>
-                </button>
+                <!-- Information dropdown -->
+                <div class="dd-wrap">
+                    <button onclick="toggleInfoDropdown()" class="nav-btn" data-page="information">
+                        <i class="fas fa-info-circle"></i> Information <i class="fas fa-chevron-down caret"></i>
+                    </button>
+                    <div id="infoDropdown" class="hidden dd-menu"></div>
+                </div>
                 <!-- NOC Utilities -->
                 <button onclick="openUtilities()" class="nav-btn nav-btn--util"><i class="fas fa-tools"></i> NOC Utilities</button>
                 <button id="adminBtn" onclick="navigateTo('admin')" class="nav-btn hidden" data-page="admin"><i class="fas fa-cog"></i> Admin</button>
+                <button id="catSettingBtn" onclick="openCategoryManagerModal()" class="nav-btn hidden"><i class="fas fa-tags"></i> Categories</button>
                 <!-- Settings -->
                 <button onclick="openSettings()" class="nav-btn"><i class="fas fa-sliders-h"></i> Settings</button>
             </div>
@@ -197,11 +205,8 @@
     <!-- ── Admin Page ── -->
     <div id="adminPage" class="page pg-wrap hidden">
         <h2 class="pg-title mb6"><div class="pg-icon ic-blue"><i class="fas fa-shield-alt"></i></div> Admin Panel</h2>
-        <div class="admin-tabs">
-            <button onclick="showAdminTab('users')" class="admin-tab" data-tab="users"><i class="fas fa-users"></i> Users</button>
-            <button onclick="showAdminTab('categories')" class="admin-tab" data-tab="categories"><i class="fas fa-tags"></i> Categories</button>
-        </div>
-        <div id="usersTab" class="admin-tc">
+        <!-- Only Users tab remains — no tab bar needed -->
+        <div id="usersTab">
             <div class="tab-tb"><button onclick="openUserModal()" class="btn-primary"><i class="fas fa-user-plus"></i> Add User</button></div>
             <div class="tbl-wrap">
                 <table class="dtbl">
@@ -212,10 +217,7 @@
                 </table>
             </div>
         </div>
-        <div id="categoriesTab" class="admin-tc hidden">
-            <div class="tab-tb"><button onclick="openCategoryModal()" class="btn-primary"><i class="fas fa-plus"></i> Add Category</button></div>
-            <div id="categoriesList" class="cats-grid"></div>
-        </div>
+
     </div>
 
 </div><!-- /mainApp -->
@@ -552,6 +554,17 @@
                     <input type="text" id="subnetInput" class="finput" placeholder="192.168.1.0/24" oninput="calcSubnet()">
                 </div>
             </div>
+            <!-- Handover info shown immediately below the input, before subnet rows -->
+            <div id="handoverBlock" class="hidden" style="margin-bottom:.75rem">
+                <div class="sn-handover-wrap">
+                    <div class="sn-handover-header">
+                        <span class="sn-handover-title"><i class="fas fa-clipboard"></i> NOC Handover Info</span>
+                        <button class="sn-copy-btn" onclick="copyHandoverText()"><i class="fas fa-copy"></i> Copy</button>
+                    </div>
+                    <div id="handoverText" class="sn-handover-pre"></div>
+                </div>
+            </div>
+            <!-- Subnet detail rows -->
             <div id="subnetResults" class="subnet-results"></div>
         </div>
 
@@ -688,5 +701,5 @@
 </div>
 
 <script src="script.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a123f034bab1f93c',t:'MTc4MjU1NzkyNA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
