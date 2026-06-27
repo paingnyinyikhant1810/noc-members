@@ -123,27 +123,28 @@ export const onRequest = async (context) => {
   //  STICKY NOTES (D1-backed, per-user)
   // ════════════════════════════════════════════════════════════════════════════
 
-  // GET /api/sticky — fetch my notes
+  // GET /api/sticky — fetch ALL notes (shared board, visible to everyone)
   if (path === "sticky" && method === "GET") {
     const rows = (await env.DB.prepare(
-      "SELECT * FROM sticky_notes WHERE user_id=? ORDER BY sort_order ASC, id ASC"
-    ).bind(user.id).all()).results ?? [];
+      "SELECT sn.*, u.accountName, u.account_name, u.username FROM sticky_notes sn LEFT JOIN users u ON u.id = sn.user_id ORDER BY sn.sort_order ASC, sn.id ASC"
+    ).all()).results ?? [];
     return ok({ notes: rows });
   }
 
-  // POST /api/sticky — create a note
+  // POST /api/sticky — create a note (any authenticated user)
   if (path === "sticky" && method === "POST") {
     let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
     const { text="", color="#fef9c3", sort_order=0 } = body;
     const r = await env.DB.prepare(
       "INSERT INTO sticky_notes (user_id, text, color, sort_order, updated_at) VALUES (?,?,?,?,datetime('now'))"
     ).bind(user.id, text, color, sort_order).run();
-    const note = await env.DB.prepare("SELECT * FROM sticky_notes WHERE id=?")
-      .bind(r.meta?.last_row_id).first();
+    const note = await env.DB.prepare(
+      "SELECT sn.*, u.accountName, u.account_name, u.username FROM sticky_notes sn LEFT JOIN users u ON u.id = sn.user_id WHERE sn.id=?"
+    ).bind(r.meta?.last_row_id).first();
     return ok({ success:true, note }, 201);
   }
 
-  // PUT /api/sticky/:id — update text or color
+  // PUT /api/sticky/:id — update text or color (own notes only)
   if (path.startsWith("sticky/") && method === "PUT") {
     const noteId = parseInt(path.split("/")[1]);
     if (isNaN(noteId)) return err("Invalid note id");
@@ -162,14 +163,14 @@ export const onRequest = async (context) => {
     return ok({ success:true });
   }
 
-  // DELETE /api/sticky/:id — delete a note (own only)
+  // DELETE /api/sticky/:id — any authenticated user can delete any note (shared board)
   if (path.startsWith("sticky/") && method === "DELETE") {
     const noteId = parseInt(path.split("/")[1]);
     if (isNaN(noteId)) return err("Invalid note id");
     const existing = await env.DB.prepare(
-      "SELECT id FROM sticky_notes WHERE id=? AND user_id=?"
-    ).bind(noteId, user.id).first();
-    if (!existing) return err("Note not found or not yours", 404);
+      "SELECT id FROM sticky_notes WHERE id=?"
+    ).bind(noteId).first();
+    if (!existing) return err("Note not found", 404);
     await env.DB.prepare("DELETE FROM sticky_notes WHERE id=?").bind(noteId).run();
     return ok({ success:true });
   }
