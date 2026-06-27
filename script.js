@@ -165,18 +165,11 @@ el('loginForm').addEventListener('submit',async function(e){
 function doShowApp(){
   el('loginPage').classList.add('hidden');
   el('mainApp').classList.remove('hidden');
-  el('welcomeUser').textContent=currentUser.accountName;
-  el('mobileWelcome').textContent=currentUser.accountName;
-  // Mobile user info strip
-  const mobileUserInfo=el('mobUserInfo');
-  if(mobileUserInfo){
-    mobileUserInfo.innerHTML=`<span class="fw7">${escHtml(currentUser.accountName)}</span>
-      <span class="role-badge rb-${currentUser.role||'intern'}">${currentUser.role}</span>`;
-  }
-  const rb=el('userRoleBadge');
-  if(rb){rb.textContent=currentUser.role;rb.className='role-badge rb-'+(currentUser.role||'intern');}
+  // Show name only — no role badge anywhere on the page
+  const wu=el('welcomeUser');if(wu)wu.textContent=currentUser.accountName;
   updateAdminUI();renderMobileInfoMenu();renderInfoDropdown();
   navigateTo('home');
+  startPolling(); // begin real-time background polling
 }
 
 function updateAdminUI(){
@@ -204,6 +197,7 @@ function showLoginPage(){
   el('username').value='';el('password').value='';
 }
 function logout(){
+  stopPolling(); // stop background polling on sign-out
   localStorage.removeItem('authHeader');authHeader=null;currentUser=null;
   document.querySelectorAll('.modal-bd').forEach(m=>m.classList.add('hidden'));
   showLoginPage();closeMobileMenu();
@@ -517,21 +511,55 @@ function clearLearningSearch(){
 
 function doLearningSearch(q){
   const ql=q.toLowerCase();
-  const matchFolders=appData.folders.filter(f=>canSee(f.min_role_required||'intern')&&f.name.toLowerCase().includes(ql));
+
+  // Folders: match name, user must be able to see them
+  const matchFolders=appData.folders.filter(f=>
+    canSee(f.min_role_required||'intern') &&
+    f.name.toLowerCase().includes(ql)
+  );
+
+  // Items: match topic or content; item AND its parent folder must be accessible
   const matchItems=appData.learningItems.filter(i=>{
+    if(!canSee(i.min_role_required||'intern')) return false;
     const pf=appData.folders.find(f=>f.id===i.folderId);
-    const folderOk=!pf||canSee(pf.min_role_required||'intern');
-    const itemOk=canSee(i.min_role_required||'intern');
-    return folderOk&&itemOk&&(i.topic.toLowerCase().includes(ql)||(i.content||'').toLowerCase().includes(ql));
+    if(pf && !canSee(pf.min_role_required||'intern')) return false;
+    return i.topic.toLowerCase().includes(ql)||(i.content||'').toLowerCase().includes(ql);
   });
+
   el('searchResults').classList.remove('hidden');
   el('learningContainer').classList.add('hidden');
   el('searchQuery').textContent=`"${q}"`;
+
   const grid=el('searchResultsGrid');
   if(!matchFolders.length&&!matchItems.length){
-    grid.innerHTML='<div class="empty-state"><i class="fas fa-search"></i><p>No results found</p></div>';return;
+    grid.innerHTML='<div class="empty-state"><i class="fas fa-search"></i><p>No results found</p></div>';
+    return;
   }
-  grid.innerHTML=matchFolders.map(f=>makeFolderCard(f)).join('')+matchItems.map(i=>makeItemCard(i)).join('');
+
+  // Render using the same card builders — clicks work identically to normal view
+  // Folders: clicking navigates into the folder (clears search, shows folder contents)
+  // Items: clicking opens PDF or text view
+  grid.innerHTML=
+    matchFolders.map(f=>makeFolderCard(f)).join('')+
+    matchItems.map(i=>makeItemCard(i)).join('');
+
+  // Attach long-press for admin on mobile (same as renderLearning does)
+  if(isAdmin()){
+    grid.querySelectorAll('.file-card').forEach(card=>{
+      const kind=card.dataset.kind, id=parseInt(card.dataset.id);
+      if(!kind||!id) return;
+      card.addEventListener('touchstart',e=>{
+        lrnLongPressTimer=setTimeout(()=>{
+          if(navigator.vibrate)navigator.vibrate(50);
+          const touch=e.touches[0];
+          showCtx({clientX:touch.clientX,clientY:touch.clientY,
+                   preventDefault:()=>{},stopPropagation:()=>{}},kind,id);
+        },500);
+      },{passive:true});
+      card.addEventListener('touchend', ()=>clearTimeout(lrnLongPressTimer));
+      card.addEventListener('touchmove',()=>clearTimeout(lrnLongPressTimer));
+    });
+  }
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1511,7 +1539,44 @@ function escHtml(s){if(s==null)return'';return String(s).replace(/&/g,'&amp;').r
 function escAttr(s){if(s==null)return'';return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 
 /* ══════════════════════════════════════════════════════════
-   BOOT
+   BOOT & REAL-TIME POLLING
 ══════════════════════════════════════════════════════════ */
+const POLL_INTERVAL = 20000; // 20 seconds — balances freshness vs D1 query cost
+let pollTimer = null;
+
+function startPolling(){
+  stopPolling();
+  pollTimer=setInterval(async()=>{
+    if(!authHeader||document.hidden)return; // skip if not authed or tab hidden
+    await refreshData(true);                 // silent — no loading overlay
+    // Also refresh sticky notes if utilities modal is open
+    if(el('utilitiesModal')&&!el('utilitiesModal').classList.contains('hidden')){
+      const board=el('stickyBoard');
+      if(board){
+        try{
+          const data=await fetchAPI('sticky',{silentFail:true});
+          if(data?.notes){
+            stickyNotes=data.notes;
+            renderStickyNotes();
+          }
+        }catch{ /* ignore */ }
+      }
+    }
+  }, POLL_INTERVAL);
+}
+
+function stopPolling(){
+  if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
+}
+
+// Refresh immediately on tab focus (user returns to tab)
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&authHeader){
+    refreshData(true);
+    startPolling(); // restart timer from now so we don't double-poll
+  } else {
+    stopPolling(); // pause polling when tab is hidden (saves resources)
+  }
+});
+
 initApp();
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&authHeader)refreshData(true);});
