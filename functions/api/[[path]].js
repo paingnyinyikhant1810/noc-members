@@ -1,477 +1,509 @@
-// functions/api/[[path]].js
-// NOC Portal — complete Worker
-// ✅ ALL original routes preserved exactly (login, getData, POST save/delete)
-// ✅ Added: RBAC filter on folders/learning_items inside getData
-// ✅ Added: /api/learning/* endpoints for the new permission-aware learning page
+// functions/api/[[path]].js — NOC Portal  v4
+// New in this version:
+//  ✅ Sticky notes stored in D1 (CRUD per user)
+//  ✅ Updates: all roles can create; delete scoped to creator (admin deletes any)
+//  ✅ Info cards / categories: min_role_required permission
+//  ✅ changePassword endpoint (all roles, self only)
 
 export const onRequest = async (context) => {
   const { request, env } = context;
-  const url  = new URL(request.url);
-  const path = url.pathname.replace('/api/', '').replace(/\/$/, '');
+  const url    = new URL(request.url);
+  const path   = url.pathname.replace('/api/', '').replace(/\/$/, '');
   const method = request.method.toUpperCase();
 
-  // ── CORS ────────────────────────────────────────────────────────────────────
-  const corsHeaders = {
+  // ── CORS ─────────────────────────────────────────────────────────────────────
+  const cors = {
     "Access-Control-Allow-Origin" : "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
   };
-  if (method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (method === "OPTIONS") return new Response(null, { headers: cors });
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-  const jsonRes = (data, status = 200) =>
-    new Response(JSON.stringify(data), {
-      status,
-      headers: { "Content-Type": "application/json", ...corsHeaders },
-    });
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  const ok  = (d, s=200) => new Response(JSON.stringify(d), { status:s, headers:{"Content-Type":"application/json",...cors} });
+  const err = (m, s=400) => ok({ error:m }, s);
 
-  const errRes = (msg, status = 400) => jsonRes({ error: msg }, status);
-
-  // Role ranks: admin=4  leader=3  member=2  intern=1
-  const ROLE_RANK = { admin: 4, leader: 3, member: 2, intern: 1 };
-
-  // Inline SQL expression: converts a role column to its numeric rank
-  const rankExpr = (col) =>
+  const ROLE_RANK = { admin:4, leader:3, member:2, intern:1 };
+  const rankExpr  = (col) =>
     `CASE ${col} WHEN 'admin' THEN 4 WHEN 'leader' THEN 3 WHEN 'member' THEN 2 ELSE 1 END`;
-
-  // WHERE clause fragment: only return rows the current user's rank can see
   const rbacWhere = (col, rank) => `${rankExpr(col)} <= ${rank}`;
 
-  // ── Auth helper ──────────────────────────────────────────────────────────────
-  // Reads Basic-auth header → looks up user in DB → returns full row or null
+  // ── Auth ─────────────────────────────────────────────────────────────────────
   const getAuth = async () => {
     const auth = request.headers.get("Authorization") ?? "";
     if (!auth.startsWith("Basic ")) return null;
     try {
-      const decoded = atob(auth.slice(6));
-      const sep      = decoded.indexOf(":");
-      const username = decoded.slice(0, sep);
-      const password = decoded.slice(sep + 1);
+      const dec  = atob(auth.slice(6));
+      const sep  = dec.indexOf(":");
       return await env.DB.prepare(
-        "SELECT * FROM users WHERE username = ? AND password = ?"
-      ).bind(username, password).first();
+        "SELECT * FROM users WHERE username=? AND password=?"
+      ).bind(dec.slice(0,sep), dec.slice(sep+1)).first();
     } catch { return null; }
   };
 
-  // ══════════════════════════════════════════════════════════════════════════════
-  //  PUBLIC — Login  (POST /api/login)
-  // ══════════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════════
+  //  PUBLIC — Login
+  // ════════════════════════════════════════════════════════════════════════════
   if (path === "login" && method === "POST") {
     const user = await getAuth();
-    if (!user) return errRes("Invalid credentials", 401);
-    return jsonRes({ success: true, user });
+    if (!user) return err("Invalid credentials", 401);
+    return ok({ success:true, user });
   }
 
-  // ── All other routes need auth ───────────────────────────────────────────────
+  // All other routes require auth
   const user = await getAuth();
-  if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+  if (!user) return err("Unauthorized", 401);
 
-  const userRank = ROLE_RANK[user.role] ?? 1;
-  const isAdmin  = user.role === "admin";
+  const uRank   = ROLE_RANK[user.role] ?? 1;
+  const isAdmin = user.role === "admin";
 
-  // ══════════════════════════════════════════════════════════════════════════════
-  //  ORIGINAL — getData  (GET /api/getData)
-  //  Returns everything the main app needs: updates, categories, infoCards,
-  //  learningItems, folders, users.
-  //  ✅ folders & learningItems now filtered by RBAC for non-admin users.
-  // ══════════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════════
+  //  getData
+  // ════════════════════════════════════════════════════════════════════════════
   if (path === "getData" && method === "GET") {
-
-    // Folders — admins see all; others only see folders at or below their rank
     const folderRows = isAdmin
       ? await env.DB.prepare("SELECT * FROM folders").all()
-      : await env.DB.prepare(
-          `SELECT * FROM folders WHERE ${rbacWhere('min_role_required', userRank)}`
-        ).all();
+      : await env.DB.prepare(`SELECT * FROM folders WHERE ${rbacWhere('min_role_required', uRank)}`).all();
 
-    // learning_items — admins see all; others filtered by the folder they sit in
-    // (items inherit visibility from their parent folder's min_role_required)
-    // We also check the item's own min_role_required if the column exists.
-    let learningItemRows;
+    let liRows;
     try {
-      learningItemRows = isAdmin
+      liRows = isAdmin
         ? await env.DB.prepare("SELECT * FROM learning_items").all()
         : await env.DB.prepare(
             `SELECT li.* FROM learning_items li
               LEFT JOIN folders f ON f.id = li.folderId
-             WHERE (f.min_role_required IS NULL OR ${rbacWhere('f.min_role_required', userRank)})`
+             WHERE (f.min_role_required IS NULL OR ${rbacWhere('f.min_role_required', uRank)})`
+          ).all();
+    } catch { liRows = { results:[] }; }
+
+    // Info cards — filter by min_role_required (column may not exist yet → fallback)
+    let icRows;
+    try {
+      icRows = isAdmin
+        ? await env.DB.prepare("SELECT * FROM info_cards").all()
+        : await env.DB.prepare(
+            `SELECT * FROM info_cards WHERE ${rbacWhere('min_role_required', uRank)}`
           ).all();
     } catch {
-      // Fallback if learning_items table doesn't exist yet
-      learningItemRows = { results: [] };
+      icRows = await env.DB.prepare("SELECT * FROM info_cards").all();
     }
 
-    const data = {
-      updates      : (await env.DB.prepare("SELECT * FROM updates ORDER BY id DESC").all()).results ?? [],
-      categories   : (await env.DB.prepare("SELECT * FROM categories").all()).results ?? [],
-      infoCards    : (await env.DB.prepare("SELECT * FROM info_cards").all()).results ?? [],
-      learningItems: learningItemRows.results ?? [],
+    // Categories — filter by min_role_required
+    let catRows;
+    try {
+      catRows = isAdmin
+        ? await env.DB.prepare("SELECT * FROM categories").all()
+        : await env.DB.prepare(
+            `SELECT * FROM categories WHERE ${rbacWhere('min_role_required', uRank)}`
+          ).all();
+    } catch {
+      catRows = await env.DB.prepare("SELECT * FROM categories").all();
+    }
+
+    // Updates — always return all (all roles can read)
+    // Attach created_by so frontend can show delete button to creator
+    let updRows;
+    try {
+      updRows = await env.DB.prepare("SELECT * FROM updates ORDER BY id DESC").all();
+    } catch { updRows = { results:[] }; }
+
+    return ok({
+      updates      : updRows.results  ?? [],
+      categories   : catRows.results  ?? [],
+      infoCards    : icRows.results   ?? [],
+      learningItems: liRows.results   ?? [],
       folders      : folderRows.results ?? [],
-      // Users list — admin only, as in the original code
       users        : isAdmin
         ? (await env.DB.prepare("SELECT * FROM users").all()).results ?? []
         : [],
-    };
-
-    return jsonRes(data);
+    });
   }
 
-  // ══════════════════════════════════════════════════════════════════════════════
-  //  NEW — Learning RBAC endpoints
-  //  These power a future enhanced learning page with per-item permissions.
-  //  The original learning page still works via getData above — these are additive.
-  // ══════════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════════
+  //  STICKY NOTES (D1-backed, per-user)
+  // ════════════════════════════════════════════════════════════════════════════
 
-  // GET /api/learning  (?folder_id=root|<id>  or  ?search=<term>)
+  // GET /api/sticky — fetch my notes
+  if (path === "sticky" && method === "GET") {
+    const rows = (await env.DB.prepare(
+      "SELECT * FROM sticky_notes WHERE user_id=? ORDER BY sort_order ASC, id ASC"
+    ).bind(user.id).all()).results ?? [];
+    return ok({ notes: rows });
+  }
+
+  // POST /api/sticky — create a note
+  if (path === "sticky" && method === "POST") {
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { text="", color="#fef9c3", sort_order=0 } = body;
+    const r = await env.DB.prepare(
+      "INSERT INTO sticky_notes (user_id, text, color, sort_order, updated_at) VALUES (?,?,?,?,datetime('now'))"
+    ).bind(user.id, text, color, sort_order).run();
+    const note = await env.DB.prepare("SELECT * FROM sticky_notes WHERE id=?")
+      .bind(r.meta?.last_row_id).first();
+    return ok({ success:true, note }, 201);
+  }
+
+  // PUT /api/sticky/:id — update text or color
+  if (path.startsWith("sticky/") && method === "PUT") {
+    const noteId = parseInt(path.split("/")[1]);
+    if (isNaN(noteId)) return err("Invalid note id");
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+
+    const existing = await env.DB.prepare(
+      "SELECT * FROM sticky_notes WHERE id=? AND user_id=?"
+    ).bind(noteId, user.id).first();
+    if (!existing) return err("Note not found or not yours", 404);
+
+    const text  = "text"  in body ? body.text  : existing.text;
+    const color = "color" in body ? body.color : existing.color;
+    await env.DB.prepare(
+      "UPDATE sticky_notes SET text=?, color=?, updated_at=datetime('now') WHERE id=? AND user_id=?"
+    ).bind(text, color, noteId, user.id).run();
+    return ok({ success:true });
+  }
+
+  // DELETE /api/sticky/:id — delete a note (own only)
+  if (path.startsWith("sticky/") && method === "DELETE") {
+    const noteId = parseInt(path.split("/")[1]);
+    if (isNaN(noteId)) return err("Invalid note id");
+    const existing = await env.DB.prepare(
+      "SELECT id FROM sticky_notes WHERE id=? AND user_id=?"
+    ).bind(noteId, user.id).first();
+    if (!existing) return err("Note not found or not yours", 404);
+    await env.DB.prepare("DELETE FROM sticky_notes WHERE id=?").bind(noteId).run();
+    return ok({ success:true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  UPDATES — all roles can create; delete scoped to creator (admin = any)
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // POST /api/updates — create (all authenticated roles)
+  if (path === "updates" && method === "POST") {
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { topic, badge="general", message } = body;
+    if (!topic?.trim() || !message?.trim()) return err("topic and message are required");
+    const r = await env.DB.prepare(
+      "INSERT INTO updates (topic, badge, message, author, date, created_by) VALUES (?,?,?,?,?,?)"
+    ).bind(
+      topic.trim(), badge, message.trim(),
+      user.accountName || user.account_name || user.username,
+      new Date().toISOString().slice(0,10),
+      user.id
+    ).run();
+    return ok({ success:true, id: r.meta?.last_row_id }, 201);
+  }
+
+  // PUT /api/updates/:id — edit (admin or own)
+  if (path.startsWith("updates/") && method === "PUT") {
+    const upId = parseInt(path.split("/")[1]);
+    if (isNaN(upId)) return err("Invalid id");
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const existing = await env.DB.prepare("SELECT * FROM updates WHERE id=?").bind(upId).first();
+    if (!existing) return err("Update not found", 404);
+    if (!isAdmin && existing.created_by !== user.id)
+      return err("You can only edit your own updates", 403);
+    const { topic=existing.topic, badge=existing.badge, message=existing.message } = body;
+    await env.DB.prepare(
+      "UPDATE updates SET topic=?, badge=?, message=? WHERE id=?"
+    ).bind(topic, badge, message, upId).run();
+    return ok({ success:true });
+  }
+
+  // DELETE /api/updates/:id — admin deletes any; others delete own only
+  if (path.startsWith("updates/") && method === "DELETE") {
+    const upId = parseInt(path.split("/")[1]);
+    if (isNaN(upId)) return err("Invalid id");
+    const existing = await env.DB.prepare("SELECT * FROM updates WHERE id=?").bind(upId).first();
+    if (!existing) return err("Update not found", 404);
+    if (!isAdmin && existing.created_by !== user.id)
+      return err("You can only delete your own updates", 403);
+    await env.DB.prepare("DELETE FROM updates WHERE id=?").bind(upId).run();
+    return ok({ success:true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  INFO CARDS & CATEGORIES — permission-gated create/edit/delete
+  //  leader & above can create; admin can do anything
+  // ════════════════════════════════════════════════════════════════════════════
+  const CAN_MANAGE_INFO = uRank >= ROLE_RANK.leader; // leader+ can manage
+
+  // POST /api/infoCards
+  if (path === "infoCards" && method === "POST") {
+    if (!CAN_MANAGE_INFO) return err("Insufficient permissions", 403);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { title, displayType="icon", icon="fa-link", image=null, link, categoryId, min_role_required="intern" } = body;
+    if (!title?.trim() || !link?.trim() || !categoryId) return err("title, link, categoryId required");
+    const r = await env.DB.prepare(
+      "INSERT INTO info_cards (title, displayType, icon, image, link, categoryId, min_role_required) VALUES (?,?,?,?,?,?,?)"
+    ).bind(title.trim(), displayType, icon, image, link.trim(), categoryId, min_role_required).run();
+    return ok({ success:true, id: r.meta?.last_row_id }, 201);
+  }
+
+  // PUT /api/infoCards/:id
+  if (path.startsWith("infoCards/") && method === "PUT") {
+    if (!CAN_MANAGE_INFO) return err("Insufficient permissions", 403);
+    const icId = parseInt(path.split("/")[1]);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const ex = await env.DB.prepare("SELECT * FROM info_cards WHERE id=?").bind(icId).first();
+    if (!ex) return err("Not found", 404);
+    await env.DB.prepare(
+      "UPDATE info_cards SET title=?,displayType=?,icon=?,image=?,link=?,categoryId=?,min_role_required=? WHERE id=?"
+    ).bind(
+      body.title??ex.title, body.displayType??ex.displayType, body.icon??ex.icon,
+      body.image??ex.image, body.link??ex.link, body.categoryId??ex.categoryId,
+      body.min_role_required??ex.min_role_required??'intern', icId
+    ).run();
+    return ok({ success:true });
+  }
+
+  // DELETE /api/infoCards/:id
+  if (path.startsWith("infoCards/") && method === "DELETE") {
+    if (!CAN_MANAGE_INFO) return err("Insufficient permissions", 403);
+    const icId = parseInt(path.split("/")[1]);
+    await env.DB.prepare("DELETE FROM info_cards WHERE id=?").bind(icId).run();
+    return ok({ success:true });
+  }
+
+  // POST /api/categories
+  if (path === "categories" && method === "POST") {
+    if (!isAdmin) return err("Only admins can create categories", 403);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { name, icon="fa-link", min_role_required="intern" } = body;
+    if (!name?.trim()) return err("name required");
+    const r = await env.DB.prepare(
+      "INSERT INTO categories (name, icon, min_role_required) VALUES (?,?,?)"
+    ).bind(name.trim(), icon, min_role_required).run();
+    return ok({ success:true, id: r.meta?.last_row_id }, 201);
+  }
+
+  // PUT /api/categories/:id
+  if (path.startsWith("categories/") && method === "PUT") {
+    if (!isAdmin) return err("Only admins can edit categories", 403);
+    const cId = parseInt(path.split("/")[1]);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const ex = await env.DB.prepare("SELECT * FROM categories WHERE id=?").bind(cId).first();
+    if (!ex) return err("Not found", 404);
+    await env.DB.prepare(
+      "UPDATE categories SET name=?,icon=?,min_role_required=? WHERE id=?"
+    ).bind(body.name??ex.name, body.icon??ex.icon, body.min_role_required??ex.min_role_required??'intern', cId).run();
+    return ok({ success:true });
+  }
+
+  // DELETE /api/categories/:id
+  if (path.startsWith("categories/") && method === "DELETE") {
+    if (!isAdmin) return err("Only admins can delete categories", 403);
+    const cId = parseInt(path.split("/")[1]);
+    await env.DB.prepare("DELETE FROM categories WHERE id=?").bind(cId).run();
+    return ok({ success:true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  LEARNING — RBAC-filtered endpoints (unchanged from v3)
+  // ════════════════════════════════════════════════════════════════════════════
   if (path === "learning" && method === "GET") {
-    const search      = (url.searchParams.get("search") ?? "").trim();
-    const folderParam = url.searchParams.get("folder_id") ?? "";
-    let folders = [], files = [], breadcrumb = [];
+    const search      = (url.searchParams.get("search")??"").trim();
+    const folderParam = url.searchParams.get("folder_id")??"";
+    let folders=[], files=[], breadcrumb=[];
 
     if (search) {
-      const term = `%${search}%`;
+      const term=`%${search}%`;
       folders = (await env.DB.prepare(
-        `SELECT id, name, parent_id, parentId, min_role_required, created_at
-           FROM folders
-          WHERE name LIKE ?
-            AND ${rbacWhere('min_role_required', userRank)}
-          ORDER BY name`
-      ).bind(term).all()).results ?? [];
-
+        `SELECT id,name,parent_id,parentId,min_role_required,created_at FROM folders
+          WHERE name LIKE ? AND ${rbacWhere('min_role_required',uRank)} ORDER BY name`
+      ).bind(term).all()).results??[];
       try {
         files = (await env.DB.prepare(
-          `SELECT id, name, type, content, url, folder_id, min_role_required, created_at
-             FROM files
-            WHERE (name LIKE ? OR content LIKE ?)
-              AND ${rbacWhere('min_role_required', userRank)}
-            ORDER BY name`
-        ).bind(term, term).all()).results ?? [];
-      } catch { files = []; }
-
+          `SELECT id,name,type,content,url,folder_id,min_role_required,created_at FROM files
+            WHERE (name LIKE ? OR content LIKE ?) AND ${rbacWhere('min_role_required',uRank)} ORDER BY name`
+        ).bind(term,term).all()).results??[];
+      } catch { files=[]; }
     } else {
-      const isRoot  = !folderParam || folderParam === "root";
-      const folderId = isRoot ? null : parseInt(folderParam, 10);
-      if (!isRoot && isNaN(folderId)) return errRes("Invalid folder_id");
+      const isRoot  = !folderParam || folderParam==="root";
+      const folderId = isRoot ? null : parseInt(folderParam,10);
+      if (!isRoot && isNaN(folderId)) return err("Invalid folder_id");
 
       if (!isRoot) {
-        const target = await env.DB.prepare(
-          "SELECT id, name, min_role_required FROM folders WHERE id = ?"
-        ).bind(folderId).first();
-        if (!target) return errRes("Folder not found", 404);
-        if ((ROLE_RANK[target.min_role_required] ?? 1) > userRank) return errRes("Access denied", 403);
-
-        // Build breadcrumb
-        let cur = folderId;
-        const visited = new Set();
-        while (cur) {
-          if (visited.has(cur)) break;
-          visited.add(cur);
-          const row = await env.DB.prepare(
-            "SELECT id, name, parent_id, parentId FROM folders WHERE id = ?"
-          ).bind(cur).first();
-          if (!row) break;
-          breadcrumb.unshift({ id: row.id, name: row.name });
-          cur = row.parent_id ?? row.parentId ?? null;
+        const target = await env.DB.prepare("SELECT id,name,min_role_required FROM folders WHERE id=?").bind(folderId).first();
+        if (!target) return err("Folder not found",404);
+        if ((ROLE_RANK[target.min_role_required]??1) > uRank) return err("Access denied",403);
+        let cur=folderId; const vis=new Set();
+        while(cur){if(vis.has(cur))break;vis.add(cur);
+          const row=await env.DB.prepare("SELECT id,name,parent_id,parentId FROM folders WHERE id=?").bind(cur).first();
+          if(!row)break; breadcrumb.unshift({id:row.id,name:row.name}); cur=row.parent_id??row.parentId??null;
         }
       }
-
-      const folderWhere = isRoot
-        ? "(parent_id IS NULL OR parent_id = 0) AND (parentId IS NULL OR parentId = 0)"
-        : `(parent_id = ${folderId} OR parentId = ${folderId})`;
-
-      folders = (await env.DB.prepare(
-        `SELECT id, name, parent_id, parentId, min_role_required, created_at
-           FROM folders
-          WHERE (${folderWhere})
-            AND ${rbacWhere('min_role_required', userRank)}
-          ORDER BY name`
-      ).all()).results ?? [];
-
+      const fw = isRoot
+        ? "(parent_id IS NULL OR parent_id=0) AND (parentId IS NULL OR parentId=0)"
+        : `(parent_id=${folderId} OR parentId=${folderId})`;
+      folders=(await env.DB.prepare(
+        `SELECT id,name,parent_id,parentId,min_role_required,created_at FROM folders WHERE (${fw}) AND ${rbacWhere('min_role_required',uRank)} ORDER BY name`
+      ).all()).results??[];
       try {
-        const fileWhere = isRoot ? "folder_id IS NULL" : `folder_id = ${folderId}`;
-        files = (await env.DB.prepare(
-          `SELECT id, name, type, content, url, folder_id, min_role_required, created_at
-             FROM files
-            WHERE ${fileWhere}
-              AND ${rbacWhere('min_role_required', userRank)}
-            ORDER BY name`
-        ).all()).results ?? [];
-      } catch { files = []; }
+        const fw2=isRoot?"folder_id IS NULL":`folder_id=${folderId}`;
+        files=(await env.DB.prepare(
+          `SELECT id,name,type,content,url,folder_id,min_role_required,created_at FROM files WHERE ${fw2} AND ${rbacWhere('min_role_required',uRank)} ORDER BY name`
+        ).all()).results??[];
+      } catch { files=[]; }
     }
-
-    return jsonRes({ folders, files, breadcrumb });
+    return ok({folders,files,breadcrumb});
   }
 
-  // POST /api/learning/create
-  if (path === "learning/create" && method === "POST") {
-    if (user.role === "intern") return errRes("Interns cannot create items", 403);
-    let body;
-    try { body = await request.json(); } catch { return errRes("Invalid JSON"); }
-    const { kind } = body;
-
-    if (kind === "folder") {
-      const { name, parent_id = null, min_role_required = "intern" } = body;
-      if (!name?.trim()) return errRes("Folder name is required");
-      if (!(min_role_required in ROLE_RANK)) return errRes("Invalid min_role_required");
-      if (ROLE_RANK[min_role_required] > userRank && !isAdmin)
-        return errRes("Cannot set a permission level higher than your own role", 403);
-      const r = await env.DB.prepare(
-        "INSERT INTO folders (name, parentId, parent_id, created_by, min_role_required) VALUES (?,?,?,?,?)"
-      ).bind(name.trim(), parent_id, parent_id, user.id, min_role_required).run();
-      return jsonRes({ success: true, id: r.meta?.last_row_id ?? null }, 201);
+  if (path==="learning/create" && method==="POST") {
+    if (user.role==="intern") return err("Interns cannot create items",403);
+    let body; try{body=await request.json();}catch{return err("Invalid JSON");}
+    const {kind}=body;
+    if (kind==="folder") {
+      const {name,parent_id=null,min_role_required="intern"}=body;
+      if(!name?.trim())return err("Folder name required");
+      const r=await env.DB.prepare(
+        "INSERT INTO folders (name,parentId,parent_id,created_by,min_role_required) VALUES (?,?,?,?,?)"
+      ).bind(name.trim(),parent_id,parent_id,user.id,min_role_required).run();
+      return ok({success:true,id:r.meta?.last_row_id},201);
     }
-
-    if (kind === "file") {
-      const { name, type = "link", content = null, url: fileUrl = null, folder_id = null, min_role_required = "intern" } = body;
-      if (!name?.trim()) return errRes("File name is required");
-      if (!["link","text","file"].includes(type)) return errRes("Invalid type");
-      if (!(min_role_required in ROLE_RANK)) return errRes("Invalid min_role_required");
-      if (ROLE_RANK[min_role_required] > userRank && !isAdmin)
-        return errRes("Cannot set a permission level higher than your own role", 403);
-      if (type === "link" && !fileUrl) return errRes("URL is required for type=link");
-      if (type === "text" && !content) return errRes("Content is required for type=text");
-      const r = await env.DB.prepare(
-        "INSERT INTO files (name, type, content, url, folder_id, created_by, min_role_required) VALUES (?,?,?,?,?,?,?)"
-      ).bind(name.trim(), type, content, fileUrl, folder_id, user.id, min_role_required).run();
-      return jsonRes({ success: true, id: r.meta?.last_row_id ?? null }, 201);
+    if (kind==="file") {
+      const {name,type="link",content=null,url:fu=null,folder_id=null,min_role_required="intern"}=body;
+      if(!name?.trim())return err("File name required");
+      const r=await env.DB.prepare(
+        "INSERT INTO files (name,type,content,url,folder_id,created_by,min_role_required) VALUES (?,?,?,?,?,?,?)"
+      ).bind(name.trim(),type,content,fu,folder_id,user.id,min_role_required).run();
+      return ok({success:true,id:r.meta?.last_row_id},201);
     }
-
-    return errRes('kind must be "folder" or "file"');
+    return err('kind must be "folder" or "file"');
   }
 
-  // PUT /api/learning/edit
-  if (path === "learning/edit" && method === "PUT") {
-    let body;
-    try { body = await request.json(); } catch { return errRes("Invalid JSON"); }
-    const { kind, id } = body;
-    if (!id) return errRes("id is required");
-
-    if (kind === "folder") {
-      const ex = await env.DB.prepare("SELECT * FROM folders WHERE id = ?").bind(id).first();
-      if (!ex) return errRes("Folder not found", 404);
-      if ((ROLE_RANK[ex.min_role_required] ?? 1) > userRank) return errRes("Access denied", 403);
-      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader")
-        return errRes("Insufficient permissions", 403);
-      const name = body.name?.trim() ?? ex.name;
-      const mrr  = body.min_role_required ?? ex.min_role_required;
-      if (!(mrr in ROLE_RANK)) return errRes("Invalid min_role_required");
-      await env.DB.prepare("UPDATE folders SET name=?, min_role_required=? WHERE id=?")
-        .bind(name, mrr, id).run();
-      return jsonRes({ success: true });
+  if (path==="learning/edit" && method==="PUT") {
+    let body; try{body=await request.json();}catch{return err("Invalid JSON");}
+    const {kind,id}=body; if(!id)return err("id required");
+    if (kind==="folder") {
+      const ex=await env.DB.prepare("SELECT * FROM folders WHERE id=?").bind(id).first();
+      if(!ex)return err("Not found",404);
+      if(ex.created_by!==user.id&&!isAdmin&&user.role!=="leader")return err("Insufficient permissions",403);
+      await env.DB.prepare("UPDATE folders SET name=?,min_role_required=? WHERE id=?")
+        .bind(body.name??ex.name,body.min_role_required??ex.min_role_required,id).run();
+      return ok({success:true});
     }
-
-    if (kind === "file") {
-      const ex = await env.DB.prepare("SELECT * FROM files WHERE id = ?").bind(id).first();
-      if (!ex) return errRes("File not found", 404);
-      if ((ROLE_RANK[ex.min_role_required] ?? 1) > userRank) return errRes("Access denied", 403);
-      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader")
-        return errRes("Insufficient permissions", 403);
-      const name    = body.name?.trim() ?? ex.name;
-      const type    = body.type ?? ex.type;
-      const content = "content" in body ? body.content : ex.content;
-      const fileUrl = "url" in body ? body.url : ex.url;
-      const mrr     = body.min_role_required ?? ex.min_role_required;
-      if (!(mrr in ROLE_RANK)) return errRes("Invalid min_role_required");
+    if (kind==="file") {
+      const ex=await env.DB.prepare("SELECT * FROM files WHERE id=?").bind(id).first();
+      if(!ex)return err("Not found",404);
+      if(ex.created_by!==user.id&&!isAdmin&&user.role!=="leader")return err("Insufficient permissions",403);
       await env.DB.prepare("UPDATE files SET name=?,type=?,content=?,url=?,min_role_required=? WHERE id=?")
-        .bind(name, type, content, fileUrl, mrr, id).run();
-      return jsonRes({ success: true });
+        .bind(body.name??ex.name,body.type??ex.type,"content"in body?body.content:ex.content,"url"in body?body.url:ex.url,body.min_role_required??ex.min_role_required,id).run();
+      return ok({success:true});
     }
-
-    return errRes('kind must be "folder" or "file"');
+    return err('kind must be "folder" or "file"');
   }
 
-  // PUT /api/learning/move
-  if (path === "learning/move" && method === "PUT") {
-    let body;
-    try { body = await request.json(); } catch { return errRes("Invalid JSON"); }
-    const { kind, id, target_id = null } = body;
-    if (!id) return errRes("id is required");
-
-    if (kind === "folder") {
-      const ex = await env.DB.prepare("SELECT * FROM folders WHERE id = ?").bind(id).first();
-      if (!ex) return errRes("Folder not found", 404);
-      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader")
-        return errRes("Insufficient permissions", 403);
-      if (target_id === id) return errRes("A folder cannot be its own parent");
-      if (target_id !== null) {
-        let cur = target_id; const vis = new Set();
-        while (cur) {
-          if (vis.has(cur)) break; vis.add(cur);
-          if (cur === id) return errRes("Cannot move into own subfolder");
-          const row = await env.DB.prepare("SELECT parent_id, parentId FROM folders WHERE id=?").bind(cur).first();
-          if (!row) break;
-          cur = row.parent_id ?? row.parentId ?? null;
-        }
-      }
-      await env.DB.prepare("UPDATE folders SET parent_id=?, parentId=? WHERE id=?")
-        .bind(target_id, target_id, id).run();
-      return jsonRes({ success: true });
+  if (path==="learning/move" && method==="PUT") {
+    let body; try{body=await request.json();}catch{return err("Invalid JSON");}
+    const {kind,id,target_id=null}=body; if(!id)return err("id required");
+    if (kind==="folder") {
+      const ex=await env.DB.prepare("SELECT * FROM folders WHERE id=?").bind(id).first();
+      if(!ex)return err("Not found",404);
+      if(ex.created_by!==user.id&&!isAdmin&&user.role!=="leader")return err("Insufficient permissions",403);
+      if(target_id===id)return err("Cannot be own parent");
+      await env.DB.prepare("UPDATE folders SET parent_id=?,parentId=? WHERE id=?").bind(target_id,target_id,id).run();
+      return ok({success:true});
     }
-
-    if (kind === "file") {
-      const ex = await env.DB.prepare("SELECT * FROM files WHERE id = ?").bind(id).first();
-      if (!ex) return errRes("File not found", 404);
-      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader")
-        return errRes("Insufficient permissions", 403);
-      await env.DB.prepare("UPDATE files SET folder_id=? WHERE id=?").bind(target_id, id).run();
-      return jsonRes({ success: true });
+    if (kind==="file") {
+      const ex=await env.DB.prepare("SELECT * FROM files WHERE id=?").bind(id).first();
+      if(!ex)return err("Not found",404);
+      if(ex.created_by!==user.id&&!isAdmin&&user.role!=="leader")return err("Insufficient permissions",403);
+      await env.DB.prepare("UPDATE files SET folder_id=? WHERE id=?").bind(target_id,id).run();
+      return ok({success:true});
     }
-
-    return errRes('kind must be "folder" or "file"');
+    return err('kind must be "folder" or "file"');
   }
 
-  // DELETE /api/learning/delete
-  if (path === "learning/delete" && method === "DELETE") {
-    let body;
-    try { body = await request.json(); } catch { return errRes("Invalid JSON"); }
-    const { kind, id } = body;
-    if (!id) return errRes("id is required");
-    const table = kind === "folder" ? "folders" : kind === "file" ? "files" : null;
-    if (!table) return errRes('kind must be "folder" or "file"');
-    const ex = await env.DB.prepare(`SELECT * FROM ${table} WHERE id=?`).bind(id).first();
-    if (!ex) return errRes("Item not found", 404);
-    if ((ROLE_RANK[ex.min_role_required] ?? 1) > userRank) return errRes("Access denied", 403);
-    if (ex.created_by !== user.id && !isAdmin && user.role !== "leader")
-      return errRes("Insufficient permissions", 403);
-    await env.DB.prepare(`DELETE FROM ${table} WHERE id=?`).bind(id).run();
-    return jsonRes({ success: true });
+  if (path==="learning/delete" && method==="DELETE") {
+    let body; try{body=await request.json();}catch{return err("Invalid JSON");}
+    const {kind,id}=body; if(!id)return err("id required");
+    const tbl=kind==="folder"?"folders":kind==="file"?"files":null;
+    if(!tbl)return err('kind must be "folder" or "file"');
+    const ex=await env.DB.prepare(`SELECT * FROM ${tbl} WHERE id=?`).bind(id).first();
+    if(!ex)return err("Not found",404);
+    if(ex.created_by!==user.id&&!isAdmin&&user.role!=="leader")return err("Insufficient permissions",403);
+    await env.DB.prepare(`DELETE FROM ${tbl} WHERE id=?`).bind(id).run();
+    return ok({success:true});
   }
 
-  // ══════════════════════════════════════════════════════════════════════════════
-  //  CHANGE PASSWORD — available to ALL authenticated users (self only)
-  //  POST /api/changePassword  { oldPassword, newPassword }
-  // ══════════════════════════════════════════════════════════════════════════════
-  if (path === "changePassword" && method === "POST") {
-    let body;
-    try { body = await request.json(); } catch { return errRes("Invalid JSON"); }
-
-    const { oldPassword, newPassword } = body;
-
-    if (!oldPassword || !newPassword) return errRes("Both oldPassword and newPassword are required");
-    if (newPassword.length < 5) return errRes("New password must be at least 5 characters");
-
-    // Verify old password against DB (re-fetch to be safe)
-    const dbUser = await env.DB.prepare(
-      "SELECT id, password FROM users WHERE id = ?"
-    ).bind(user.id).first();
-
-    if (!dbUser) return errRes("User not found", 404);
-    if (dbUser.password !== oldPassword) return errRes("Current password is incorrect", 403);
-    if (oldPassword === newPassword) return errRes("New password must be different from current password");
-
-    // Update only this user's own password — scoped by their own id
-    await env.DB.prepare(
-      "UPDATE users SET password = ? WHERE id = ?"
-    ).bind(newPassword, user.id).run();
-
-    return jsonRes({ success: true, message: "Password changed successfully" });
+  // ════════════════════════════════════════════════════════════════════════════
+  //  CHANGE PASSWORD — all roles, self only
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path==="changePassword" && method==="POST") {
+    let body; try{body=await request.json();}catch{return err("Invalid JSON");}
+    const {oldPassword,newPassword}=body;
+    if (!oldPassword||!newPassword) return err("Both fields required");
+    if (newPassword.length<5) return err("New password must be at least 5 characters");
+    const dbUser=await env.DB.prepare("SELECT id,password FROM users WHERE id=?").bind(user.id).first();
+    if (!dbUser) return err("User not found",404);
+    if (dbUser.password!==oldPassword) return err("Current password is incorrect",403);
+    if (oldPassword===newPassword) return err("New password must differ from current");
+    await env.DB.prepare("UPDATE users SET password=? WHERE id=?").bind(newPassword,user.id).run();
+    return ok({success:true,message:"Password changed successfully"});
   }
 
-  // ══════════════════════════════════════════════════════════════════════════════
-  //  ORIGINAL — Admin CRUD  (POST with action=save|delete)
-  //  Exactly as the original code — admin only
-  // ══════════════════════════════════════════════════════════════════════════════
-  if (method === "POST" && isAdmin) {
-    let body;
-    try { body = await request.json(); } catch { return errRes("Invalid JSON"); }
-    const { action, table, data, id } = body;
-
+  // ════════════════════════════════════════════════════════════════════════════
+  //  LEGACY Admin CRUD (POST action=save|delete) — admin only, backward compat
+  // ════════════════════════════════════════════════════════════════════════════
+  if (method==="POST" && isAdmin) {
+    let body; try{body=await request.json();}catch{return err("Invalid JSON");}
+    const {action,table,data,id}=body;
     try {
-      // ── DELETE ────────────────────────────────────────────────────────────────
-      if (action === "delete") {
-        if (!id || !table) throw new Error("Missing ID or table");
-        const allowed = ["updates","categories","info_cards","learning_items","folders","files","users"];
-        if (!allowed.includes(table)) throw new Error("Invalid table");
-        await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
-        return jsonRes({ success: true });
+      if (action==="delete") {
+        if(!id||!table)throw new Error("Missing id or table");
+        const allowed=["updates","categories","info_cards","learning_items","folders","files","users","sticky_notes"];
+        if(!allowed.includes(table))throw new Error("Invalid table");
+        await env.DB.prepare(`DELETE FROM ${table} WHERE id=?`).bind(id).run();
+        return ok({success:true});
       }
-
-      // ── SAVE ──────────────────────────────────────────────────────────────────
-      if (action === "save") {
-
-        // USERS
-        if (table === "users") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE users SET accountName=?, account_name=?, username=?, password=?, role=? WHERE id=?"
-            ).bind(data.accountName, data.accountName, data.username, data.password, data.role, data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO users (accountName, account_name, username, password, role) VALUES (?,?,?,?,?)"
-            ).bind(data.accountName, data.accountName, data.username, data.password, data.role).run();
-          }
+      if (action==="save") {
+        if (table==="users") {
+          data.id
+            ? await env.DB.prepare("UPDATE users SET accountName=?,account_name=?,username=?,password=?,role=? WHERE id=?")
+                .bind(data.accountName,data.accountName,data.username,data.password,data.role,data.id).run()
+            : await env.DB.prepare("INSERT INTO users (accountName,account_name,username,password,role) VALUES (?,?,?,?,?)")
+                .bind(data.accountName,data.accountName,data.username,data.password,data.role).run();
         }
-
-        // UPDATES
-        else if (table === "updates") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE updates SET topic=?, badge=?, message=?, author=?, date=? WHERE id=?"
-            ).bind(data.topic, data.badge, data.message, data.author, data.date, data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO updates (topic, badge, message, author, date) VALUES (?,?,?,?,?)"
-            ).bind(data.topic, data.badge, data.message, data.author, data.date).run();
-          }
+        else if (table==="updates") {
+          data.id
+            ? await env.DB.prepare("UPDATE updates SET topic=?,badge=?,message=?,author=?,date=? WHERE id=?")
+                .bind(data.topic,data.badge,data.message,data.author,data.date,data.id).run()
+            : await env.DB.prepare("INSERT INTO updates (topic,badge,message,author,date,created_by) VALUES (?,?,?,?,?,?)")
+                .bind(data.topic,data.badge,data.message,data.author,data.date,user.id).run();
         }
-
-        // CATEGORIES
-        else if (table === "categories") {
-          if (data.id) {
-            await env.DB.prepare("UPDATE categories SET name=?, icon=? WHERE id=?")
-              .bind(data.name, data.icon, data.id).run();
-          } else {
-            await env.DB.prepare("INSERT INTO categories (name, icon) VALUES (?,?)")
-              .bind(data.name, data.icon).run();
-          }
+        else if (table==="categories") {
+          data.id
+            ? await env.DB.prepare("UPDATE categories SET name=?,icon=?,min_role_required=? WHERE id=?")
+                .bind(data.name,data.icon,data.min_role_required??"intern",data.id).run()
+            : await env.DB.prepare("INSERT INTO categories (name,icon,min_role_required) VALUES (?,?,?)")
+                .bind(data.name,data.icon,data.min_role_required??"intern").run();
         }
-
-        // INFO CARDS
-        else if (table === "info_cards") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=? WHERE id=?"
-            ).bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO info_cards (title, displayType, icon, image, link, categoryId) VALUES (?,?,?,?,?,?)"
-            ).bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId).run();
-          }
+        else if (table==="info_cards") {
+          data.id
+            ? await env.DB.prepare("UPDATE info_cards SET title=?,displayType=?,icon=?,image=?,link=?,categoryId=?,min_role_required=? WHERE id=?")
+                .bind(data.title,data.displayType,data.icon,data.image,data.link,data.categoryId,data.min_role_required??"intern",data.id).run()
+            : await env.DB.prepare("INSERT INTO info_cards (title,displayType,icon,image,link,categoryId,min_role_required) VALUES (?,?,?,?,?,?,?)")
+                .bind(data.title,data.displayType,data.icon,data.image,data.link,data.categoryId,data.min_role_required??"intern").run();
         }
-
-        // FOLDERS — keep both parentId (old) and parent_id (new) in sync
-        else if (table === "folders") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE folders SET name=?, parentId=?, parent_id=?, min_role_required=? WHERE id=?"
-            ).bind(data.name, data.parentId ?? null, data.parentId ?? null, data.min_role_required ?? "intern", data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO folders (name, parentId, parent_id, min_role_required) VALUES (?,?,?,?)"
-            ).bind(data.name, data.parentId ?? null, data.parentId ?? null, data.min_role_required ?? "intern").run();
-          }
+        else if (table==="folders") {
+          data.id
+            ? await env.DB.prepare("UPDATE folders SET name=?,parentId=?,parent_id=?,min_role_required=? WHERE id=?")
+                .bind(data.name,data.parentId??null,data.parentId??null,data.min_role_required??"intern",data.id).run()
+            : await env.DB.prepare("INSERT INTO folders (name,parentId,parent_id,min_role_required) VALUES (?,?,?,?)")
+                .bind(data.name,data.parentId??null,data.parentId??null,data.min_role_required??"intern").run();
         }
-
-        // LEARNING ITEMS (original table — untouched)
-        else if (table === "learning_items") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE learning_items SET topic=?, type=?, link=?, content=?, folderId=? WHERE id=?"
-            ).bind(data.topic, data.type, data.link, data.content, data.folderId, data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO learning_items (topic, type, link, content, folderId) VALUES (?,?,?,?,?)"
-            ).bind(data.topic, data.type, data.link, data.content, data.folderId).run();
-          }
+        else if (table==="learning_items") {
+          data.id
+            ? await env.DB.prepare("UPDATE learning_items SET topic=?,type=?,link=?,content=?,folderId=? WHERE id=?")
+                .bind(data.topic,data.type,data.link,data.content,data.folderId,data.id).run()
+            : await env.DB.prepare("INSERT INTO learning_items (topic,type,link,content,folderId) VALUES (?,?,?,?,?)")
+                .bind(data.topic,data.type,data.link,data.content,data.folderId).run();
         }
-
-        return jsonRes({ success: true });
+        return ok({success:true});
       }
-
-    } catch (err) {
-      return errRes(err.message, 500);
-    }
+    } catch(e) { return err(e.message,500); }
   }
 
-  return errRes("Not Found", 404);
+  return err("Not Found",404);
 };
