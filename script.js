@@ -142,6 +142,10 @@ el('loginForm').addEventListener('submit',async function(e){
       updateProgress(70,'Preparing...');await delay(200);
       if(d){
         appData=d;
+        // Prefer currentUser from getData (works for all roles, not just admin)
+        if(d.currentUser){
+          currentUser={...currentUser,...d.currentUser};
+        }
         currentUser.accountName=currentUser.accountName||currentUser.account_name||
           d.users.find(x=>x.username===u)?.accountName||
           d.users.find(x=>x.username===u)?.account_name||u;
@@ -216,9 +220,18 @@ async function initApp(){
   updateProgress(80,'Preparing...');await delay(150);
   appData=data;
   if(!currentUser){
-    const creds=atob(authHeader.split(' ')[1]).split(':'),uname=creds[0];
-    const found=appData.users.find(u=>u.username===uname);
-    currentUser=found?{...found,accountName:found.accountName||found.account_name||uname}:{accountName:uname,role:'intern'};
+    // Prefer currentUser returned by getData (available for ALL roles)
+    if(data.currentUser){
+      currentUser=data.currentUser;
+      currentUser.accountName=currentUser.accountName||currentUser.account_name||currentUser.username;
+    } else {
+      // Fallback: search users list (only populated for admin)
+      const creds=atob(authHeader.split(' ')[1]).split(':'),uname=creds[0];
+      const found=appData.users.find(u=>u.username===uname);
+      currentUser=found
+        ?{...found,accountName:found.accountName||found.account_name||uname}
+        :{accountName:uname,role:'intern'};
+    }
   }
   updateProgress(95,'Almost ready...');await delay(150);
   el('loginPage').classList.add('hidden');el('mainApp').classList.remove('hidden');
