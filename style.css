@@ -85,14 +85,20 @@ body {
 .tr       { text-align:right; }
 .mb6      { margin-bottom:1.5rem; }
 .flex1    { flex:1; }
-.d-lg-flex{ display:none; }
-.d-none-sm{ display:none; }
-.d-lg-none{ display:flex; }
+/* Responsive visibility — single controlled breakpoint */
+.d-lg-flex  { display:none !important; }   /* hidden on mobile, visible on desktop */
+.d-lg-none  { display:flex !important; }   /* visible on mobile, hidden on desktop */
+.d-none-sm  { display:none; }              /* hidden on mobile */
+
 @media(min-width:1024px){
-  .d-lg-flex { display:flex; }
-  .d-lg-none { display:none !important; }
-  .d-none-sm { display:block; }
+  .d-lg-flex  { display:flex !important; }
+  .d-lg-none  { display:none !important; }
+  .d-none-sm  { display:block; }
 }
+
+/* Hamburger only on mobile */
+.hamburger { display:none; }
+@media(max-width:1023px){ .hamburger { display:flex; } }
 
 /* ── Buttons ───────────────────────────────────── */
 .btn-primary,.btn-secondary,.btn-login,.btn-sm {
@@ -273,10 +279,14 @@ select.finput { cursor:pointer; }
 [data-theme="dark"] .perm-admin  { background:#2e1065; color:#d8b4fe; }
 
 /* Inline card action buttons */
-.card-actions { position:absolute; top:.35rem; right:.35rem; display:flex; gap:.2rem; opacity:0; transition:opacity var(--transition); }
-.file-card:hover .card-actions { opacity:1; }
-.ca-btn { width:24px; height:24px; border-radius:4px; border:none; background:var(--surface); box-shadow:var(--shadow-sm); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:.65rem; color:var(--text2); transition:all var(--transition); }
-.ca-btn:hover { background:var(--accent); color:#fff; }
+/* card-actions removed — use right-click context menu instead */
+
+/* Sticky note loading states */
+.sticky-adding { display:flex; align-items:center; justify-content:center; min-height:80px; opacity:.6; border:2px dashed var(--border) !important; }
+.sticky-spinner { display:flex; flex-direction:column; align-items:center; gap:.4rem; font-size:.82rem; color:var(--text2); }
+.sticky-spinner i { font-size:1.2rem; }
+.sticky-del-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.5); border-radius:var(--radius-sm); font-size:1.1rem; color:var(--text2); }
+.sticky-note { position:relative; }
 
 /* ── Info cards ────────────────────────────────── */
 .info-card { background:var(--surface); border:1.5px solid var(--border); border-radius:var(--radius); padding:.9rem; cursor:pointer; display:flex; flex-direction:column; align-items:center; text-align:center; gap:.5rem; position:relative; transition:all var(--transition); }
