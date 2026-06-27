@@ -370,6 +370,8 @@ function renderLearning(){
 
 function makeFolderCard(f){
   const perm=f.min_role_required||'intern';
+  // Only show permission badge to admins
+  const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
   return `<div class="file-card" onclick="openFolder(${f.id})" oncontextmenu="showCtx(event,'folder',${f.id})">
     ${isAdmin()?`<div class="card-actions">
       <button class="ca-btn" onclick="event.stopPropagation();openEditItem('folder',${f.id})" title="Edit"><i class="fas fa-edit"></i></button>
@@ -378,7 +380,7 @@ function makeFolderCard(f){
     </div>`:''}
     <div class="fi fi-folder"><i class="fas fa-folder"></i></div>
     <span class="fc-name">${escHtml(f.name)}</span>
-    <span class="fc-perm perm-${perm}">${perm}</span>
+    ${permTag}
   </div>`;
 }
 
@@ -387,6 +389,8 @@ function makeItemCard(i){
   const perm=i.min_role_required||'intern';
   const fiCls=isPdf?'fi-link':'fi-text';
   const faIcon=isPdf?'fa-link':'fa-file-alt';
+  // Only show permission badge to admins
+  const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
   return `<div class="file-card" onclick="openLearningItem(${i.id})" oncontextmenu="showCtx(event,'item',${i.id})">
     ${isAdmin()?`<div class="card-actions">
       <button class="ca-btn" onclick="event.stopPropagation();openEditItem('item',${i.id})" title="Edit"><i class="fas fa-edit"></i></button>
@@ -395,7 +399,7 @@ function makeItemCard(i){
     </div>`:''}
     <div class="fi ${fiCls}"><i class="fas ${faIcon}"></i></div>
     <span class="fc-name">${escHtml(i.topic)}</span>
-    <span class="fc-perm perm-${perm}">${perm}</span>
+    ${permTag}
   </div>`;
 }
 
@@ -444,7 +448,7 @@ function openEditItem(kind,id){
   el('editItemId').value=id;
   el('editItemKind').value=kind;
   el('editItemName').value=isFolder?obj.name:obj.topic;
-  el('editItemPerm').value=obj.min_role_required||'intern';
+  setRadio('editPerm',obj.min_role_required||'intern');
 
   el('editItemTypeGroup').classList.toggle('hidden',isFolder);
   el('editItemLinkGroup').classList.toggle('hidden',true);
@@ -467,7 +471,7 @@ async function saveEditItem(){
   const kind=el('editItemKind').value;
   const id=parseInt(el('editItemId').value);
   const name=el('editItemName').value.trim();
-  const perm=el('editItemPerm').value;
+  const perm=getRadio('editPerm');
   if(!name)return showToast('Name is required','error');
 
   if(kind==='folder'){
@@ -515,15 +519,27 @@ async function confirmMove(kind,id,targetId){
 /* ══════════════════════════════════════════════════════════
    LEARNING — Create Folder / Item
 ══════════════════════════════════════════════════════════ */
+// Helper: read selected radio value by name
+function getRadio(name){
+  const checked=document.querySelector(`input[name="${name}"]:checked`);
+  return checked?checked.value:'intern';
+}
+// Helper: set radio by name + value
+function setRadio(name,value){
+  const r=document.querySelector(`input[name="${name}"][value="${value}"]`);
+  if(r)r.checked=true;
+}
+
 function openFolderModal(){
   if(!isAdmin())return;
   el('folderModal').classList.remove('hidden');el('folderModalTitle').textContent='Create Folder';
-  el('folderForm').reset();el('folderId').value='';el('folderPermission').value='intern';
+  el('folderForm').reset();el('folderId').value='';
+  setRadio('folderPerm','intern');
 }
 async function saveFolder(){
   const id=el('folderId').value;const name=el('folderName').value.trim();
   if(!name)return showToast('Name required','error');
-  const perm=el('folderPermission').value;
+  const perm=getRadio('folderPerm');
   const data={id:id?parseInt(id):null,name,parentId:currentFolderId,min_role_required:perm};
   if(await saveToApi('folders',data))closeModal('folderModal');
 }
@@ -539,9 +555,10 @@ function openLearningItemModal(id=null){
     const item=appData.learningItems.find(i=>i.id===id);
     el('learningItemTopic').value=item.topic;el('learningItemType').value=item.type;
     el('learningItemLink').value=item.link||'';el('learningItemContent').value=item.content||'';
-    el('learningItemPermission').value=item.min_role_required||'intern';
+    setRadio('itemPerm',item.min_role_required||'intern');
   } else {
-    el('learningItemForm').reset();el('learningItemPermission').value='intern';
+    el('learningItemForm').reset();
+    setRadio('itemPerm','intern');
   }
   toggleLearningItemFields();
 }
@@ -555,7 +572,7 @@ async function saveLearningItem(){
   const data={id:id?parseInt(id):null,topic:el('learningItemTopic').value,type,
     link:type==='pdf'?el('learningItemLink').value:null,
     content:type==='text'?el('learningItemContent').value:null,
-    folderId:currentFolderId,min_role_required:el('learningItemPermission').value};
+    folderId:currentFolderId,min_role_required:getRadio('itemPerm')};
   if(await saveToApi('learning_items',data))closeModal('learningItemModal');
 }
 
@@ -665,24 +682,45 @@ function switchUtilTab(tab){
 }
 
 /* ── Time Converter ─────────────────────────────────────── */
+// Offsets in minutes from UTC
 const TZ_LIST=[
-  {id:'UTC',  label:'UTC',  name:'UTC',               offset:0},
-  {id:'MMT',  label:'MMT',  name:'Myanmar (UTC+6:30)', offset:390},
-  {id:'IST',  label:'IST',  name:'India (UTC+5:30)',   offset:330},
-  {id:'ICT',  label:'ICT',  name:'Indochina (UTC+7)',  offset:420},
-  {id:'SGT',  label:'SGT',  name:'Singapore (UTC+8)',  offset:480},
+  {id:'MMT', label:'MMT', name:'Myanmar   UTC+6:30', offset:390},
+  {id:'UTC', label:'UTC', name:'Universal UTC+0',    offset:0},
+  {id:'IST', label:'IST', name:'India     UTC+5:30', offset:330},
+  {id:'ICT', label:'ICT', name:'Indochina UTC+7:00', offset:420},
+  {id:'SGT', label:'SGT', name:'Singapore UTC+8:00', offset:480},
 ];
+
 function convertTime(){
-  const h=parseInt(el('tcHour').value)||0,m=parseInt(el('tcMin').value)||0,fmt=el('tcFmt').value;
-  if(h<0||h>23||m<0||m>59){el('timeResults').innerHTML='<div style="color:#ef4444;font-size:.85rem;padding:.5rem">Invalid time</div>';return;}
-  const totalMin=h*60+m;
+  const h=parseInt(el('tcHour').value);
+  const m=parseInt(el('tcMin').value);
+  const inputZoneId=el('tcInputZone').value;
+
+  // Validate
+  if(isNaN(h)||isNaN(m)||h<0||h>23||m<0||m>59){
+    if(el('tcHour').value!==''||el('tcMin').value!=='')
+      el('timeResults').innerHTML='<div style="color:#ef4444;font-size:.85rem;padding:.5rem 0">⚠ Invalid time — hour 0–23, minute 0–59</div>';
+    else el('timeResults').innerHTML='';
+    return;
+  }
+
+  // Convert input to UTC minutes
+  const inputZone=TZ_LIST.find(z=>z.id===inputZoneId)||TZ_LIST[0];
+  const inputTotalMin=h*60+m;
+  const utcMin=inputTotalMin-inputZone.offset;  // subtract offset to get UTC
+
   el('timeResults').innerHTML=TZ_LIST.map(tz=>{
-    let mins=(totalMin+tz.offset)%1440;if(mins<0)mins+=1440;
+    let mins=((utcMin+tz.offset)%1440+1440)%1440; // normalise to 0–1439
     const th=Math.floor(mins/60),tm=mins%60;
-    let display;
-    if(fmt==='12'){const ampm=th>=12?'PM':'AM';const h12=th%12||12;display=`${pad(h12)}:${pad(tm)} ${ampm}`;}
-    else display=`${pad(th)}:${pad(tm)}`;
-    return `<div class="tz-row"><div><div class="tz-label">${tz.label}</div><div class="tz-name">${tz.name}</div></div><div class="tz-time">${display}</div></div>`;
+    const ampm=th>=12?'PM':'AM';
+    const h12=th%12||12;
+    const t24=`${pad(th)}:${pad(tm)}`;
+    const t12=`${pad(h12)}:${pad(tm)} ${ampm}`;
+    const isInput=tz.id===inputZoneId;
+    return `<div class="tz-row${isInput?' tz-row--active':''}">
+      <div><div class="tz-label">${tz.label}${isInput?' <span class="tz-source">source</span>':''}</div><div class="tz-name">${tz.name}</div></div>
+      <div style="text-align:right"><div class="tz-time">${t24}</div><div class="tz-time12">${t12}</div></div>
+    </div>`;
   }).join('');
 }
 function pad(n){return String(n).padStart(2,'0');}
@@ -756,6 +794,33 @@ function renderStickyNotes(){
         <button class="sticky-del" onclick="deleteSticky(${n.id})"><i class="fas fa-times"></i></button>
       </div>
     </div>`).join('');
+}
+
+/* ══════════════════════════════════════════════════════════
+   SHIFT TIMER
+══════════════════════════════════════════════════════════ */
+let shiftSeconds=0,shiftInterval=null,shiftRunning=false;
+function shiftStart(){
+  if(shiftRunning)return;
+  shiftRunning=true;
+  el('btnShiftStart').classList.add('hidden');
+  el('btnShiftPause').classList.remove('hidden');
+  shiftInterval=setInterval(()=>{shiftSeconds++;renderShiftClock();},1000);
+}
+function shiftPause(){
+  clearInterval(shiftInterval);shiftRunning=false;
+  el('btnShiftStart').classList.remove('hidden');
+  el('btnShiftPause').classList.add('hidden');
+}
+function shiftReset(){
+  shiftPause();shiftSeconds=0;renderShiftClock();
+}
+function renderShiftClock(){
+  const h=Math.floor(shiftSeconds/3600);
+  const m=Math.floor((shiftSeconds%3600)/60);
+  const s=shiftSeconds%60;
+  const clock=el('shiftClock');
+  if(clock)clock.textContent=`${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
 /* ══════════════════════════════════════════════════════════
