@@ -102,12 +102,13 @@
             <!-- 5. Admin Panel + Categories Setting — admin only -->
             <div id="mobileAdminBtn" class="hidden">
                 <div class="mob-divider"></div>
+                 <button onclick="closeMobileMenu();openCategoryManagerModal()" class="mob-nbtn">
+                    <i class="fas fa-tags"></i> Categories Setting
+                </button>
                 <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn" data-page="admin">
                     <i class="fas fa-shield-alt"></i> Admin Panel
                 </button>
-                <button onclick="closeMobileMenu();openCategoryManagerModal()" class="mob-nbtn">
-                    <i class="fas fa-tags"></i> Categories Setting
-                </button>
+               
             </div>
             <!-- 6. Settings -->
             <div class="mob-divider"></div>
