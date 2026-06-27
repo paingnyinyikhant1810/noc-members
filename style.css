@@ -418,6 +418,43 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 .sc-dot { width:14px; height:14px; border-radius:50%; border:none; cursor:pointer; transition:transform .15s; }
 .sc-dot:hover { transform:scale(1.25); }
 
+/* ── Permission radio checkboxes ──────────────── */
+.perm-hint { font-size:.75rem; color:var(--text2); margin-bottom:.6rem; }
+.perm-checks { display:grid; grid-template-columns:1fr 1fr; gap:.45rem; }
+.pcheck { cursor:pointer; }
+.pcheck input[type="radio"] { display:none; }
+.pcheck-box {
+  display:flex; align-items:center; gap:.45rem;
+  padding:.55rem .85rem; border-radius:var(--radius-sm);
+  border:2px solid var(--border); background:var(--surface2);
+  font-size:.82rem; font-weight:600; color:var(--text2);
+  transition:all var(--transition); cursor:pointer; user-select:none;
+  width:100%;
+}
+.pcheck input[type="radio"]:checked + .pcheck-box {
+  border-color:var(--accent); background:var(--accent-light); color:var(--accent-text);
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent);
+}
+.pcheck-box:hover { border-color:var(--accent); background:var(--accent-light); }
+.pcheck-box.intern  {}
+.pcheck-box.member  {}
+.pcheck-box.leader  {}
+.pcheck-box.admin   {}
+
+/* ── Time Converter extras ─────────────────────── */
+.tz-row--active { background:var(--accent-light) !important; border-color:var(--accent) !important; }
+.tz-source { display:inline-block; padding:.08rem .35rem; border-radius:50px; font-size:.6rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; background:var(--accent); color:#fff; margin-left:.2rem; vertical-align:middle; }
+.tz-time12 { font-size:.72rem; color:var(--text3); font-family:monospace; margin-top:.1rem; }
+
+/* ── Shift Timer ───────────────────────────────── */
+.shift-timer-wrap { background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; text-align:center; margin-bottom:.5rem; }
+.shift-label { font-size:.75rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text2); margin-bottom:.5rem; }
+.shift-clock { font-size:2.2rem; font-weight:800; font-family:monospace; color:var(--accent); letter-spacing:.05em; }
+
+/* ── Settings logout button ────────────────────── */
+.modal-ft .btn-secondary[style*="ef4444"] { background:transparent; }
+.modal-ft .btn-secondary[style*="ef4444"]:hover { background:#fef2f2; }
+
 /* ── Misc ──────────────────────────────────────── */
 .col-hide { display:none; } @media(min-width:640px){ .col-hide { display:table-cell; } }
 @keyframes shake { 0%,100%{transform:translateX(0)} 10%,30%,50%,70%,90%{transform:translateX(-6px)} 20%,40%,60%,80%{transform:translateX(6px)} }
