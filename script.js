@@ -106,7 +106,7 @@ async function refreshData(silent=false){
     if(!el('homePage').classList.contains('hidden'))renderUpdates();
     if(!el('learningPage').classList.contains('hidden'))renderLearning();
     if(!el('informationPage').classList.contains('hidden')&&currentInfoCategory)renderInfoCards();
-    if(!el('adminPage').classList.contains('hidden')&&isAdmin()){renderUsers();renderCategories();}
+    if(!el('adminPage').classList.contains('hidden')&&isAdmin()){renderUsers();}
     renderMobileInfoMenu();renderInfoDropdown();
   }
   if(!silent)hideLoading();
@@ -904,7 +904,15 @@ function showAdminTab(tab){
   // renderCategories kept for category manager modal
   if(tab==='categories') renderCategories();
 }
-function renderCategories(){el('categoriesList').innerHTML=appData.categories.map(cat=>`<div class="cat-card"><div style="display:flex;align-items:center;gap:.65rem"><div class="cat-icon"><i class="fas ${cat.icon}"></i></div><span style="font-weight:600">${escHtml(cat.name)}</span></div><div style="display:flex;gap:.35rem"><button onclick="openCategoryModal(${cat.id})" class="icon-btn" style="color:var(--accent)"><i class="fas fa-edit"></i></button><button onclick="deleteFromApi('categories',${cat.id})" class="icon-btn" style="color:#ef4444"><i class="fas fa-trash"></i></button></div></div>`).join('');}
+function renderCategories(){
+  // categoriesList element removed from admin panel — update manager list instead
+  const listEl=el('categoriesList');
+  if(listEl) listEl.innerHTML=appData.categories.map(cat=>`<div class="cat-card"><div style="display:flex;align-items:center;gap:.65rem"><div class="cat-icon"><i class="fas ${cat.icon}"></i></div><span style="font-weight:600">${escHtml(cat.name)}</span></div><div style="display:flex;gap:.35rem"><button onclick="openCategoryModal(${cat.id})" class="icon-btn" style="color:var(--accent)"><i class="fas fa-edit"></i></button><button onclick="deleteFromApi('categories',${cat.id})" class="icon-btn" style="color:#ef4444"><i class="fas fa-trash"></i></button></div></div>`).join('');
+  // Also refresh the manager list if it is currently open
+  if(el('categoryManagerModal')&&!el('categoryManagerModal').classList.contains('hidden')){
+    renderCategoryManagerList();
+  }
+}
 /* ── Category Manager (drag to sort) ────────────────────── */
 let catDragSrc=null;
 
