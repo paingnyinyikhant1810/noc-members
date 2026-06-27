@@ -20,8 +20,18 @@
 </div>
 <div id="infoCardContextMenu" class="hidden ctx-menu">
     <button onclick="editInfoCardFromContext()" class="ctx-btn"><i class="fas fa-edit"></i> Edit</button>
+    <button onclick="moveInfoCardFromContext()" class="ctx-btn"><i class="fas fa-arrows-alt"></i> Move to Category</button>
     <hr class="ctx-div">
     <button onclick="deleteInfoCardFromContext()" class="ctx-btn ctx-danger"><i class="fas fa-trash"></i> Delete</button>
+</div>
+
+<!-- Info Card Move Modal -->
+<div id="infoCardMoveModal" class="hidden modal-bd">
+    <div class="modal-box modal-sm">
+        <div class="modal-hdr"><h3 class="modal-title">Move to Category</h3><button onclick="closeModal('infoCardMoveModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <div id="infoCategoryList" class="modal-body move-list"></div>
+        <div class="modal-ft"><button onclick="closeModal('infoCardMoveModal')" class="btn-secondary">Cancel</button></div>
+    </div>
 </div>
 
 <!-- ════════════════ LOGIN ════════════════ -->
@@ -112,7 +122,7 @@
     <nav class="topnav">
         <div class="tnav-inner">
             <div class="tnav-left">
-                <button onclick="openMobileMenu()" class="hamburger d-lg-none"><i class="fas fa-bars"></i></button>
+                <button onclick="openMobileMenu()" class="hamburger"><i class="fas fa-bars"></i></button>
                 <div class="tnav-logo"><i class="fas fa-users"></i></div>
                 <span class="tnav-title d-none-sm">NOC Portal</span>
             </div>
@@ -274,6 +284,16 @@
                     <option value="fa-link">🔗 Links</option><option value="fa-tools">🛠️ Tools</option>
                 </select>
             </div>
+            <div class="fg">
+                <label class="flabel">Who can see this category?</label>
+                <p class="perm-hint">Select the <strong>minimum role</strong> required.</p>
+                <div class="perm-checks">
+                    <label class="pcheck"><input type="radio" name="catPerm" value="intern" checked><span class="pcheck-box intern">🟡 Intern &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="catPerm" value="member"><span class="pcheck-box member">🟢 Member &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="catPerm" value="leader"><span class="pcheck-box leader">🔵 Leader &amp; above</span></label>
+                    <label class="pcheck"><input type="radio" name="catPerm" value="admin"><span class="pcheck-box admin">🔴 Admin only</span></label>
+                </div>
+            </div>
         </form>
         <div class="modal-ft"><button onclick="closeModal('categoryModal')" class="btn-secondary">Cancel</button><button onclick="saveCategory()" class="btn-primary">Save</button></div>
     </div>
@@ -377,9 +397,19 @@
                 </div>
                 <input type="hidden" id="infoCardImage">
             </div>
-            <div class="fg"><label class="flabel">Link URL</label><input type="url" id="infoCardLink" class="finput" placeholder="https://..." required></div>
-        </form>
-        <div class="modal-ft"><button onclick="closeModal('infoCardModal')" class="btn-secondary">Cancel</button><button onclick="saveInfoCard()" class="btn-primary">Save</button></div>
+                <div class="fg"><label class="flabel">Link URL</label><input type="url" id="infoCardLink" class="finput" placeholder="https://..." required></div>
+                <div class="fg">
+                    <label class="flabel">Who can see this item?</label>
+                    <p class="perm-hint">Select the <strong>minimum role</strong> required.</p>
+                    <div class="perm-checks">
+                        <label class="pcheck"><input type="radio" name="infoCardPerm" value="intern" checked><span class="pcheck-box intern">🟡 Intern &amp; above</span></label>
+                        <label class="pcheck"><input type="radio" name="infoCardPerm" value="member"><span class="pcheck-box member">🟢 Member &amp; above</span></label>
+                        <label class="pcheck"><input type="radio" name="infoCardPerm" value="leader"><span class="pcheck-box leader">🔵 Leader &amp; above</span></label>
+                        <label class="pcheck"><input type="radio" name="infoCardPerm" value="admin"><span class="pcheck-box admin">🔴 Admin only</span></label>
+                    </div>
+                </div>
+            </form>
+            <div class="modal-ft"><button onclick="closeModal('infoCardModal')" class="btn-secondary">Cancel</button><button onclick="saveInfoCard()" class="btn-primary">Save</button></div>
     </div>
 </div>
 
@@ -620,5 +650,5 @@
 </div>
 
 <script src="script.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1237f4eec10411d',t:'MTc4MjU1MzMwMA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
