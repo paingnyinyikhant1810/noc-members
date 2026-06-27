@@ -102,13 +102,12 @@
             <!-- 5. Admin Panel + Categories Setting — admin only -->
             <div id="mobileAdminBtn" class="hidden">
                 <div class="mob-divider"></div>
-                  <button onclick="closeMobileMenu();openCategoryManagerModal()" class="mob-nbtn">
-                    <i class="fas fa-tags"></i> Categories Setting
-                </button>
                 <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn" data-page="admin">
                     <i class="fas fa-shield-alt"></i> Admin Panel
                 </button>
-              
+                <button onclick="closeMobileMenu();openCategoryManagerModal()" class="mob-nbtn">
+                    <i class="fas fa-tags"></i> Categories Setting
+                </button>
             </div>
             <!-- 6. Settings -->
             <div class="mob-divider"></div>
@@ -452,11 +451,23 @@
 </div>
 
 <!-- Move Modal -->
+<!-- Move Modal — tree navigator -->
 <div id="moveModal" class="hidden modal-bd">
     <div class="modal-box modal-sm">
-        <div class="modal-hdr"><h3 class="modal-title">Move To…</h3><button onclick="closeModal('moveModal')" class="modal-x"><i class="fas fa-times"></i></button></div>
+        <div class="modal-hdr">
+            <h3 class="modal-title"><i class="fas fa-arrows-alt"></i> Move To…</h3>
+            <button onclick="closeModal('moveModal')" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <!-- Breadcrumb path inside the tree -->
+        <div id="moveBreadcrumb" class="move-bc"></div>
+        <!-- Current level contents -->
         <div id="moveFolderList" class="modal-body move-list"></div>
-        <div class="modal-ft"><button onclick="closeModal('moveModal')" class="btn-secondary">Cancel</button></div>
+        <div class="modal-ft">
+            <button onclick="closeModal('moveModal')" class="btn-secondary">Cancel</button>
+            <button id="moveHereBtn" onclick="doConfirmMove()" class="btn-primary">
+                <i class="fas fa-check"></i> Move Here
+            </button>
+        </div>
     </div>
 </div>
 
@@ -701,5 +712,5 @@
 </div>
 
 <script src="script.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1241a94ded92fbd',t:'MTc4MjU1OTY2MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
