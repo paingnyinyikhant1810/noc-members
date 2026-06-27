@@ -286,7 +286,8 @@ select.finput { cursor:pointer; }
 .sticky-spinner { display:flex; flex-direction:column; align-items:center; gap:.4rem; font-size:.82rem; color:var(--text2); }
 .sticky-spinner i { font-size:1.2rem; }
 .sticky-del-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.5); border-radius:var(--radius-sm); font-size:1.1rem; color:var(--text2); }
-.sticky-note { position:relative; }
+.sticky-note  { position:relative; }
+.sticky-author{ font-size:.68rem; font-weight:700; color:rgba(0,0,0,.45); margin-bottom:.3rem; display:flex; align-items:center; gap:.3rem; }
 
 /* ── Info cards ────────────────────────────────── */
 .info-card { background:var(--surface); border:1.5px solid var(--border); border-radius:var(--radius); padding:.9rem; cursor:pointer; display:flex; flex-direction:column; align-items:center; text-align:center; gap:.5rem; position:relative; transition:all var(--transition); }
@@ -421,6 +422,14 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 .tz-label { font-weight:700; font-size:.8rem; color:var(--text2); min-width:48px; }
 .tz-name  { font-size:.75rem; color:var(--text3); }
 .tz-time  { font-size:1rem; font-weight:700; color:var(--accent); font-family:monospace; }
+
+/* NOC Handover block */
+.sn-handover-wrap   { margin-top:.75rem; border:1.5px solid var(--accent); border-radius:var(--radius-sm); overflow:hidden; }
+.sn-handover-header { display:flex; align-items:center; justify-content:space-between; padding:.5rem .85rem; background:var(--accent-light); border-bottom:1px solid var(--border); }
+.sn-handover-title  { font-size:.78rem; font-weight:700; color:var(--accent-text); display:flex; align-items:center; gap:.4rem; }
+.sn-copy-btn        { display:inline-flex; align-items:center; gap:.35rem; padding:.3rem .75rem; border:none; border-radius:var(--radius-sm); background:var(--accent); color:#fff; font-size:.75rem; font-weight:700; cursor:pointer; transition:all var(--transition); }
+.sn-copy-btn:hover  { opacity:.88; }
+.sn-handover-pre    { margin:0; padding:.85rem; font-family:'Courier New',Courier,monospace; font-size:.82rem; line-height:1.9; color:var(--text); background:var(--surface); white-space:pre; overflow-x:auto; }
 
 /* Subnet Calculator */
 .subnet-results { display:grid; gap:.4rem; margin-top:.5rem; }
