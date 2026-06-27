@@ -807,8 +807,16 @@ function renderStickyNotes(){
 function openChangePassword(){
   el('changePwdModal').classList.remove('hidden');
   el('changePwdForm').reset();
-  el('cpError').classList.add('hidden');
-  el('cpError').className='cp-error hidden';
+  // Reset all password fields to type=password and eye icons
+  ['cpOld','cpNew','cpConfirm'].forEach(id=>{
+    el(id).type='password';
+  });
+  document.querySelectorAll('#changePwdForm .eye-btn i').forEach(i=>{
+    i.className='fas fa-eye';
+  });
+  showCpMsg('','');
+  // Clear strength bar
+  updateStrengthBar('');
 }
 
 // Generic eye toggle for any password field
@@ -824,43 +832,117 @@ function togglePwdField(inputId, btn){
   }
 }
 
+// Show inline message in the password modal
+function showCpMsg(msg, type){
+  const box=el('cpError');
+  if(!msg){ box.className='cp-error hidden'; box.innerHTML=''; return; }
+  box.className=type==='success'?'cp-success':'cp-error';
+  const icon=type==='success'?'fa-check-circle':'fa-exclamation-circle';
+  box.innerHTML=`<i class="fas ${icon}"></i> ${escHtml(msg)}`;
+}
+
+// Password strength meter + rules checklist
+function updateStrengthBar(pwd){
+  const bar=el('cpStrengthBar'), label=el('cpStrengthLabel');
+  if(!bar||!label) return;
+
+  // Update rules checklist
+  const setRule=(id,pass)=>{
+    const li=el(id); if(!li) return;
+    li.classList.toggle('rule-pass', pass);
+    li.classList.toggle('rule-fail', pwd.length>0 && !pass);
+    li.querySelector('i').className='fas '+(pass?'fa-check-circle':'fa-circle-dot');
+  };
+  setRule('ruleLen',  pwd.length>=5);
+  setRule('ruleUpper',/[A-Z]/.test(pwd));
+  setRule('ruleNum',  /[0-9]/.test(pwd));
+
+  if(!pwd){ bar.style.width='0%'; bar.style.background='var(--border)'; label.textContent=''; return; }
+
+  let score=0;
+  if(pwd.length>=5)  score++;
+  if(pwd.length>=8)  score++;
+  if(/[A-Z]/.test(pwd)) score++;
+  if(/[0-9]/.test(pwd)) score++;
+  if(/[^A-Za-z0-9]/.test(pwd)) score++;
+
+  const levels=[
+    {w:'20%', color:'#ef4444', text:'Very weak'},
+    {w:'40%', color:'#f97316', text:'Weak'},
+    {w:'60%', color:'#eab308', text:'Fair'},
+    {w:'80%', color:'#22c55e', text:'Strong'},
+    {w:'100%',color:'#16a34a', text:'Very strong'},
+  ];
+  const lvl=levels[Math.min(score,4)];
+  bar.style.width=lvl.w; bar.style.background=lvl.color;
+  label.textContent=lvl.text; label.style.color=lvl.color;
+}
+
+// Live confirm-password match hint
+function liveMatchCheck(){
+  const np=el('cpNew').value, cp=el('cpConfirm').value;
+  const hint=el('cpMatchHint');
+  if(!hint) return;
+  if(!cp){ hint.className='cp-match-hint hidden'; hint.innerHTML=''; return; }
+  if(np===cp){
+    hint.className='cp-match-hint match-ok';
+    hint.innerHTML='<i class="fas fa-check-circle"></i> Passwords match';
+  } else {
+    hint.className='cp-match-hint match-no';
+    hint.innerHTML='<i class="fas fa-times-circle"></i> Passwords do not match';
+  }
+}
+
 async function submitChangePassword(){
-  const oldPwd=el('cpOld').value.trim();
-  const newPwd=el('cpNew').value.trim();
-  const confirm=el('cpConfirm').value.trim();
-  const errBox=el('cpError');
+  const oldPwd=el('cpOld').value;
+  const newPwd=el('cpNew').value;
+  const confirmPwd=el('cpConfirm').value;
 
-  const showErr=(msg)=>{
-    errBox.className='cp-error';
-    errBox.innerHTML=`<i class="fas fa-exclamation-circle"></i> ${escHtml(msg)}`;
-  };
+  // ── Client-side validation ──────────────────────────────
+  if(!oldPwd)            { showCpMsg('Please enter your current password.','error'); el('cpOld').focus(); return; }
+  if(!newPwd)            { showCpMsg('Please enter a new password.','error'); el('cpNew').focus(); return; }
+  if(newPwd.length<5)    { showCpMsg('New password must be at least 5 characters long.','error'); el('cpNew').focus(); return; }
+  if(!confirmPwd)        { showCpMsg('Please confirm your new password.','error'); el('cpConfirm').focus(); return; }
+  if(newPwd!==confirmPwd){ showCpMsg('New passwords do not match. Please re-enter.','error'); el('cpConfirm').focus(); return; }
+  if(oldPwd===newPwd)    { showCpMsg('New password must be different from your current password.','error'); el('cpNew').focus(); return; }
 
-  if(!oldPwd||!newPwd||!confirm){ showErr('All fields are required.'); return; }
-  if(newPwd.length<4){ showErr('New password must be at least 4 characters.'); return; }
-  if(newPwd!==confirm){ showErr('New passwords do not match.'); return; }
+  // ── Disable button during request ───────────────────────
+  const submitBtn=document.querySelector('#changePwdModal .btn-primary');
+  if(submitBtn){ submitBtn.disabled=true; submitBtn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Changing…'; }
 
-  // Verify old password locally against stored value
-  const storedPwd=currentUser.password;
-  if(storedPwd && oldPwd!==storedPwd){ showErr('Current password is incorrect.'); return; }
+  try {
+    // Call the dedicated changePassword endpoint (works for ALL roles)
+    const res=await fetch(`${API_URL}/changePassword`,{
+      method:'POST',
+      headers:{'Authorization':authHeader,'Content-Type':'application/json'},
+      body:JSON.stringify({oldPassword:oldPwd,newPassword:newPwd})
+    });
+    const data=await res.json().catch(()=>({}));
 
-  // Save via API — update the user's own password
-  const userData={
-    id: currentUser.id,
-    accountName: currentUser.accountName||currentUser.account_name||currentUser.username,
-    username: currentUser.username,
-    password: newPwd,
-    role: currentUser.role
-  };
+    if(res.ok && data.success){
+      // Update local auth so next auto-refresh still works
+      currentUser.password=newPwd;
+      authHeader='Basic '+btoa(currentUser.username+':'+newPwd);
+      localStorage.setItem('authHeader',authHeader);
 
-  const ok=await saveToApi('users', userData);
-  if(ok){
-    // Update local state so re-auth still works
-    currentUser.password=newPwd;
-    authHeader='Basic '+btoa(currentUser.username+':'+newPwd);
-    localStorage.setItem('authHeader',authHeader);
-    errBox.className='cp-success';
-    errBox.innerHTML='<i class="fas fa-check-circle"></i> Password changed successfully!';
-    setTimeout(()=>closeModal('changePwdModal'),1400);
+      showCpMsg('Password changed successfully!','success');
+
+      // After short delay: show toast, close modal, sign out
+      setTimeout(()=>{
+        closeModal('changePwdModal');
+        closeModal('settingsModal');
+        showToast('Password changed — please sign in again with your new password.','info');
+        setTimeout(()=>logout(), 2200);
+      }, 1200);
+
+    } else {
+      // Show server error message
+      showCpMsg(data.error||'Failed to change password. Please try again.','error');
+    }
+  } catch(e){
+    showCpMsg('Connection error. Please check your internet and try again.','error');
+  } finally {
+    if(submitBtn){ submitBtn.disabled=false; submitBtn.innerHTML='<i class="fas fa-check"></i> Change Password'; }
   }
 }
 
