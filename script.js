@@ -171,7 +171,12 @@ function showLoginPage(){
   el('mainApp').classList.add('hidden');el('loginPage').classList.remove('hidden');
   el('username').value='';el('password').value='';
 }
-function logout(){localStorage.removeItem('authHeader');authHeader=null;currentUser=null;showLoginPage();closeMobileMenu();}
+function logout(){
+  localStorage.removeItem('authHeader');authHeader=null;currentUser=null;
+  // Close ALL modals before returning to login
+  document.querySelectorAll('.modal-bd').forEach(m=>m.classList.add('hidden'));
+  showLoginPage();closeMobileMenu();
+}
 
 async function initApp(){
   loadPreferences();
@@ -387,9 +392,9 @@ function makeFolderCard(f){
 function makeItemCard(i){
   const isPdf=i.type==='pdf';
   const perm=i.min_role_required||'intern';
-  const fiCls=isPdf?'fi-link':'fi-text';
-  const faIcon=isPdf?'fa-link':'fa-file-alt';
-  // Only show permission badge to admins
+  // PDF/link → red PDF icon  |  text → blue file icon
+  const fiCls=isPdf?'fi-pdf':'fi-txt';
+  const faIcon=isPdf?'fa-file-pdf':'fa-file-alt';
   const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
   return `<div class="file-card" onclick="openLearningItem(${i.id})" oncontextmenu="showCtx(event,'item',${i.id})">
     ${isAdmin()?`<div class="card-actions">
@@ -794,6 +799,69 @@ function renderStickyNotes(){
         <button class="sticky-del" onclick="deleteSticky(${n.id})"><i class="fas fa-times"></i></button>
       </div>
     </div>`).join('');
+}
+
+/* ══════════════════════════════════════════════════════════
+   CHANGE PASSWORD
+══════════════════════════════════════════════════════════ */
+function openChangePassword(){
+  el('changePwdModal').classList.remove('hidden');
+  el('changePwdForm').reset();
+  el('cpError').classList.add('hidden');
+  el('cpError').className='cp-error hidden';
+}
+
+// Generic eye toggle for any password field
+function togglePwdField(inputId, btn){
+  const inp=el(inputId);
+  const icon=btn.querySelector('i');
+  if(inp.type==='password'){
+    inp.type='text';
+    icon.classList.replace('fa-eye','fa-eye-slash');
+  } else {
+    inp.type='password';
+    icon.classList.replace('fa-eye-slash','fa-eye');
+  }
+}
+
+async function submitChangePassword(){
+  const oldPwd=el('cpOld').value.trim();
+  const newPwd=el('cpNew').value.trim();
+  const confirm=el('cpConfirm').value.trim();
+  const errBox=el('cpError');
+
+  const showErr=(msg)=>{
+    errBox.className='cp-error';
+    errBox.innerHTML=`<i class="fas fa-exclamation-circle"></i> ${escHtml(msg)}`;
+  };
+
+  if(!oldPwd||!newPwd||!confirm){ showErr('All fields are required.'); return; }
+  if(newPwd.length<4){ showErr('New password must be at least 4 characters.'); return; }
+  if(newPwd!==confirm){ showErr('New passwords do not match.'); return; }
+
+  // Verify old password locally against stored value
+  const storedPwd=currentUser.password;
+  if(storedPwd && oldPwd!==storedPwd){ showErr('Current password is incorrect.'); return; }
+
+  // Save via API — update the user's own password
+  const userData={
+    id: currentUser.id,
+    accountName: currentUser.accountName||currentUser.account_name||currentUser.username,
+    username: currentUser.username,
+    password: newPwd,
+    role: currentUser.role
+  };
+
+  const ok=await saveToApi('users', userData);
+  if(ok){
+    // Update local state so re-auth still works
+    currentUser.password=newPwd;
+    authHeader='Basic '+btoa(currentUser.username+':'+newPwd);
+    localStorage.setItem('authHeader',authHeader);
+    errBox.className='cp-success';
+    errBox.innerHTML='<i class="fas fa-check-circle"></i> Password changed successfully!';
+    setTimeout(()=>closeModal('changePwdModal'),1400);
+  }
 }
 
 /* ══════════════════════════════════════════════════════════
