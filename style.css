@@ -252,9 +252,15 @@ select.finput { cursor:pointer; }
 .fi-folder { background:#fef3c7; } .fi-folder i { color:#d97706; }
 .fi-link   { background:#dbeafe; } .fi-link   i { color:#2563eb; }
 .fi-text   { background:#dcfce7; } .fi-text   i { color:#059669; }
+/* PDF / link file → red PDF icon */
+.fi-pdf    { background:#fee2e2; } .fi-pdf    i { color:#dc2626; }
+/* Text file → blue file icon */
+.fi-txt    { background:#dbeafe; } .fi-txt    i { color:#2563eb; }
 [data-theme="dark"] .fi-folder { background:#451a03; } [data-theme="dark"] .fi-folder i { color:#fbbf24; }
 [data-theme="dark"] .fi-link   { background:#1e3a5f; } [data-theme="dark"] .fi-link   i { color:#60a5fa; }
 [data-theme="dark"] .fi-text   { background:#052e16; } [data-theme="dark"] .fi-text   i { color:#4ade80; }
+[data-theme="dark"] .fi-pdf    { background:#450a0a; } [data-theme="dark"] .fi-pdf    i { color:#f87171; }
+[data-theme="dark"] .fi-txt    { background:#1e3a5f; } [data-theme="dark"] .fi-txt    i { color:#60a5fa; }
 .fc-name { font-size:.78rem; font-weight:600; color:var(--text); line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .fc-perm { display:inline-flex; align-items:center; padding:.1rem .4rem; border-radius:50px; font-size:.62rem; font-weight:700; text-transform:uppercase; }
 .perm-intern { background:#fef3c7; color:#92400e; }
@@ -454,6 +460,18 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 /* ── Settings logout button ────────────────────── */
 .modal-ft .btn-secondary[style*="ef4444"] { background:transparent; }
 .modal-ft .btn-secondary[style*="ef4444"]:hover { background:#fef2f2; }
+
+/* ── Change Password modal ─────────────────────── */
+.cp-error {
+  background:#fef2f2; border:1px solid #fecaca; border-radius:var(--radius-sm);
+  color:#b91c1c; font-size:.82rem; padding:.55rem .85rem; margin-top:.1rem;
+  display:flex; align-items:center; gap:.4rem;
+}
+.cp-success {
+  background:#f0fdf4; border:1px solid #bbf7d0; border-radius:var(--radius-sm);
+  color:#166534; font-size:.82rem; padding:.55rem .85rem; margin-top:.1rem;
+  display:flex; align-items:center; gap:.4rem;
+}
 
 /* ── Misc ──────────────────────────────────────── */
 .col-hide { display:none; } @media(min-width:640px){ .col-hide { display:table-cell; } }
