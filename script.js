@@ -1,1157 +1,756 @@
-// ============ CONFIG & STATE ============
-const API_URL = '/api';
-let currentUser = null;
-let authHeader = localStorage.getItem('authHeader');
-let isProcessing = false;
+/**
+ * Learning Hub — script.js
+ * Vanilla JS frontend for the Learning Page file management system.
+ *
+ * Architecture:
+ *  - State is held in a plain object `state`.
+ *  - Every data change calls the API first; on success, local state is updated
+ *    and the UI is re-rendered (no optimistic updates — avoids sync bugs).
+ *  - RBAC is enforced by the backend; the frontend merely reflects what the
+ *    server returns (hidden items are never in the DOM).
+ */
 
-let appData = {
-    users: [],
-    updates: [],
-    categories: [],
-    infoCards: [],
-    learningItems: [],
-    folders: []
+'use strict';
+
+// ─── Configuration ────────────────────────────────────────────────────────────
+const API_BASE = '/api';          // Adjust if serving from a subdirectory
+const SEARCH_DEBOUNCE_MS = 320;
+
+// ─── State ───────────────────────────────────────────────────────────────────
+const state = {
+  user:          null,     // { id, account_name, username, role }
+  authHeader:    '',       // "Basic <base64>"
+  currentFolder: null,     // null = root, integer = folder id
+  folders:       [],       // current directory folders
+  files:         [],       // current directory files
+  breadcrumb:    [],       // [{ id, name }, ...]
+  viewMode:      'grid',   // 'grid' | 'list'
+  isSearch:      false,
+  permFilter:    'all',    // 'all' | 'intern' | 'member' | 'leader' | 'admin'
+  // For context menu / modals
+  ctxKind:       null,
+  ctxItem:       null,
+  moveSelectedId: null,    // null = root, integer = folder id
+  allFolders:    [],       // flat list for the move-tree picker
 };
 
-// ============ LOADING OVERLAY WITH PROGRESS BAR ============
-function showLoading(showProgress = false) {
-    const existing = document.getElementById('loadingOverlay');
-    if (existing) existing.remove();
-    
-    const overlay = document.createElement('div');
-    overlay.id = 'loadingOverlay';
-    overlay.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999]';
-    
-    if (showProgress) {
-        overlay.innerHTML = `
-            <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-5 animate-fadeIn min-w-[280px]">
-                <div class="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-                <div class="text-center">
-                    <p class="text-gray-700 font-semibold text-lg mb-1">Please wait...</p>
-                    <p class="text-gray-400 text-sm" id="loadingStatus">Loading data</p>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                    <div id="progressBar" class="bg-gradient-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
-                </div>
-                <p class="text-gray-500 text-xs" id="progressPercent">0%</p>
-            </div>
-        `;
-    } else {
-        overlay.innerHTML = `
-            <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 animate-fadeIn">
-                <div class="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-                <p class="text-gray-700 font-semibold text-lg">Please wait...</p>
-            </div>
-        `;
-    }
-    document.body.appendChild(overlay);
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const $$ = (sel, root = document) => root.querySelectorAll(sel);
+
+const loginPage   = $('loginPage');
+const appPage     = $('appPage');
+const loginForm   = $('loginForm');
+const loginError  = $('loginError');
+const searchInput = $('searchInput');
+const clearSearch = $('clearSearch');
+const itemGrid    = $('itemGrid');
+const breadcrumb  = $('breadcrumb');
+const loadingState = $('loadingState');
+const emptyState   = $('emptyState');
+const userBadge    = $('userBadge');
+const contextMenu  = $('contextMenu');
+const toolbarActions = $('toolbarActions');
+
+// ─── API Helper ───────────────────────────────────────────────────────────────
+async function api(method, path, body = null) {
+  const opts = {
+    method,
+    headers: {
+      'Authorization': state.authHeader,
+      'Content-Type': 'application/json',
+    },
+  };
+  if (body !== null) opts.body = JSON.stringify(body);
+  const res = await fetch(`${API_BASE}/${path}`, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
 }
 
-function updateProgress(percent, status = '') {
-    const progressBar = document.getElementById('progressBar');
-    const progressPercent = document.getElementById('progressPercent');
-    const loadingStatus = document.getElementById('loadingStatus');
-    
-    if (progressBar) {
-        progressBar.style.width = `${percent}%`;
-    }
-    if (progressPercent) {
-        progressPercent.textContent = `${Math.round(percent)}%`;
-    }
-    if (loadingStatus && status) {
-        loadingStatus.textContent = status;
-    }
+// ─── Toast ────────────────────────────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const icons = {
+    success: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
+    error:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+    info:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
+  };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `${icons[type] || icons.info} <span>${escHtml(msg)}</span>`;
+  $('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), 3100);
 }
 
-function hideLoading() {
-    const overlay = document.getElementById('loadingOverlay');
-    if (overlay) {
-        overlay.classList.add('animate-fadeOut');
-        setTimeout(() => overlay.remove(), 200);
-    }
-}
+// ─── Auth & Login ─────────────────────────────────────────────────────────────
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = $('loginUsername').value.trim();
+  const password = $('loginPassword').value;
+  if (!username || !password) return;
 
-// ============ TOAST HELPERS ============
-function showToast(message, type = 'error') {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    const bgColor = type === 'error' ? 'bg-red-500' : type === 'info' ? 'bg-blue-500' : 'bg-green-500';
-    const icon = type === 'error' ? 'fa-exclamation-circle' : type === 'info' ? 'fa-info-circle' : 'fa-check-circle';
-    
-    toast.className = `toast px-5 py-3 rounded-xl shadow-lg ${bgColor} text-white font-medium text-sm flex items-center gap-3`;
-    toast.innerHTML = `<i class="fas ${icon}"></i><span>${message}</span>`;
-    container.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-}
+  const btn = $('loginBtn');
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  loginError.classList.add('hidden');
 
-// ============ API HELPERS ============
-function getHeaders() {
-    return {
-        'Authorization': authHeader || '',
-        'Content-Type': 'application/json'
-    };
-}
-
-async function fetchAPI(endpoint, options = {}) {
-    try {
-        const res = await fetch(`${API_URL}/${endpoint}`, { ...options, headers: { ...getHeaders(), ...options.headers } });
-        
-        if (res.status === 401) {
-            if (!options.silentFail) {
-                logout();
-            }
-            return null;
-        }
-        if (!res.ok) throw new Error('API Error');
-        return endpoint === 'options' ? res : res.json();
-    } catch (e) {
-        console.error(e);
-        if (!options.silentFail) {
-            showToast('Connection Error: ' + e.message);
-        }
-        return null;
-    }
-}
-
-async function refreshData(silent = false) {
-    if (!silent) {
-        showLoading();
-    }
-    
-    const data = await fetchAPI('getData', { silentFail: silent });
-    
-    if (data) {
-        appData = data;
-        if (!document.getElementById('homePage').classList.contains('hidden')) renderUpdates();
-        if (!document.getElementById('learningPage').classList.contains('hidden')) renderLearning();
-        if (!document.getElementById('informationPage').classList.contains('hidden') && currentInfoCategory) {
-            renderInfoCards();
-        }
-        if (!document.getElementById('adminPage').classList.contains('hidden') && currentUser?.role === 'admin') {
-            renderUsers();
-            renderCategories();
-        }
-        renderMobileInfoMenu();
-        renderInfoDropdown();
-    }
-    
-    if (!silent) {
-        hideLoading();
-    }
-    
-    return data;
-}
-
-// ============ AUTHENTICATION ============
-function isAdmin() {
-    return currentUser?.role === 'admin';
-}
-
-document.getElementById('togglePassword').addEventListener('click', function() {
-    const pwd = document.getElementById('password');
-    const icon = this.querySelector('i');
-    if (pwd.type === 'password') {
-        pwd.type = 'text';
-        icon.classList.replace('fa-eye', 'fa-eye-slash');
-    } else {
-        pwd.type = 'password';
-        icon.classList.replace('fa-eye-slash', 'fa-eye');
-    }
+  try {
+    state.authHeader = 'Basic ' + btoa(`${username}:${password}`);
+    const data = await api('POST', 'login');
+    state.user = data.user;
+    showApp();
+  } catch (err) {
+    loginError.textContent = err.message || 'Invalid credentials';
+    loginError.classList.remove('hidden');
+    state.authHeader = '';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
 });
 
-document.getElementById('loginForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    
-    if (isProcessing) return;
-    isProcessing = true;
-    
-    const u = document.getElementById('username').value;
-    const p = document.getElementById('password').value;
-    const loginBtn = document.getElementById('loginBtn');
-    const loginBox = document.getElementById('loginBox');
-
-    loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Please wait...';
-    loginBtn.disabled = true;
-
-    const tempAuth = 'Basic ' + btoa(u + ':' + p);
-    
-    try {
-        const res = await fetch(`${API_URL}/login`, { method: 'POST', headers: { 'Authorization': tempAuth } });
-        
-        if (res.ok) {
-            const data = await res.json();
-            authHeader = tempAuth;
-            localStorage.setItem('authHeader', authHeader);
-            currentUser = data.user;
-            
-            // Show progress bar loading for login
-            showLoading(true);
-            updateProgress(10, 'Authenticating...');
-            
-            await simulateProgress(30, 'Loading user data...');
-            const appDataResult = await fetchAPI('getData');
-            
-            await simulateProgress(70, 'Preparing interface...');
-            
-            if (appDataResult) {
-                appData = appDataResult;
-                
-                if (!currentUser || !currentUser.accountName) {
-                    const creds = atob(authHeader.split(' ')[1]).split(':');
-                    const foundUser = appData.users.find(u => u.username === creds[0]);
-                    currentUser = appDataResult.currentUser || foundUser || { accountName: creds[0], role: 'user' };
-                }
-                
-                await simulateProgress(90, 'Almost done...');
-                
-                document.getElementById('loginPage').classList.add('hidden');
-                document.getElementById('mainApp').classList.remove('hidden');
-                document.getElementById('welcomeUser').textContent = currentUser.accountName;
-                document.getElementById('mobileWelcome').textContent = currentUser.accountName;
-                
-                updateAdminUI();
-                navigateTo('home');
-                
-                updateProgress(100, 'Complete!');
-                await delay(300);
-                hideLoading();
-            } else {
-                throw new Error('Failed to load data');
-            }
-        } else {
-            throw new Error('Invalid Credentials');
-        }
-    } catch (err) {
-        hideLoading();
-        loginBox.classList.add('shake');
-        showToast('Wrong username or password!');
-        setTimeout(() => loginBox.classList.remove('shake'), 500);
-    }
-
-    loginBtn.innerHTML = '<span>Sign In</span><i class="fas fa-arrow-right ml-2"></i>';
-    loginBtn.disabled = false;
-    isProcessing = false;
+$('toggleLoginPwd').addEventListener('click', () => {
+  const input = $('loginPassword');
+  const isHidden = input.type === 'password';
+  input.type = isHidden ? 'text' : 'password';
+  $('toggleLoginPwd').querySelector('.eye-open').classList.toggle('hidden', isHidden);
+  $('toggleLoginPwd').querySelector('.eye-closed').classList.toggle('hidden', !isHidden);
 });
 
-// Helper functions for progress simulation
-function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function simulateProgress(targetPercent, status) {
-    updateProgress(targetPercent, status);
-    await delay(200);
-}
-
-async function initApp() {
-    if (!authHeader) {
-        showLoginPage();
-        return;
-    }
-
-    // Show progress bar loading on page refresh
-    showLoading(true);
-    updateProgress(10, 'Initializing...');
-    
-    await delay(200);
-    updateProgress(25, 'Checking authentication...');
-    
-    const data = await fetchAPI('getData', { silentFail: true });
-    
-    updateProgress(60, 'Loading data...');
-    await delay(200);
-    
-    if (!data) {
-        hideLoading();
-        showLoginPage();
-        return;
-    }
-
-    updateProgress(80, 'Preparing interface...');
-    await delay(150);
-    
-    appData = data;
-    
-    if (!currentUser) {
-        const creds = atob(authHeader.split(' ')[1]).split(':');
-        const foundUser = appData.users.find(u => u.username === creds[0]);
-        currentUser = data.currentUser || foundUser || { accountName: creds[0], role: 'user' };
-    }
-
-    updateProgress(95, 'Almost ready...');
-    await delay(150);
-
-    if (!document.getElementById('loginPage').classList.contains('hidden')) {
-        document.getElementById('loginPage').classList.add('hidden');
-        document.getElementById('mainApp').classList.remove('hidden');
-        document.getElementById('welcomeUser').textContent = currentUser.accountName;
-        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
-        
-        updateAdminUI();
-        navigateTo('home');
-    } else {
-        document.getElementById('welcomeUser').textContent = currentUser.accountName;
-        document.getElementById('mobileWelcome').textContent = currentUser.accountName;
-        updateAdminUI();
-    }
-    
-    updateProgress(100, 'Complete!');
-    await delay(300);
-    hideLoading();
-}
-
-function updateAdminUI() {
-    const els = ['adminBtn', 'mobileAdminBtn', 'addUpdateBtn', 'learningAdminBtns', 'addInfoCardBtn'];
-    els.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            if (isAdmin()) el.classList.remove('hidden');
-            else el.classList.add('hidden');
-        }
-    });
-}
-
-function showLoginPage() {
-    document.getElementById('mainApp').classList.add('hidden');
-    document.getElementById('loginPage').classList.remove('hidden');
-    document.getElementById('username').value = '';
-    document.getElementById('password').value = '';
-}
-
-function logout() {
-    localStorage.removeItem('authHeader');
-    authHeader = null;
-    currentUser = null;
-    showLoginPage();
-    closeMobileMenu();
-}
-
-// ============ MOBILE MENU ============
-function openMobileMenu() {
-    document.getElementById('mobileMenu').classList.remove('hidden');
-    document.getElementById('mobileOverlay').classList.remove('hidden');
-    setTimeout(() => {
-        document.getElementById('mobileMenu').classList.add('show');
-    }, 10);
-    renderMobileInfoMenu();
-}
-
-function closeMobileMenu() {
-    document.getElementById('mobileMenu').classList.remove('show');
-    setTimeout(() => {
-        document.getElementById('mobileMenu').classList.add('hidden');
-        document.getElementById('mobileOverlay').classList.add('hidden');
-    }, 300);
-}
-
-function renderMobileInfoMenu() {
-    const container = document.getElementById('mobileInfoMenu');
-    container.innerHTML = appData.categories.map(cat => `
-        <button onclick="showInfoCategory(${cat.id}, '${cat.name}'); closeMobileMenu();" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-600 hover:bg-gray-100 transition text-sm">
-            <i class="fas ${cat.icon} w-4 text-gray-400"></i> ${cat.name}
-        </button>
-    `).join('');
-}
-
-// ============ NAVIGATION ============
-let currentInfoCategory = null;
-let currentFolderId = null;
-
-function navigateTo(page) {
-    document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
-    document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(b => {
-        b.classList.remove('bg-gray-100', 'text-gray-900');
-        b.classList.add('text-gray-600');
-    });
-
-    if (page === 'home') {
-        document.getElementById('homePage').classList.remove('hidden');
-        renderUpdates();
-    } else if (page === 'learning') {
-        document.getElementById('learningPage').classList.remove('hidden');
-        currentFolderId = null;
-        renderLearning();
-    } else if (page === 'admin') {
-        if (!isAdmin()) return;
-        document.getElementById('adminPage').classList.remove('hidden');
-        showAdminTab('users');
-    }
-    
-    document.querySelectorAll(`[data-page="${page}"]`).forEach(b => {
-        b.classList.remove('text-gray-600');
-        b.classList.add('bg-gray-100', 'text-gray-900');
-    });
-}
-
-function toggleInfoDropdown() {
-    const dropdown = document.getElementById('infoDropdown');
-    dropdown.classList.toggle('hidden');
-    renderInfoDropdown();
-}
-
-function renderInfoDropdown() {
-    const container = document.getElementById('infoDropdown');
-    container.innerHTML = appData.categories.map(cat => `
-        <button onclick="showInfoCategory(${cat.id}, '${cat.name}')" class="dropdown-item w-full text-left px-4 py-2.5 text-gray-700 flex items-center gap-3">
-            <i class="fas ${cat.icon} text-gray-400 w-4"></i> ${cat.name}
-        </button>
-    `).join('');
-}
-
-function showInfoCategory(catId, catName) {
-    currentInfoCategory = catId;
-    document.getElementById('infoDropdown').classList.add('hidden');
-    document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
-    document.getElementById('informationPage').classList.remove('hidden');
-    document.getElementById('infoTitleText').textContent = catName;
-    
-    if (isAdmin()) {
-        document.getElementById('addInfoCardBtn').classList.remove('hidden');
-    }
-    renderInfoCards();
-}
-
-document.addEventListener('click', function(e) {
-    const dropdown = document.getElementById('infoDropdown');
-    const btn = document.querySelector('[data-page="information"]');
-    if (btn && !dropdown.contains(e.target) && !btn.contains(e.target)) {
-        dropdown.classList.add('hidden');
-    }
+$('logoutBtn').addEventListener('click', () => {
+  state.user = null;
+  state.authHeader = '';
+  state.currentFolder = null;
+  appPage.classList.add('hidden');
+  loginPage.classList.remove('hidden');
+  $('loginUsername').value = '';
+  $('loginPassword').value = '';
 });
 
-// ============ GENERIC SAVE / DELETE (API) ============
-async function saveToApi(table, data) {
-    if (isProcessing) {
-        showToast('Please wait for current operation to complete', 'info');
-        return false;
-    }
-    
-    isProcessing = true;
-    showLoading(true);
-    updateProgress(20, 'Saving data...');
-    
-    try {
-        await fetchAPI('', {
-            method: 'POST',
-            body: JSON.stringify({ action: 'save', table, data })
-        });
-        
-        updateProgress(50, 'Refreshing...');
-        await refreshData(true); // silent refresh, we're handling loading ourselves
-        
-        updateProgress(100, 'Saved!');
-        await delay(300);
-        hideLoading();
-        showToast('Saved successfully!', 'success');
-        isProcessing = false;
-        return true;
-    } catch (e) {
-        hideLoading();
-        showToast('Save failed: ' + e.message);
-        isProcessing = false;
-        return false;
-    }
+function showApp() {
+  loginPage.classList.add('hidden');
+  appPage.classList.remove('hidden');
+  renderUserBadge();
+  renderToolbar();
+  loadDirectory(null);
 }
 
-async function deleteFromApi(table, id) {
-    if (isProcessing) {
-        showToast('Please wait for current operation to complete', 'info');
-        return false;
-    }
-    
-    isProcessing = true;
-    showLoading(true);
-    updateProgress(20, 'Deleting...');
-    
-    try {
-        await fetchAPI('', {
-            method: 'POST',
-            body: JSON.stringify({ action: 'delete', table, id })
-        });
-        
-        updateProgress(50, 'Refreshing...');
-        await refreshData(true);
-        
-        updateProgress(100, 'Deleted!');
-        await delay(300);
-        hideLoading();
-        showToast('Deleted successfully!', 'success');
-        isProcessing = false;
-        return true;
-    } catch (e) {
-        hideLoading();
-        showToast('Delete failed');
-        isProcessing = false;
-        return false;
-    }
+function renderUserBadge() {
+  const { account_name, role } = state.user;
+  userBadge.innerHTML = `
+    <span>${escHtml(account_name)}</span>
+    <span class="role-pill ${role}">${role}</span>`;
 }
 
-// ============ UPDATES ============
-function renderUpdates() {
-    const container = document.getElementById('updatesContainer');
-    const badgeStyles = {
-        important: 'bg-red-100 text-red-700 border-red-200',
-        general: 'bg-blue-100 text-blue-700 border-blue-200',
-        announcement: 'bg-green-100 text-green-700 border-green-200',
-        reminder: 'bg-amber-100 text-amber-700 border-amber-200'
-    };
-    const badgeIcons = { important: '🔴', general: '🔵', announcement: '🟢', reminder: '🟡' };
+// ─── RBAC helpers ─────────────────────────────────────────────────────────────
+const ROLE_RANK = { admin: 4, leader: 3, member: 2, intern: 1 };
+const canCreate = () => state.user && state.user.role !== 'intern';
+const canManage = (item) => {
+  if (!state.user) return false;
+  const r = state.user.role;
+  if (r === 'admin' || r === 'leader') return true;
+  return item.created_by === state.user.id;
+};
+const userRank = () => ROLE_RANK[state.user?.role ?? 'intern'] ?? 1;
 
-    container.innerHTML = appData.updates.map(update => `
-        <div class="update-card bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-gray-100 hover:border-blue-100">
-            <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
-                <h3 class="font-bold text-lg text-gray-800">${update.topic}</h3>
-                <div class="flex items-center gap-2 flex-shrink-0">
-                    <span class="badge-hover px-3 py-1 rounded-full text-xs font-semibold border ${badgeStyles[update.badge]} transition-transform cursor-default">
-                        ${badgeIcons[update.badge]} ${update.badge.charAt(0).toUpperCase() + update.badge.slice(1)}
-                    </span>
-                    ${isAdmin() ? `
-                        <button onclick="editUpdate(${update.id})" class="icon-btn w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50"><i class="fas fa-edit"></i></button>
-                        <button onclick="deleteUpdate(${update.id})" class="icon-btn w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"><i class="fas fa-trash"></i></button>
-                    ` : ''}
-                </div>
-            </div>
-            <div class="card-link text-gray-600 mb-4 leading-relaxed">${linkify(update.message)}</div>
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm text-gray-400 pt-4 border-t border-gray-100">
-                <span class="flex items-center gap-2"><i class="fas fa-user-circle"></i>${update.author}</span>
-                <span class="flex items-center gap-2"><i class="fas fa-calendar"></i>${update.date}</span>
-            </div>
-        </div>
-    `).join('') || '<div class="text-center text-gray-400 py-16 bg-white rounded-2xl border border-gray-100"><i class="fas fa-inbox text-4xl mb-3 text-gray-300"></i><p>No updates yet</p></div>';
-}
+// ─── Directory Loading ────────────────────────────────────────────────────────
+async function loadDirectory(folderId) {
+  state.isSearch = false;
+  state.currentFolder = folderId;
+  state.permFilter = 'all';
+  searchInput.value = '';
+  clearSearch.classList.add('hidden');
 
-function linkify(text) {
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
-}
-
-function openUpdateModal(id = null) {
-    if (!isAdmin()) return;
-    document.getElementById('updateModal').classList.remove('hidden');
-    document.getElementById('updateModalTitle').textContent = id ? 'Edit Update' : 'Add Update';
-    document.getElementById('updateId').value = id || '';
-    
-    if (id) {
-        const update = appData.updates.find(u => u.id === id);
-        document.getElementById('updateTopic').value = update.topic;
-        document.getElementById('updateBadge').value = update.badge;
-        document.getElementById('updateMessage').value = update.message;
-    } else {
-        document.getElementById('updateForm').reset();
-    }
-}
-
-async function saveUpdate() {
-    if (!isAdmin()) return;
-    const id = document.getElementById('updateId').value;
-    const update = {
-        id: id ? parseInt(id) : null,
-        topic: document.getElementById('updateTopic').value,
-        badge: document.getElementById('updateBadge').value,
-        message: document.getElementById('updateMessage').value,
-        author: currentUser.accountName,
-        date: new Date().toISOString().slice(0, 10)
-    };
-    
-    if(await saveToApi('updates', update)) {
-        closeModal('updateModal');
-    }
-}
-
-function editUpdate(id) { if(isAdmin()) openUpdateModal(id); }
-async function deleteUpdate(id) { if(isAdmin() && confirm('Delete?')) await deleteFromApi('updates', id); }
-
-// ============ LEARNING ============
-let contextItem = null;
-
-function renderLearning() {
-    const container = document.getElementById('learningContainer');
+  setLoading(true);
+  try {
+    const param = folderId === null ? 'root' : folderId;
+    const data = await api('GET', `learning?folder_id=${param}`);
+    state.folders   = data.folders ?? [];
+    state.files     = data.files   ?? [];
+    state.breadcrumb = data.breadcrumb ?? [];
     renderBreadcrumb();
+    renderItems();
+    renderToolbar();
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
 
-    // Current folder ထဲက folders နဲ့ items တွေကို ယူမယ်
-    let folders = appData.folders
-        .filter(f => f.parentId === currentFolderId)
-        .sort((a, b) => a.name.localeCompare(b.name)); // A-Z
+// ─── Search ───────────────────────────────────────────────────────────────────
+let searchTimer = null;
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.trim();
+  clearSearch.classList.toggle('hidden', q === '');
+  clearTimeout(searchTimer);
+  if (!q) {
+    loadDirectory(state.currentFolder);
+    return;
+  }
+  searchTimer = setTimeout(() => doSearch(q), SEARCH_DEBOUNCE_MS);
+});
 
-    let items = appData.learningItems
-        .filter(i => i.folderId === currentFolderId)
-        .sort((a, b) => a.topic.localeCompare(b.topic)); // A-Z
+clearSearch.addEventListener('click', () => {
+  searchInput.value = '';
+  clearSearch.classList.add('hidden');
+  loadDirectory(state.currentFolder);
+});
 
-    // HTML တည်ဆောက်မယ် - အရင် folders အားလုံး၊ နောက် items အားလုံး
-    let html = '';
+async function doSearch(q) {
+  state.isSearch = true;
+  setLoading(true);
+  try {
+    const data = await api('GET', `learning?search=${encodeURIComponent(q)}`);
+    state.folders = data.folders ?? [];
+    state.files   = data.files   ?? [];
+    state.breadcrumb = [];
+    renderBreadcrumb();
+    renderSearchResults(q);
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
 
-    // Folders တွေ
-    folders.forEach(folder => {
-        html += `
-            <div class="file-card bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:border-amber-200 cursor-pointer group" 
-                 onclick="openFolder(${folder.id})" 
-                 ${isAdmin() ? `oncontextmenu="showContext(event, 'folder', ${folder.id})"` : ''}>
-                <div class="flex flex-col items-center text-center">
-                    <div class="file-icon w-14 h-14 bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl flex items-center justify-center mb-3 group-hover:from-amber-100 group-hover:to-amber-200">
-                        <i class="fas fa-folder folder-icon text-amber-400 text-2xl"></i>
-                    </div>
-                    <span class="font-medium text-gray-700 text-sm line-clamp-2 group-hover:text-amber-700 transition-colors">${folder.name}</span>
-                </div>
-            </div>
-        `;
-    });
-
-    // Items (files) တွေ
-    items.forEach(item => {
-        html += `
-            <div class="file-card bg-white rounded-2xl p-4 shadow-sm border border-gray-100 ${item.type === 'pdf' ? 'hover:border-red-200' : 'hover:border-blue-200'} cursor-pointer group" 
-                 onclick="openLearningItem(${item.id})"
-                 ${isAdmin() ? `oncontextmenu="showContext(event, 'item', ${item.id})"` : ''}>
-                <div class="flex flex-col items-center text-center">
-                    <div class="file-icon w-14 h-14 ${item.type === 'pdf' ? 'bg-gradient-to-br from-red-50 to-red-100 group-hover:from-red-100 group-hover:to-red-200' : 'bg-gradient-to-br from-blue-50 to-blue-100 group-hover:from-blue-100 group-hover:to-blue-200'} rounded-xl flex items-center justify-center mb-3">
-                        <i class="fas ${item.type === 'pdf' ? 'fa-file-pdf pdf-icon text-red-400' : 'fa-file-alt text-icon text-blue-400'} text-2xl"></i>
-                    </div>
-                    <span class="font-medium text-gray-700 text-sm line-clamp-2 ${item.type === 'pdf' ? 'group-hover:text-red-700' : 'group-hover:text-blue-700'} transition-colors">${item.topic}</span>
-                </div>
-            </div>
-        `;
-    });
-
-    // Empty state
-    if (folders.length === 0 && items.length === 0) {
-        html = '<div class="col-span-full text-center text-gray-400 py-16 bg-white rounded-2xl border border-gray-100"><i class="fas fa-folder-open text-4xl mb-3 text-gray-300"></i><p>Empty folder</p></div>';
-    }
-
-    container.innerHTML = html;
+// ─── Rendering ────────────────────────────────────────────────────────────────
+function setLoading(on) {
+  loadingState.classList.toggle('hidden', !on);
+  itemGrid.classList.toggle('hidden', on);
+  emptyState.classList.add('hidden');
 }
 
 function renderBreadcrumb() {
-    const breadcrumb = document.getElementById('breadcrumb');
-    let path = [];
-    let folderId = currentFolderId;
+  const crumbs = [{ id: null, name: 'Learning Hub', isRoot: true }, ...state.breadcrumb];
+  breadcrumb.innerHTML = crumbs.map((c, i) => {
+    const isLast = i === crumbs.length - 1;
+    const crumbHtml = `<span class="crumb${isLast ? ' active' : ''}" ${!isLast ? `onclick="loadDirectory(${c.id})"` : ''}>${escHtml(c.name)}</span>`;
+    return i < crumbs.length - 1 ? crumbHtml + `<span class="sep">›</span>` : crumbHtml;
+  }).join('');
+}
 
-    while (folderId) {
-        const folder = appData.folders.find(f => f.id === folderId);
-        if (folder) {
-            path.unshift(folder);
-            folderId = folder.parentId;
-        } else break;
-    }
+function renderToolbar() {
+  const canMake = canCreate();
+  const isAdmin = state.user?.role === 'admin';
 
-    let html = `<button onclick="currentFolderId = null; renderLearning();" class="breadcrumb-item flex items-center gap-1 px-2 py-1 rounded-lg"><i class="fas fa-home"></i> <span class="hidden sm:inline">Root</span></button>`;
-    path.forEach(folder => {
-        html += `<i class="fas fa-chevron-right text-xs text-gray-300"></i>
-                 <button onclick="currentFolderId = ${folder.id}; renderLearning();" class="breadcrumb-item px-2 py-1 rounded-lg">${folder.name}</button>`;
+  // Perm filter buttons (shown for admin/leader to filter view)
+  const filterBtns = isAdmin
+    ? `<div class="perm-filter">
+        ${['all','intern','member','leader','admin'].map(r =>
+          `<button class="perm-filter-btn${state.permFilter===r?' active':''}" onclick="setPermFilter('${r}')">${r==='all'?'All':r}</button>`
+        ).join('')}
+       </div>`
+    : '';
+
+  toolbarActions.innerHTML = `
+    ${canMake ? `<button class="btn-primary" onclick="openCreateModal()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add New
+    </button>` : ''}
+    ${filterBtns}`;
+}
+
+function setPermFilter(f) {
+  state.permFilter = f;
+  renderToolbar();
+  if (state.isSearch) renderSearchResults(searchInput.value.trim());
+  else renderItems();
+}
+
+function applyPermFilter(items) {
+  if (state.permFilter === 'all') return items;
+  return items.filter(i => i.min_role_required === state.permFilter);
+}
+
+function renderItems() {
+  const folders = applyPermFilter(state.folders);
+  const files   = applyPermFilter(state.files);
+  const total   = folders.length + files.length;
+
+  emptyState.classList.toggle('hidden', total > 0);
+  itemGrid.innerHTML = '';
+
+  if (total === 0) return;
+
+  itemGrid.className = `item-grid${state.viewMode === 'list' ? ' list-view' : ''}`;
+
+  folders.forEach(f => itemGrid.appendChild(makeFolderCard(f)));
+  files.forEach(f => itemGrid.appendChild(makeFileCard(f)));
+}
+
+function renderSearchResults(q) {
+  const folders = applyPermFilter(state.folders);
+  const files   = applyPermFilter(state.files);
+  const total   = folders.length + files.length;
+
+  emptyState.classList.toggle('hidden', total > 0);
+  itemGrid.innerHTML = '';
+
+  if (total === 0) {
+    emptyState.querySelector('p').textContent = `No results for "${q}"`;
+    emptyState.querySelector('span').textContent = 'Try a different search term.';
+    return;
+  }
+
+  itemGrid.className = `item-grid${state.viewMode === 'list' ? ' list-view' : ''}`;
+
+  if (folders.length) {
+    const sec = document.createElement('div');
+    sec.className = 'search-result-section';
+    sec.innerHTML = `<h3>Folders (${folders.length})</h3>`;
+    sec.style.gridColumn = '1/-1';
+    itemGrid.appendChild(sec);
+    folders.forEach(f => itemGrid.appendChild(makeFolderCard(f)));
+  }
+
+  if (files.length) {
+    const sec = document.createElement('div');
+    sec.className = 'search-result-section';
+    sec.innerHTML = `<h3>Files (${files.length})</h3>`;
+    sec.style.gridColumn = '1/-1';
+    itemGrid.appendChild(sec);
+    files.forEach(f => itemGrid.appendChild(makeFileCard(f)));
+  }
+}
+
+function makeFolderCard(folder) {
+  const card = document.createElement('div');
+  card.className = `item-card${state.viewMode === 'list' ? ' list-view' : ''}`;
+  card.dataset.kind = 'folder';
+  card.dataset.id   = folder.id;
+
+  const canEdit = canManage(folder);
+
+  card.innerHTML = `
+    <div class="card-icon-wrap folder">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+    </div>
+    <div class="card-body">
+      <div class="card-name">${escHtml(folder.name)}</div>
+      <div class="card-sub">Folder</div>
+    </div>
+    <div class="card-meta">
+      <span class="card-perm ${folder.min_role_required}">${folder.min_role_required}</span>
+      ${canEdit ? `
+        <button class="btn-icon" title="Edit" onclick="openEditModal(event,'folder',${JSON.stringify(JSON.stringify(folder))})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="btn-icon" title="More" onclick="openCtxMenu(event,'folder',${JSON.stringify(JSON.stringify(folder))})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </button>` : ''}
+    </div>`;
+
+  // Navigate into folder on click (but not when clicking buttons)
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    loadDirectory(folder.id);
+  });
+
+  return card;
+}
+
+function makeFileCard(file) {
+  const card = document.createElement('div');
+  card.className = `item-card${state.viewMode === 'list' ? ' list-view' : ''}`;
+  card.dataset.kind = 'file';
+  card.dataset.id   = file.id;
+
+  const typeIcon = {
+    link: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+    text: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
+    file: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`,
+  }[file.type] ?? '';
+
+  const canEdit = canManage(file);
+
+  card.innerHTML = `
+    <div class="card-icon-wrap ${file.type}">
+      ${typeIcon}
+    </div>
+    <div class="card-body">
+      <div class="card-name">${escHtml(file.name)}</div>
+      <div class="card-sub">${file.type === 'link' ? escHtml(file.url ?? '') : file.type === 'text' ? 'Text note' : 'File'}</div>
+    </div>
+    <div class="card-meta">
+      <span class="card-perm ${file.min_role_required}">${file.min_role_required}</span>
+      ${canEdit ? `
+        <button class="btn-icon" title="Edit" onclick="openEditModal(event,'file',${JSON.stringify(JSON.stringify(file))})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="btn-icon" title="More" onclick="openCtxMenu(event,'file',${JSON.stringify(JSON.stringify(file))})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </button>` : ''}
+    </div>`;
+
+  // View file on click
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    openViewer(file);
+  });
+
+  return card;
+}
+
+// ─── View Mode Toggle ─────────────────────────────────────────────────────────
+$('viewGrid').addEventListener('click', () => setViewMode('grid'));
+$('viewList').addEventListener('click', () => setViewMode('list'));
+
+function setViewMode(mode) {
+  state.viewMode = mode;
+  $('viewGrid').classList.toggle('active', mode === 'grid');
+  $('viewList').classList.toggle('active', mode === 'list');
+  if (state.isSearch) renderSearchResults(searchInput.value.trim());
+  else renderItems();
+}
+
+// ─── Viewer Modal ─────────────────────────────────────────────────────────────
+function openViewer(file) {
+  $('viewerModalTitle').textContent = file.name;
+  const content = $('viewerContent');
+
+  if (file.type === 'link') {
+    content.innerHTML = `
+      <div class="viewer-link-wrap">
+        <p style="color:var(--clr-text-2);font-size:.85rem;">This item links to:</p>
+        <a href="${escHtml(file.url ?? '')}" target="_blank" rel="noopener noreferrer" class="viewer-link-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Open Link
+        </a>
+        <code style="font-size:.75rem;color:var(--clr-text-3);word-break:break-all;">${escHtml(file.url ?? '')}</code>
+      </div>`;
+  } else {
+    content.innerHTML = `<pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit;">${escHtml(file.content ?? '(No content)')}</pre>`;
+  }
+
+  $('viewerModal').classList.remove('hidden');
+}
+
+// ─── Create Modal ─────────────────────────────────────────────────────────────
+let createTab = 'folder';
+
+function openCreateModal() {
+  createTab = 'folder';
+  switchCreateTab('folder');
+  $('folderForm').reset();
+  $('fileForm').reset();
+  onFileTypeChange();
+  $('createModal').classList.remove('hidden');
+  setTimeout(() => $('folderName').focus(), 50);
+}
+
+function switchCreateTab(tab) {
+  createTab = tab;
+  $('tabFolder').classList.toggle('active', tab === 'folder');
+  $('tabFile').classList.toggle('active', tab === 'file');
+  $('folderForm').classList.toggle('hidden', tab !== 'folder');
+  $('fileForm').classList.toggle('hidden', tab !== 'file');
+}
+
+function onFileTypeChange() {
+  const t = $('fileType').value;
+  $('urlGroup').classList.toggle('hidden', t !== 'link');
+  $('contentGroup').classList.toggle('hidden', t !== 'text');
+}
+
+$('folderForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = $('folderName').value.trim();
+  const min_role_required = $('folderPermission').value;
+  if (!name) return toast('Folder name is required', 'error');
+
+  try {
+    await api('POST', 'learning/create', {
+      kind: 'folder',
+      name,
+      parent_id: state.currentFolder,
+      min_role_required,
     });
-    breadcrumb.innerHTML = html;
-}
+    closeModal('createModal');
+    toast('Folder created', 'success');
+    loadDirectory(state.currentFolder);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+});
 
-function openFolder(id) {
-    currentFolderId = id;
-    renderLearning();
-}
+$('fileForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = $('fileName').value.trim();
+  const type = $('fileType').value;
+  const min_role_required = $('filePermission').value;
+  const url = $('fileUrl').value.trim() || null;
+  const content = $('fileContent').value.trim() || null;
 
-function openLearningItem(id) {
-    const item = appData.learningItems.find(i => i.id === id);
-    if (item.type === 'pdf') {
-        window.open(item.link, '_blank');
-    } else {
-        document.getElementById('textViewTitle').textContent = item.topic;
-        document.getElementById('textViewContent').textContent = item.content;
-        document.getElementById('textViewModal').classList.remove('hidden');
-    }
-}
+  if (!name) return toast('File name is required', 'error');
+  if (type === 'link' && !url) return toast('URL is required', 'error');
+  if (type === 'text' && !content) return toast('Content is required', 'error');
 
-function showContext(e, type, id) {
-    if (!isAdmin()) return;
-    e.preventDefault();
-    e.stopPropagation();
-    contextItem = { type, id };
-    const menu = document.getElementById('contextMenu');
-    menu.classList.remove('hidden');
-    menu.style.left = Math.min(e.clientX, window.innerWidth - 180) + 'px';
-    menu.style.top = Math.min(e.clientY, window.innerHeight - 150) + 'px';
-}
-
-document.addEventListener('click', () => document.getElementById('contextMenu').classList.add('hidden'));
-
-function renameItem() {
-    if (!isAdmin() || !contextItem) return;
-    let currentName = '';
-    if (contextItem.type === 'folder') {
-        currentName = appData.folders.find(f => f.id === contextItem.id)?.name;
-    } else {
-        currentName = appData.learningItems.find(i => i.id === contextItem.id)?.topic;
-    }
-    document.getElementById('renameInput').value = currentName || '';
-    document.getElementById('renameModal').classList.remove('hidden');
-}
-
-async function confirmRename() {
-    if (!isAdmin() || !contextItem) return;
-    const newName = document.getElementById('renameInput').value.trim();
-    if (!newName) return;
-
-    let table = contextItem.type === 'folder' ? 'folders' : 'learning_items';
-    let data = { id: contextItem.id };
-    if (contextItem.type === 'folder') {
-         const f = appData.folders.find(x => x.id === contextItem.id);
-         data = { ...f, name: newName };
-    } else {
-         const i = appData.learningItems.find(x => x.id === contextItem.id);
-         data = { ...i, topic: newName };
-    }
-
-    if(await saveToApi(table, data)) {
-        closeModal('renameModal');
-    }
-}
-
-function moveItem() {
-    if (!isAdmin() || !contextItem) return;
-    const container = document.getElementById('moveFolderList');
-    
-    let availableFolders = appData.folders.filter(folder => {
-        if (contextItem.type === 'folder' && folder.id === contextItem.id) return false;
-        if (contextItem.type === 'folder' && isChildFolder(folder.id, contextItem.id)) return false;
-        return true;
+  try {
+    await api('POST', 'learning/create', {
+      kind: 'file',
+      name,
+      type,
+      url,
+      content,
+      folder_id: state.currentFolder,
+      min_role_required,
     });
-    
-    let html = `<button onclick="confirmMove(null)" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 transition text-left"><i class="fas fa-home text-gray-400"></i> Root</button>`;
-    
-    availableFolders.forEach(folder => {
-        html += `<button onclick="confirmMove(${folder.id})" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 transition text-left"><i class="fas fa-folder text-amber-500"></i> ${folder.name}</button>`;
+    closeModal('createModal');
+    toast('File created', 'success');
+    loadDirectory(state.currentFolder);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+});
+
+// ─── Edit Modal ───────────────────────────────────────────────────────────────
+function openEditModal(event, kind, itemJson) {
+  event.stopPropagation();
+  const item = JSON.parse(itemJson);
+
+  $('editKind').value = kind;
+  $('editId').value   = item.id;
+  $('editName').value = item.name;
+  $('editPermission').value = item.min_role_required;
+
+  const fileFields = $('editFileFields');
+  fileFields.classList.toggle('hidden', kind !== 'file');
+
+  if (kind === 'file') {
+    $('editType').value = item.type ?? 'link';
+    $('editUrl').value  = item.url ?? '';
+    $('editContent').value = item.content ?? '';
+    onEditTypeChange();
+  }
+
+  $('editModalTitle').textContent = `Edit ${kind === 'folder' ? 'Folder' : 'File'}`;
+  $('editModal').classList.remove('hidden');
+  setTimeout(() => $('editName').focus(), 50);
+}
+
+function onEditTypeChange() {
+  const t = $('editType').value;
+  $('editUrlGroup').classList.toggle('hidden', t !== 'link');
+  $('editContentGroup').classList.toggle('hidden', t !== 'text');
+}
+
+$('editForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const kind = $('editKind').value;
+  const id   = parseInt($('editId').value, 10);
+  const name = $('editName').value.trim();
+  const min_role_required = $('editPermission').value;
+
+  if (!name) return toast('Name is required', 'error');
+
+  const payload = { kind, id, name, min_role_required };
+
+  if (kind === 'file') {
+    payload.type    = $('editType').value;
+    payload.url     = $('editUrl').value.trim() || null;
+    payload.content = $('editContent').value.trim() || null;
+  }
+
+  try {
+    await api('PUT', 'learning/edit', payload);
+    closeModal('editModal');
+    toast('Changes saved', 'success');
+    loadDirectory(state.currentFolder);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+});
+
+// ─── Move Modal ───────────────────────────────────────────────────────────────
+async function openMoveModal(kind, item) {
+  $('moveKind').value = kind;
+  $('moveId').value   = item.id;
+  $('moveModalTitle').textContent = `Move "${item.name}"`;
+  state.moveSelectedId = null; // default: root
+
+  // Fetch all accessible folders for the picker
+  try {
+    const data = await api('GET', 'learning?search=');
+    // We need all folders — do a broad search with empty string
+    // Then walk all pages — for now fetch root + all via search trick
+    // Actually: fetch all folders by searching with blank term
+    // The backend search with blank term returns nothing; we'll fetch root
+    // and recursively build. Simpler: use a dedicated flat fetch.
+    // We'll gather from multiple calls. For now, fetch root as a start point
+    // and let user navigate the tree inline.
+    // Flatten all folders from the current directory tree:
+    state.allFolders = await fetchAllFolders();
+  } catch (e) {
+    state.allFolders = [];
+  }
+
+  renderMoveTree(item.id, kind);
+  $('moveModal').classList.remove('hidden');
+}
+
+async function fetchAllFolders(parentId = null, depth = 0, acc = []) {
+  if (depth > 8) return acc; // safety cap
+  try {
+    const param = parentId === null ? 'root' : parentId;
+    const data = await api('GET', `learning?folder_id=${param}`);
+    for (const f of (data.folders ?? [])) {
+      acc.push({ ...f, depth });
+      await fetchAllFolders(f.id, depth + 1, acc);
+    }
+  } catch { /* ignore inaccessible */ }
+  return acc;
+}
+
+function renderMoveTree(excludeId, excludeKind) {
+  const tree = $('folderTree');
+  tree.innerHTML = '';
+
+  // Root option
+  const rootEl = document.createElement('div');
+  rootEl.className = `tree-item root${state.moveSelectedId === null ? ' selected' : ''}`;
+  rootEl.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    Root (Top Level)`;
+  rootEl.addEventListener('click', () => selectMoveTarget(null, tree));
+  tree.appendChild(rootEl);
+
+  for (const f of state.allFolders) {
+    // Exclude the item being moved (can't move into itself)
+    if (excludeKind === 'folder' && f.id === excludeId) continue;
+
+    const el = document.createElement('div');
+    el.className = `tree-item${state.moveSelectedId === f.id ? ' selected' : ''}`;
+    el.style.paddingLeft = `${.75 + f.depth * 1.2}rem`;
+    el.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      ${escHtml(f.name)}`;
+    el.addEventListener('click', () => selectMoveTarget(f.id, tree));
+    tree.appendChild(el);
+  }
+}
+
+function selectMoveTarget(id, tree) {
+  state.moveSelectedId = id;
+  tree.querySelectorAll('.tree-item').forEach(el => el.classList.remove('selected'));
+  // Re-render is simpler than finding the right element:
+  const kind = $('moveKind').value;
+  const itemId = parseInt($('moveId').value, 10);
+  renderMoveTree(itemId, kind);
+}
+
+async function confirmMove() {
+  const kind = $('moveKind').value;
+  const id   = parseInt($('moveId').value, 10);
+
+  try {
+    await api('PUT', 'learning/move', {
+      kind,
+      id,
+      target_id: state.moveSelectedId,
     });
-    
-    container.innerHTML = html;
-    document.getElementById('moveModal').classList.remove('hidden');
+    closeModal('moveModal');
+    toast('Item moved', 'success');
+    loadDirectory(state.currentFolder);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
-function isChildFolder(targetId, parentId) {
-    let currentId = targetId;
-    while (currentId) {
-        const folder = appData.folders.find(f => f.id === currentId);
-        if (!folder) break;
-        if (folder.parentId === parentId) return true;
-        currentId = folder.parentId;
-    }
-    return false;
+// ─── Context Menu ─────────────────────────────────────────────────────────────
+function openCtxMenu(event, kind, itemJson) {
+  event.stopPropagation();
+  const item = JSON.parse(itemJson);
+  state.ctxKind = kind;
+  state.ctxItem = item;
+
+  const menu = contextMenu;
+  menu.classList.remove('hidden');
+
+  // Position near click
+  const x = Math.min(event.clientX, window.innerWidth - 180);
+  const y = Math.min(event.clientY, window.innerHeight - 130);
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
 }
 
-async function confirmMove(targetFolderId) {
-    if (!isAdmin() || !contextItem) return;
-    let table = contextItem.type === 'folder' ? 'folders' : 'learning_items';
-    let data = { id: contextItem.id };
-    
-    if (contextItem.type === 'folder') {
-         const f = appData.folders.find(x => x.id === contextItem.id);
-         data = { ...f, parentId: targetFolderId };
-    } else {
-         const i = appData.learningItems.find(x => x.id === contextItem.id);
-         data = { ...i, folderId: targetFolderId };
-    }
-    
-    if(await saveToApi(table, data)) {
-        closeModal('moveModal');
-    }
-}
-
-async function deleteItem() {
-    if (!isAdmin() || !contextItem) return;
-    if (!confirm('Delete this item?')) return;
-    
-    const table = contextItem.type === 'folder' ? 'folders' : 'learning_items';
-    await deleteFromApi(table, contextItem.id);
-}
-
-function openFolderModal() {
-    if (!isAdmin()) return;
-    document.getElementById('folderModal').classList.remove('hidden');
-    document.getElementById('folderForm').reset();
-    document.getElementById('folderId').value = '';
-}
-
-async function saveFolder() {
-    const id = document.getElementById('folderId').value;
-    const name = document.getElementById('folderName').value;
-    const data = { id: id ? parseInt(id) : null, name, parentId: currentFolderId };
-    if(await saveToApi('folders', data)) closeModal('folderModal');
-}
-
-function openLearningItemModal(id = null) {
-    if (!isAdmin()) return;
-    document.getElementById('learningItemModal').classList.remove('hidden');
-    document.getElementById('learningItemModalTitle').textContent = id ? 'Edit Item' : 'Add Item';
-    document.getElementById('learningItemId').value = id || '';
-    
-    if (id) {
-        const item = appData.learningItems.find(i => i.id === id);
-        document.getElementById('learningItemTopic').value = item.topic;
-        document.getElementById('learningItemType').value = item.type;
-        document.getElementById('learningItemLink').value = item.link || '';
-        document.getElementById('learningItemContent').value = item.content || '';
-    } else {
-        document.getElementById('learningItemForm').reset();
-    }
-    toggleLearningItemFields();
-}
-
-function toggleLearningItemFields() {
-    const type = document.getElementById('learningItemType').value;
-    document.getElementById('pdfLinkField').classList.toggle('hidden', type !== 'pdf');
-    document.getElementById('textContentField').classList.toggle('hidden', type !== 'text');
-}
-
-async function saveLearningItem() {
-    const id = document.getElementById('learningItemId').value;
-    const type = document.getElementById('learningItemType').value;
-    const data = {
-        id: id ? parseInt(id) : null,
-        topic: document.getElementById('learningItemTopic').value,
-        type,
-        link: type === 'pdf' ? document.getElementById('learningItemLink').value : null,
-        content: type === 'text' ? document.getElementById('learningItemContent').value : null,
-        folderId: currentFolderId
-    };
-    if(await saveToApi('learning_items', data)) closeModal('learningItemModal');
-}
-
-// ============ INFO CARDS ============
-let longPressTimer, longPressCardId, isLongPress;
-let imageSource = 'url';
-
-function renderInfoCards() {
-    const container = document.getElementById('infoCardsContainer');
-    const cards = appData.infoCards.filter(c => c.categoryId === currentInfoCategory);
-
-    container.innerHTML = cards.map(card => `
-        <div class="relative group" id="infoCard-${card.id}">
-            <div class="info-card bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:border-blue-200 flex flex-col items-center text-center cursor-pointer"
-               data-card-id="${card.id}"
-               onclick="handleInfoCardClick(event, ${card.id}, '${card.link}')"
-               ${isAdmin() ? `oncontextmenu="showInfoCardContext(event, ${card.id})"` : ''}>
-                ${card.displayType === 'image' && card.image ? `
-                    <img src="${card.image}" alt="${card.title}" class="info-card-img mb-3" onerror="this.style.display='none';">
-                ` : `
-                    <div class="info-icon w-14 h-14 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl flex items-center justify-center mb-3 group-hover:from-blue-100 group-hover:to-blue-200">
-                        <i class="fas ${card.icon || 'fa-link'} text-2xl text-blue-400 group-hover:text-blue-600 transition-colors"></i>
-                    </div>
-                `}
-                <span class="font-medium text-gray-700 text-sm line-clamp-2 group-hover:text-blue-700 transition-colors">${card.title}</span>
-            </div>
-            ${isAdmin() ? `
-                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 flex gap-1 transition">
-                    <button onclick="editInfoCard(event, ${card.id})" class="w-7 h-7 flex justify-center items-center bg-white rounded shadow text-gray-400 hover:text-blue-600"><i class="fas fa-edit text-xs"></i></button>
-                </div>
-            ` : ''}
-        </div>
-    `).join('') || '<div class="col-span-full text-center text-gray-400 py-16">No items yet</div>';
-    
-    if (isAdmin()) {
-        cards.forEach(card => {
-            const el = document.querySelector(`[data-card-id="${card.id}"]`);
-            if (el) {
-                el.addEventListener('touchstart', (e) => startInfoCardLongPress(e, card.id), { passive: true });
-                el.addEventListener('touchend', endInfoCardLongPress);
-                el.addEventListener('touchmove', cancelInfoCardLongPress);
-            }
-        });
-    }
-}
-
-function handleInfoCardClick(event, cardId, link) {
-    if (isLongPress) { event.preventDefault(); isLongPress = false; return; }
-    window.open(link, '_blank');
-}
-
-function startInfoCardLongPress(event, cardId) {
-    if (!isAdmin()) return;
-    isLongPress = false; longPressCardId = cardId;
-    const el = document.getElementById(`infoCard-${cardId}`);
-    longPressTimer = setTimeout(() => {
-        isLongPress = true;
-        if(el) el.classList.add('long-press-active');
-        if(navigator.vibrate) navigator.vibrate(50);
-        showInfoCardContext(event, cardId);
-    }, 500);
-}
-function endInfoCardLongPress() { clearTimeout(longPressTimer); document.querySelectorAll('.long-press-active').forEach(e=>e.classList.remove('long-press-active')); }
-function cancelInfoCardLongPress() { clearTimeout(longPressTimer); isLongPress = false; }
-
-function showInfoCardContext(event, cardId) {
-    if (!isAdmin()) return;
-    longPressCardId = cardId;
-    const menu = document.getElementById('infoCardContextMenu');
-    menu.classList.remove('hidden');
-    const x = event.touches ? event.touches[0].clientX : event.clientX;
-    const y = event.touches ? event.touches[0].clientY : event.clientY;
-    menu.style.left = Math.min(x, window.innerWidth - 180) + 'px';
-    menu.style.top = Math.min(y, window.innerHeight - 120) + 'px';
-}
+function closeCtxMenu() { contextMenu.classList.add('hidden'); }
 
 document.addEventListener('click', (e) => {
-    const menu = document.getElementById('infoCardContextMenu');
-    if (menu && !menu.classList.contains('hidden') && !menu.contains(e.target)) menu.classList.add('hidden');
+  if (!contextMenu.contains(e.target)) closeCtxMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeCtxMenu();
+    closeAllModals();
+  }
 });
 
-function editInfoCardFromContext() {
-    document.getElementById('infoCardContextMenu').classList.add('hidden');
-    openInfoCardModal(longPressCardId);
+function ctxEdit() {
+  closeCtxMenu();
+  if (!state.ctxItem) return;
+  // Simulate the same call as the inline button
+  const fakeEvent = { stopPropagation: () => {} };
+  openEditModal(fakeEvent, state.ctxKind, JSON.stringify(state.ctxItem));
 }
 
-async function deleteInfoCardFromContext() {
-    document.getElementById('infoCardContextMenu').classList.add('hidden');
-    if(confirm('Delete?')) await deleteFromApi('info_cards', longPressCardId);
+function ctxMove() {
+  closeCtxMenu();
+  if (!state.ctxItem) return;
+  openMoveModal(state.ctxKind, state.ctxItem);
 }
 
-function setImageSource(source) {
-    imageSource = source;
-    document.getElementById('imageUrlField').classList.toggle('hidden', source !== 'url');
-    document.getElementById('imageUploadField').classList.toggle('hidden', source !== 'upload');
-    
-    const urlBtn = document.getElementById('imgSourceUrl');
-    const uploadBtn = document.getElementById('imgSourceUpload');
-    if (source === 'url') {
-        urlBtn.className = 'flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-800 bg-gray-800 text-white font-medium transition';
-        uploadBtn.className = 'flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-gray-600 font-medium hover:border-gray-300 transition';
-    } else {
-        uploadBtn.className = 'flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-800 bg-gray-800 text-white font-medium transition';
-        urlBtn.className = 'flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-gray-600 font-medium hover:border-gray-300 transition';
-    }
+async function ctxDelete() {
+  closeCtxMenu();
+  if (!state.ctxItem) return;
+  const label = state.ctxItem.name;
+  if (!confirm(`Delete "${label}"? This cannot be undone.`)) return;
+
+  try {
+    await api('DELETE', 'learning/delete', { kind: state.ctxKind, id: state.ctxItem.id });
+    toast(`"${label}" deleted`, 'success');
+    loadDirectory(state.currentFolder);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
-function handleImageUpload(event) {
-    const file = event.target.files[0];
-    if (!file || file.size > 2 * 1024 * 1024) return showToast('Image too large (>2MB)');
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        document.getElementById('infoCardImage').value = e.target.result;
-        document.getElementById('previewImg').src = e.target.result;
-        document.getElementById('uploadPlaceholder').classList.add('hidden');
-        document.getElementById('uploadPreview').classList.remove('hidden');
-    };
-    reader.readAsDataURL(file);
+// ─── Modal utils ──────────────────────────────────────────────────────────────
+function closeModal(id) { $(id).classList.add('hidden'); }
+
+function closeAllModals() {
+  ['createModal','editModal','moveModal','viewerModal'].forEach(closeModal);
 }
 
-function openInfoCardModal(id = null) {
-    if (!isAdmin()) return;
-    document.getElementById('infoCardModal').classList.remove('hidden');
-    document.getElementById('infoCardModalTitle').textContent = id ? 'Edit' : 'Add';
-    document.getElementById('infoCardId').value = id || '';
-    document.getElementById('uploadPreview').classList.add('hidden');
-    document.getElementById('uploadPlaceholder').classList.remove('hidden');
-    
-    if(id) {
-        const card = appData.infoCards.find(c => c.id === id);
-        document.getElementById('infoCardTitle').value = card.title;
-        document.getElementById('infoCardDisplayType').value = card.displayType;
-        document.getElementById('infoCardIcon').value = card.icon;
-        document.getElementById('infoCardLink').value = card.link;
-        document.getElementById('infoCardImage').value = card.image || '';
-        document.getElementById('infoCardImageUrl').value = card.image || '';
-        if(card.image && card.image.startsWith('data:')) {
-            setImageSource('upload');
-            document.getElementById('previewImg').src = card.image;
-            document.getElementById('uploadPlaceholder').classList.add('hidden');
-            document.getElementById('uploadPreview').classList.remove('hidden');
-        } else {
-            setImageSource('url');
-        }
-    } else {
-        document.getElementById('infoCardForm').reset();
-        setImageSource('url');
-    }
-    toggleInfoCardFields();
-}
-
-function toggleInfoCardFields() {
-    const type = document.getElementById('infoCardDisplayType').value;
-    document.getElementById('iconField').classList.toggle('hidden', type !== 'icon');
-    document.getElementById('imageField').classList.toggle('hidden', type !== 'image');
-}
-
-async function saveInfoCard() {
-    const id = document.getElementById('infoCardId').value;
-    const displayType = document.getElementById('infoCardDisplayType').value;
-    let imageVal = displayType === 'image' ? (imageSource === 'url' ? document.getElementById('infoCardImageUrl').value : document.getElementById('infoCardImage').value) : null;
-    
-    const data = {
-        id: id ? parseInt(id) : null,
-        title: document.getElementById('infoCardTitle').value,
-        displayType,
-        icon: document.getElementById('infoCardIcon').value,
-        image: imageVal,
-        link: document.getElementById('infoCardLink').value,
-        categoryId: currentInfoCategory
-    };
-    if(await saveToApi('info_cards', data)) closeModal('infoCardModal');
-}
-
-function editInfoCard(e, id) { e.preventDefault(); e.stopPropagation(); openInfoCardModal(id); }
-
-// ============ ADMIN ============
-let visiblePasswords = {};
-function togglePasswordVisibility(id) {
-    visiblePasswords[id] = !visiblePasswords[id];
-    renderUsers();
-}
-
-function toggleEditPasswordVisibility() {
-    const pwdField = document.getElementById('userPassword');
-    const toggleBtn = document.getElementById('toggleEditPassword');
-    if (!toggleBtn) return;
-    
-    const icon = toggleBtn.querySelector('i');
-    
-    if (pwdField.type === 'password') {
-        pwdField.type = 'text';
-        icon.classList.remove('fa-eye');
-        icon.classList.add('fa-eye-slash');
-    } else {
-        pwdField.type = 'password';
-        icon.classList.remove('fa-eye-slash');
-        icon.classList.add('fa-eye');
-    }
-}
-
-function renderUsers() {
-    const tbody = document.getElementById('usersTable');
-    tbody.innerHTML = appData.users.map(user => `
-        <tr class="hover:bg-gray-50">
-            <td class="px-4 sm:px-6 py-4">
-                <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 bg-gradient-to-br from-gray-200 to-gray-300 rounded-full flex items-center justify-center"><i class="fas fa-user text-gray-500"></i></div>
-                    <span class="font-medium text-gray-800">${user.accountName}</span>
-                </div>
-            </td>
-            <td class="px-4 sm:px-6 py-4 hidden sm:table-cell">${user.username}</td>
-            <td class="px-4 sm:px-6 py-4">
-                 <div class="flex items-center gap-2">
-                    <span class="text-gray-500 font-mono text-sm ${visiblePasswords[user.id]?'':'password-dots'}">${visiblePasswords[user.id]?user.password:'••••'}</span>
-                    <button onclick="togglePasswordVisibility(${user.id})" class="icon-btn"><i class="fas ${visiblePasswords[user.id]?'fa-eye-slash':'fa-eye'} text-gray-400"></i></button>
-                </div>
-            </td>
-            <td class="px-4 sm:px-6 py-4">${user.role}</td>
-            <td class="px-4 sm:px-6 py-4 text-right">
-                <button onclick="editUser(${user.id})" class="icon-btn text-gray-400 hover:text-blue-600 mr-2"><i class="fas fa-edit"></i></button>
-                ${user.id !== currentUser.id ? `<button onclick="deleteFromApi('users', ${user.id})" class="icon-btn text-gray-400 hover:text-red-600"><i class="fas fa-trash"></i></button>` : ''}
-            </td>
-        </tr>
-    `).join('');
-}
-
-function showAdminTab(tab) {
-    if (!isAdmin()) return;
-    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('bg-white', 'shadow-sm'));
-    document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.add('hidden'));
-    document.querySelector(`[data-tab="${tab}"]`).classList.add('bg-white', 'shadow-sm');
-    document.getElementById(`${tab}Tab`).classList.remove('hidden');
-    if (tab === 'users') renderUsers();
-    if (tab === 'categories') renderCategories();
-}
-
-function renderCategories() {
-    const container = document.getElementById('categoriesList');
-    container.innerHTML = appData.categories.map(cat => `
-        <div class="category-card bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="category-icon w-10 h-10 bg-blue-100 rounded-xl flex justify-center items-center"><i class="fas ${cat.icon} text-blue-600"></i></div>
-                <span class="font-medium">${cat.name}</span>
-            </div>
-            <div class="flex gap-2">
-                 <button onclick="openCategoryModal(${cat.id})" class="icon-btn text-gray-400 hover:text-blue-600"><i class="fas fa-edit"></i></button>
-                 <button onclick="deleteFromApi('categories', ${cat.id})" class="icon-btn text-gray-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
-            </div>
-        </div>
-    `).join('');
-}
-
-function openCategoryModal(id = null) {
-    document.getElementById('categoryModal').classList.remove('hidden');
-    document.getElementById('categoryId').value = id || '';
-    if(id) {
-        const c = appData.categories.find(x => x.id === id);
-        document.getElementById('categoryName').value = c.name;
-        document.getElementById('categoryIcon').value = c.icon;
-    } else document.getElementById('categoryForm').reset();
-}
-
-async function saveCategory() {
-    const id = document.getElementById('categoryId').value;
-    const data = {
-        id: id ? parseInt(id) : null,
-        name: document.getElementById('categoryName').value,
-        icon: document.getElementById('categoryIcon').value
-    };
-    if(await saveToApi('categories', data)) closeModal('categoryModal');
-}
-
-function openUserModal(id = null) {
-    document.getElementById('userModal').classList.remove('hidden');
-    document.getElementById('userId').value = id || '';
-    
-    const pwdField = document.getElementById('userPassword');
-    pwdField.type = 'password';
-    const toggleBtn = document.getElementById('toggleEditPassword');
-    if (toggleBtn) {
-        const icon = toggleBtn.querySelector('i');
-        if (icon) {
-            icon.classList.remove('fa-eye-slash');
-            icon.classList.add('fa-eye');
-        }
-    }
-    
-    if(id) {
-        const u = appData.users.find(x => x.id === id);
-        document.getElementById('userAccountName').value = u.accountName;
-        document.getElementById('userUsername').value = u.username;
-        document.getElementById('userPassword').value = u.password;
-        document.getElementById('userRole').value = u.role;
-    } else {
-        document.getElementById('userForm').reset();
-    }
-}
-
-async function saveUser() {
-    const id = document.getElementById('userId').value;
-    const data = {
-        id: id ? parseInt(id) : null,
-        accountName: document.getElementById('userAccountName').value,
-        username: document.getElementById('userUsername').value,
-        password: document.getElementById('userPassword').value,
-        role: document.getElementById('userRole').value
-    };
-    if(await saveToApi('users', data)) closeModal('userModal');
-}
-
-function editUser(id) { openUserModal(id); }
-
-// ============ UTILS ============
-function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-
-document.getElementById('folderForm').addEventListener('submit', function(e) {
-    e.preventDefault();
+// Close on backdrop click
+document.querySelectorAll('.modal-backdrop').forEach(el => {
+  el.addEventListener('click', (e) => {
+    if (e.target === el) el.classList.add('hidden');
+  });
 });
 
-document.getElementById('folderForm').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        saveFolder();
-    }
-});
+// ─── Util ─────────────────────────────────────────────────────────────────────
+function escHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
-document.querySelector('#renameModal form').addEventListener('submit', function(e) {
-    e.preventDefault();
-});
-
-document.getElementById('renameInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        confirmRename();
-    }
-});
-
-// Initial Start
-initApp();
-
-// Visibility Check
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && authHeader) {
-        refreshData(true);
-    }
-});
+// Expose globals called from inline HTML onclick attributes
+window.closeModal         = closeModal;
+window.openCreateModal    = openCreateModal;
+window.switchCreateTab    = switchCreateTab;
+window.onFileTypeChange   = onFileTypeChange;
+window.onEditTypeChange   = onEditTypeChange;
+window.openEditModal      = openEditModal;
+window.openCtxMenu        = openCtxMenu;
+window.ctxEdit            = ctxEdit;
+window.ctxMove            = ctxMove;
+window.ctxDelete          = ctxDelete;
+window.confirmMove        = confirmMove;
+window.loadDirectory      = loadDirectory;
+window.setPermFilter      = setPermFilter;
