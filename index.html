@@ -99,11 +99,11 @@
             <!-- 5. Admin Panel + Categories Setting — admin only -->
             <div id="mobileAdminBtn" class="hidden">
                 <div class="mob-divider"></div>
-                <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn" data-page="admin">
-                    <i class="fas fa-shield-alt"></i> Admin Panel
-                </button>
                 <button onclick="closeMobileMenu();openCategoryManagerModal()" class="mob-nbtn">
                     <i class="fas fa-tags"></i> Categories Setting
+                </button>
+                <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn" data-page="admin">
+                    <i class="fas fa-shield-alt"></i> Admin Panel
                 </button>
             </div>
             <!-- 6. Settings -->
@@ -522,8 +522,8 @@
         <!-- Utility Tabs -->
         <div class="util-tabs">
             <button onclick="switchUtilTab('time')" class="util-tab active" data-utab="time"><i class="fas fa-clock"></i> Time Converter</button>
-            <button onclick="switchUtilTab('subnet')" class="util-tab" data-utab="subnet"><i class="fas fa-network-wired"></i> Subnet Calc</button>
-            <button onclick="switchUtilTab('handover')" class="util-tab" data-utab="handover"><i class="fas fa-sticky-note"></i> Handover</button>
+            <button onclick="switchUtilTab('subnet')" class="util-tab" data-utab="subnet"><i class="fas fa-network-wired"></i> Subnet Calculator</button>
+            <button onclick="switchUtilTab('handover')" class="util-tab" data-utab="handover"><i class="fas fa-sticky-note"></i> Sticky Notes</button>
         </div>
 
         <!-- ── Time Converter ── -->
@@ -538,12 +538,12 @@
                     <input type="number" id="tcMin" class="finput" min="0" max="59" placeholder="MM" oninput="convertTime()">
                 </div>
                 <div class="fg">
-                    <label class="flabel">Input timezone</label>
+                    <label class="flabel">Timezone</label>
                     <select id="tcInputZone" class="finput" onchange="convertTime()">
                         <option value="MMT">MMT (Myanmar)</option>
                         <option value="UTC">UTC</option>
                         <option value="IST">IST (India)</option>
-                        <option value="ICT">ICT (Indochina)</option>
+                        <option value="ICT">ICT (Indochina/Thailand)</option>
                         <option value="SGT">SGT (Singapore)</option>
                     </select>
                 </div>
@@ -563,7 +563,7 @@
             <div id="handoverBlock" class="hidden" style="margin-bottom:.75rem">
                 <div class="sn-handover-wrap">
                     <div class="sn-handover-header">
-                        <span class="sn-handover-title"><i class="fas fa-clipboard"></i> NOC Handover Info</span>
+                        <span class="sn-handover-title"><i class="fas fa-clipboard"></i> Customer IP Information</span>
                         <button class="sn-copy-btn" onclick="copyHandoverText()"><i class="fas fa-copy"></i> Copy</button>
                     </div>
                     <div id="handoverText" class="sn-handover-pre"></div>
@@ -576,7 +576,7 @@
         <!-- ── Handover Dashboard ── -->
         <div id="utilHandover" class="util-panel modal-body hidden">
             <div class="handover-hdr">
-                <span class="flabel">Handover Notes</span>
+                <span class="flabel"> Notes</span>
                 <button onclick="addStickyNote()" class="btn-primary btn-sm"><i class="fas fa-plus"></i> Add Note</button>
             </div>
             <div id="stickyBoard" class="sticky-board"></div>
@@ -626,7 +626,6 @@
         <div class="modal-body">
             <div class="tab-tb" style="margin-bottom:.75rem">
                 <button onclick="openCategoryModal()" class="btn-primary btn-sm"><i class="fas fa-plus"></i> Add Category</button>
-                <span class="txt-sm txt-muted" style="margin-left:.5rem"><i class="fas fa-grip-vertical"></i> Drag to reorder</span>
             </div>
             <div id="categoryManagerList" class="cat-mgr-list"></div>
         </div>
