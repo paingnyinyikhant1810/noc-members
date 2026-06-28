@@ -1285,7 +1285,7 @@ const TZ_LIST=[
   {id:'MMT',label:'MMT',name:'Myanmar   UTC+6:30',offset:390},
   {id:'UTC',label:'UTC',name:'Universal UTC+0',offset:0},
   {id:'IST',label:'IST',name:'India     UTC+5:30',offset:330},
-  {id:'ICT',label:'ICT',name:'Indochina UTC+7:00',offset:420},
+  {id:'ICT',label:'ICT',name:'Indochina/Thailand UTC+7:00',offset:420},
   {id:'SGT',label:'SGT',name:'Singapore UTC+8:00',offset:480},
 ];
 function convertTime(){
