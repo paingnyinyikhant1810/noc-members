@@ -35,9 +35,17 @@ export const onRequest = async (context) => {
     try {
       const dec  = atob(auth.slice(6));
       const sep  = dec.indexOf(":");
-      return await env.DB.prepare(
+      const u    = dec.slice(0, sep);
+      const p    = dec.slice(sep + 1);
+      const user = await env.DB.prepare(
         "SELECT * FROM users WHERE username=? AND password=?"
-      ).bind(dec.slice(0,sep), dec.slice(sep+1)).first();
+      ).bind(u, p).first();
+
+      if (user) {
+        // Update last_seen timestamp on every authenticated request
+        await env.DB.prepare("UPDATE users SET last_seen = datetime('now') WHERE id = ?").bind(user.id).run();
+      }
+      return user;
     } catch { return null; }
   };
 
