@@ -1072,16 +1072,125 @@ function editInfoCard(e,id){e.preventDefault();e.stopPropagation();openInfoCardM
 let visiblePwds={};
 function togglePasswordVisibility(id){visiblePwds[id]=!visiblePwds[id];renderUsers();}
 function toggleEditPasswordVisibility(){const p=el('userPassword'),btn=el('toggleEditPassword');if(!btn)return;p.type=p.type==='password'?'text':'password';btn.querySelector('i').className='fas '+(p.type==='password'?'fa-eye':'fa-eye-slash');}
-function renderUsers(){
-  el('usersTable').innerHTML=appData.users.map(u=>`
-    <tr>
-      <td><div style="display:flex;align-items:center;gap:.6rem"><div style="width:34px;height:34px;background:var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:var(--text2)"><i class="fas fa-user"></i></div><span style="font-weight:600">${escHtml(u.accountName||u.account_name||u.username)}</span></div></td>
-      <td class="col-sm">${escHtml(u.username)}</td>
-      <td><div style="display:flex;align-items:center;gap:.35rem"><span style="font-family:monospace;font-size:.82rem;${visiblePwds[u.id]?'':'letter-spacing:.1em'}">${visiblePwds[u.id]?escHtml(u.password):'••••'}</span><button onclick="togglePasswordVisibility(${u.id})" class="icon-btn"><i class="fas ${visiblePwds[u.id]?'fa-eye-slash':'fa-eye'}"></i></button></div></td>
-      <td><span class="badge b-${u.role==='admin'?'important':u.role==='leader'?'general':u.role==='member'?'announcement':'reminder'}">${escHtml(u.role)}</span></td>
-      <td class="tr"><button onclick="editUser(${u.id})" class="icon-btn" style="color:var(--accent)"><i class="fas fa-edit"></i></button>${u.id!==currentUser.id?`<button onclick="deleteFromApi('users',${u.id})" class="icon-btn" style="color:#ef4444"><i class="fas fa-trash"></i></button>`:''}</td>
-    </tr>`).join('');
+/* ══════════════════════════════════════════════════════════
+   ADMIN PANEL — User Management
+══════════════════════════════════════════════════════════ */
+let adminFilter = 'all';
+let onlineSort = false;
+
+function setAdminFilter(f){
+  adminFilter = f;
+  document.querySelectorAll('[data-filter]').forEach(btn=>btn.classList.toggle('active',btn.dataset.filter===f));
+  renderUsers();
 }
+
+function toggleOnlineSort(){
+  onlineSort = !onlineSort;
+  const icon = el('onlineSortIcon');
+  if(onlineSort){
+    icon.className = 'fas fa-sort-amount-down';
+    icon.style.opacity = '1';
+  } else {
+    icon.className = 'fas fa-sort';
+    icon.style.opacity = '0.5';
+  }
+  renderUsers();
+}
+
+function isUserOnline(lastSeen){
+  if(!lastSeen) return false;
+  try {
+    // SQLite datetime('now') is YYYY-MM-DD HH:MM:SS (UTC)
+    const iso = lastSeen.replace(' ', 'T') + 'Z';
+    const last = new Date(iso).getTime();
+    if(isNaN(last)) return false;
+    return (Date.now() - last) < 300000; // 5 minutes
+  } catch(e) { return false; }
+}
+
+function renderUsers(){
+  const container = el('usersTable');
+  if(!container) return;
+
+  const searchQuery = el('adminUserSearch')?.value.toLowerCase().trim() || '';
+  
+  let filtered = [...appData.users];
+
+  // 1. Role Filtering
+  if(adminFilter !== 'all'){
+    filtered = filtered.filter(u => u.role === adminFilter);
+  }
+
+  // 2. Search Filtering (Name or Username)
+  if(searchQuery){
+    filtered = filtered.filter(u => {
+      const name = (u.accountName || u.account_name || '').toLowerCase();
+      const uname = (u.username || '').toLowerCase();
+      return name.includes(searchQuery) || uname.includes(searchQuery);
+    });
+  }
+
+  // 3. Sorting
+  filtered.sort((a, b) => {
+    // Primary Sort: Online Status (if toggled)
+    if(onlineSort){
+      const aOn = isUserOnline(a.last_seen);
+      const bOn = isUserOnline(b.last_seen);
+      if(aOn && !bOn) return -1;
+      if(!aOn && bOn) return 1;
+    }
+    // Default/Secondary Sort: Name A-Z
+    const nameA = (a.accountName || a.account_name || a.username || '').toLowerCase();
+    const nameB = (b.accountName || b.account_name || b.username || '').toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
+
+  container.innerHTML = filtered.map(u => {
+    const online = isUserOnline(u.last_seen);
+    const displayName = u.accountName || u.account_name || u.username;
+    return `
+    <tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:.6rem">
+          <div style="width:34px;height:34px;background:var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:var(--text2)">
+            <i class="fas fa-user"></i>
+          </div>
+          <span style="font-weight:600">${escHtml(displayName)}</span>
+        </div>
+      </td>
+      <td class="col-sm">${escHtml(u.username)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.35rem">
+          <span style="font-family:monospace;font-size:.82rem;${visiblePwds[u.id]?'':'letter-spacing:.1em'}">${visiblePwds[u.id]?escHtml(u.password):'••••'}</span>
+          <button onclick="togglePasswordVisibility(${u.id})" class="icon-btn" title="Toggle Visibility">
+            <i class="fas ${visiblePwds[u.id]?'fa-eye-slash':'fa-eye'}"></i>
+          </button>
+        </div>
+      </td>
+      <td>
+        <span class="badge b-${u.role==='admin'?'important':u.role==='leader'?'general':u.role==='member'?'announcement':'reminder'}">
+          ${escHtml(u.role)}
+        </span>
+      </td>
+      <td>
+        <div class="online-badge ${online?'online':'offline'}">
+          <span class="status-dot ${online?'status-online':'status-offline'}"></span>
+          ${online?'Online':'Offline'}
+        </div>
+      </td>
+      <td class="tr">
+        <button onclick="editUser(${u.id})" class="icon-btn" style="color:var(--accent)" title="Edit User">
+          <i class="fas fa-edit"></i>
+        </button>
+        ${u.id !== currentUser.id ? `
+          <button onclick="deleteFromApi('users',${u.id})" class="icon-btn" style="color:#ef4444" title="Delete User">
+            <i class="fas fa-trash"></i>
+          </button>` : ''}
+      </td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text3)">No users found matching filters</td></tr>`;
+}
+
 function showAdminTab(tab){
   if(!isAdmin())return;
   // Categories tab removed — only users tab remains
