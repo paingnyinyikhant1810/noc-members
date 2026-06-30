@@ -198,13 +198,38 @@
     <!-- ── Admin Page ── -->
     <div id="adminPage" class="page pg-wrap hidden">
         <h2 class="pg-title mb6"><div class="pg-icon ic-blue"><i class="fas fa-shield-alt"></i></div> Admin Panel</h2>
-        <!-- Only Users tab remains — no tab bar needed -->
+        
+        <div class="admin-toolbar">
+            <!-- 5 sub-tabs for role filtering -->
+            <div class="admin-tabs">
+                <button onclick="setAdminFilter('all')" class="admin-tab active" data-filter="all">All</button>
+                <button onclick="setAdminFilter('admin')" class="admin-tab" data-filter="admin">Admins</button>
+                <button onclick="setAdminFilter('leader')" class="admin-tab" data-filter="leader">Leaders</button>
+                <button onclick="setAdminFilter('member')" class="admin-tab" data-filter="member">Members</button>
+                <button onclick="setAdminFilter('intern')" class="admin-tab" data-filter="intern">Interns</button>
+            </div>
+
+            <div class="admin-actions">
+                <div class="search-wrap">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="search" id="adminUserSearch" class="search-input" placeholder="Search name or username…" oninput="renderUsers()">
+                </div>
+                <button onclick="openUserModal()" class="btn-primary"><i class="fas fa-user-plus"></i> Add User</button>
+            </div>
+        </div>
+
         <div id="usersTab">
-            <div class="tab-tb"><button onclick="openUserModal()" class="btn-primary"><i class="fas fa-user-plus"></i> Add User</button></div>
             <div class="tbl-wrap">
                 <table class="dtbl">
                     <thead><tr>
-                        <th>Account</th><th class="col-sm">Username</th><th>Password</th><th>Role</th><th class="tr">Actions</th>
+                        <th>Account</th>
+                        <th class="col-sm">Username</th>
+                        <th>Password</th>
+                        <th>Role</th>
+                        <th onclick="toggleOnlineSort()" style="cursor:pointer;user-select:none" class="sortable-th">
+                            Online Status <i id="onlineSortIcon" class="fas fa-sort"></i>
+                        </th>
+                        <th class="tr">Actions</th>
                     </tr></thead>
                     <tbody id="usersTable"></tbody>
                 </table>
