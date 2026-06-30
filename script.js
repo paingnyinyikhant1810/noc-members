@@ -1104,9 +1104,21 @@ function isUserOnline(lastSeen){
     const iso = lastSeen.replace(' ', 'T') + 'Z';
     const last = new Date(iso).getTime();
     if(isNaN(last)) return false;
-    return (Date.now() - last) < 300000; // 5 minutes
+    // Accuracy fix: use 1-minute threshold (60000ms)
+    return (Date.now() - last) < 60000;
   } catch(e) { return false; }
 }
+
+// Presence Fix: Signal offline when closing browser tab
+window.addEventListener('pagehide', () => {
+  if (authHeader && currentUser) {
+    fetch(`${API_URL}/presence/offline`, {
+      method: 'POST',
+      headers: getHeaders(),
+      keepalive: true
+    });
+  }
+});
 
 function renderUsers(){
   const container = el('usersTable');
