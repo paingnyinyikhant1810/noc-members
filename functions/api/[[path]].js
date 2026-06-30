@@ -50,6 +50,15 @@ export const onRequest = async (context) => {
   };
 
   // ════════════════════════════════════════════════════════════════════════════
+  //  Presence Management
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "presence/offline" && method === "POST") {
+    // Explicitly mark as offline by pushing last_seen into the past
+    await env.DB.prepare("UPDATE users SET last_seen = datetime('now', '-10 minutes') WHERE id = ?").bind(user.id).run();
+    return ok({ success: true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
   //  PUBLIC — Login
   // ════════════════════════════════════════════════════════════════════════════
   if (path === "login" && method === "POST") {
