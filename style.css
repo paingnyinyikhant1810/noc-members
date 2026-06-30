@@ -204,8 +204,8 @@ select.finput { cursor:pointer; }
 
 /* ── Dropdown ──────────────────────────────────── */
 .dd-wrap { position:relative; }
-.dd-menu { position:absolute; right:0; top:calc(100% + .4rem); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow-lg); min-width:180px; padding:.35rem 0; z-index:60; animation:fadeIn .12s ease; }
-.dd-item,.dd-menu button { display:flex; align-items:center; gap:.75rem; width:100%; padding:.6rem 1rem; border:none; background:none; font-size:.875rem; color:var(--text); cursor:pointer; text-align:left; transition:background var(--transition); }
+.dd-menu { position:absolute; right:0; top:calc(100% + .4rem); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow-lg); min-width:200px; width:max-content; max-width:320px; padding:.35rem 0; z-index:60; animation:fadeIn .12s ease; }
+.dd-item,.dd-menu button { display:flex; align-items:center; gap:.75rem; width:100%; padding:.6rem 1.1rem; border:none; background:none; font-size:.875rem; color:var(--text); cursor:pointer; text-align:left; transition:background var(--transition); white-space:nowrap; }
 .dd-item i, .dd-menu button i { width:1.25rem; text-align:center; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
 .dd-item:hover,.dd-menu button:hover { background:var(--surface2); }
 
