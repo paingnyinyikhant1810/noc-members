@@ -448,7 +448,7 @@ export const onRequest = async (context) => {
 
     for (let idx = 0; idx < chunks.length; idx++) {
       await env.DB.prepare(`
-        INSERT INTO dashboard_cache_chunks (dashboard_item_id, chunk_index, payload_chunk)
+        INSERT OR REPLACE INTO dashboard_cache_chunks (dashboard_item_id, chunk_index, payload_chunk)
         VALUES (?, ?, ?)
       `).bind(item.id, idx, chunks[idx]).run();
     }
