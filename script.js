@@ -623,6 +623,30 @@ function getDashboardPagesForItem(dashboardItemId){
 function iconForPageSlug(slug){ return DEFAULT_DASHBOARD_PAGES.find(p=>p.slug===slug)?.icon||'fa-layer-group'; }
 function currentFilteredDashboardRows(){ return getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); }
 function currentDashboardUrlHost(){ try{ return new URL(getDashboardApi(currentDashboardItem||{})).host; }catch{ return ''; } }
+function shouldUseSourceSummary(filters){
+  return !filters.site && !filters.township && !filters.queue && !filters.fromDate && !filters.toDate;
+}
+function sourceSummaryToStats(summary, groupBy='day'){
+  if(!summary) return null;
+  return {
+    totalRows: Number(summary.totalRows||0),
+    closedCount: Number(summary.closedCount||0),
+    openCount: Number(summary.openCount||0),
+    resolvedCount: Number(summary.resolvedCount||0),
+    avgResolutionHours: Number(summary.avgResolutionHours||0),
+    overtimeCount: Number(summary.overtimeCount||0),
+    closedRate: Number(summary.closedRate||0),
+    repeatCustomers: Number(summary.repeatCustomers||0),
+    topProblems: Array.isArray(summary.topProblems) ? summary.topProblems : [],
+    topSites: Array.isArray(summary.topSites) ? summary.topSites : [],
+    topRootCauses: Array.isArray(summary.topRootCauses) ? summary.topRootCauses : [],
+    topQueues: Array.isArray(summary.topQueues) ? summary.topQueues : [],
+    topTownships: Array.isArray(summary.topTownships) ? summary.topTownships : [],
+    trendSeries: Array.isArray(summary?.trendBy?.[groupBy]) ? summary.trendBy[groupBy] : [],
+    statusSeries: Array.isArray(summary.statusSeries) ? summary.statusSeries : [],
+    repeatEntries: Array.isArray(summary.repeatEntries) ? summary.repeatEntries : [],
+  };
+}
 function clearDashboardDerivedCaches(){
   currentDashboardFilterCacheKey='';
   currentDashboardFilteredRowsCache=[];
@@ -768,10 +792,32 @@ let dashPageDragSrc=null;
 async function openDashboardPageManagerModal(){
   if(!isAdmin()) return showToast('Admin only','error');
   if(!currentDashboardId) return showToast('Open a dashboard item first','info');
-  await refreshData(true);
-  renderDashboardPageManagerList();
-  el('dashboardPageManagerModal').classList.remove('hidden');
+  const modal=el('dashboardPageManagerModal');
+  modal.classList.remove('hidden');
+  const pages=getDashboardPagesForItem(currentDashboardId);
+  if(pages.length) renderDashboardPageManagerList();
+  else renderDashboardPageManagerLoading();
+  refreshData(true)
+    .then(()=>{ if(!modal.classList.contains('hidden')) renderDashboardPageManagerList(); })
+    .catch(()=>{ if(!modal.classList.contains('hidden')) renderDashboardPageManagerList(); });
 }
+function renderDashboardPageManagerLoading(){
+  const list=el('dashboardPageManagerList');
+  if(!list) return;
+  list.innerHTML=`
+    <div class="dash-mgr-loading">
+      <div class="dash-mgr-loading-head">
+        <div>
+          <div class="dash-set-title">Loading dashboard pages…</div>
+          <div class="dash-manager-note">Refreshing the latest page layout in the background.</div>
+        </div>
+        <div class="dash-mgr-spinner"><i class="fas fa-spinner fa-spin"></i></div>
+      </div>
+      <div class="dash-mgr-skeleton"></div>
+      <div class="dash-mgr-skeleton"></div>
+    </div>`;
+}
+
 function renderDashboardPageManagerList(){
   const list=el('dashboardPageManagerList');
   if(!list) return;
@@ -1057,6 +1103,7 @@ function resetDashboardFilters(){ const settings=getDashboardSettings(currentDas
 function filterDashboardRows(rows,filters){
   const from = filters.fromDate ? parseFlexibleDate(`${filters.fromDate} 00:00:00`) : null;
   const to = filters.toDate ? parseFlexibleDate(`${filters.toDate} 23:59:59`) : null;
+  if(!filters.site && !filters.township && !filters.queue && !from && !to) return rows;
   return rows.filter(row=>{
     const meta=row.__noc||{};
     const site=meta.site||''; const township=meta.township||''; const queue=meta.queue||''; const created=meta.created||null;
@@ -1086,7 +1133,7 @@ function renderCurrentDashboard(){
   initializeDashboardPage(); renderDashboardPageTabs(); const filteredRows=getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); const currentPage=getCurrentDashboardPage(); if(!filteredRows.length && currentPage.slug!=='raw-data'){ renderDashboardEmpty('No data matched the selected filters. Try changing Site / Township / Queue or date grouping.'); return; } renderDashboardData(currentDashboardItem,currentDashboardPayload,filteredRows,currentDashboardFilters);
 }
 function renderDashboardData(item,payload,rows,filters){
-  destroyDashboardCharts(); clearDashboardLoadPulse(); const settings=getDashboardSettings(item,payload); const currentPage=getCurrentDashboardPage(); const pageSlug=currentPage.slug; const stats = pageSlug==='raw-data' ? null : getDashboardStats(rows,item,filters.groupBy,pageSlug); const meta=buildDashboardMeta(payload,item,rows.length,filters,currentDashboardRows.length,currentPage.name); const metaEl=el('dashboardMeta'); if(metaEl){ metaEl.classList.toggle('hidden',!meta.length); metaEl.innerHTML=meta.map(m=>`<span class="meta-chip"><i class="fas ${m.icon}"></i> ${escHtml(m.text)}</span>`).join(''); } el('dashboardTitleText').textContent=item.name||'Dashboard';
+  destroyDashboardCharts(); clearDashboardLoadPulse(); const settings=getDashboardSettings(item,payload); const currentPage=getCurrentDashboardPage(); const pageSlug=currentPage.slug; const stats = pageSlug==='raw-data' ? null : ((shouldUseSourceSummary(filters) && payload?.sourceSummary) ? sourceSummaryToStats(payload.sourceSummary, filters.groupBy) : getDashboardStats(rows,item,filters.groupBy,pageSlug)); const meta=buildDashboardMeta(payload,item,rows.length,filters,currentDashboardRows.length,currentPage.name); const metaEl=el('dashboardMeta'); if(metaEl){ metaEl.classList.toggle('hidden',!meta.length); metaEl.innerHTML=meta.map(m=>`<span class="meta-chip"><i class="fas ${m.icon}"></i> ${escHtml(m.text)}</span>`).join(''); } el('dashboardTitleText').textContent=item.name||'Dashboard';
   const cards=[];
   if(pageSlug==='summary'){
     if(settings.showCards.totalTickets) cards.push(renderKpiCard('Total Tickets',stats.totalRows,'fa-ticket','Filtered rows',`${stats.closedCount} closed / ${stats.openCount} open`));
