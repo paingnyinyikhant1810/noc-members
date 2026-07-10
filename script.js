@@ -504,16 +504,23 @@ function clearDashboardLoadPulse(){
   if(dashboardLoadPulseTimer){ clearInterval(dashboardLoadPulseTimer); dashboardLoadPulseTimer=null; }
 }
 function startDashboardLoadPulse(){
-  clearDashboardLoadPulse();
-  let pct=18;
-  dashboardLoadPulseTimer=setInterval(()=>{
-    const bar=el('dashboardLoadingBar');
-    const txt=el('dashboardLoadingPct');
-    if(!bar||!txt){ clearDashboardLoadPulse(); return; }
-    pct = pct >= 86 ? 28 : pct + 11;
-    bar.style.width = `${pct}%`;
-    txt.textContent = `${pct}%`;
-  }, 420);
+  // no-op: dashboard progress now follows real loading phases
+}
+function updateDashboardLoadingUI(pct, title='', sub=''){
+  const bar=el('dashboardLoadingBar');
+  const txt=el('dashboardLoadingPct');
+  const ttl=el('dashboardLoadingTitle');
+  const msg=el('dashboardLoadingSub');
+  if(bar) bar.style.width=`${Math.max(0,Math.min(100,Math.round(pct||0)))}%`;
+  if(txt) txt.textContent=`${Math.max(0,Math.min(100,Math.round(pct||0)))}%`;
+  if(ttl && title) ttl.innerHTML=title;
+  if(msg && sub) msg.innerHTML=sub;
+}
+function formatBytes(bytes){
+  const n=Number(bytes)||0;
+  if(n<1024) return `${n} B`;
+  if(n<1024*1024) return `${(n/1024).toFixed(1)} KB`;
+  return `${(n/1024/1024).toFixed(2)} MB`;
 }
 function renderDashboardManagerLoading(){
   const list=el('dashboardManagerList');
@@ -732,27 +739,89 @@ async function startDashboardPrefetch(force=false){
   fetch(`${API_URL}/dashboards/prefetch`,{ method:'POST', headers:getHeaders(), body:JSON.stringify({ids:items.map(x=>x.id)}) }).catch(()=>null);
   items.forEach(item=>fetchDashboardData(item.id,{silent:true}));
 }
-async function fetchDashboardData(id,{force=false,silent=false}={}){
+async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}={}){
   if(!id) return null;
-  if(!force&&dashboardCache[id]) return dashboardCache[id];
+  if(!force&&dashboardCache[id]){
+    onProgress?.(100,'<i class="fas fa-bolt"></i> Loaded from memory cache','Dashboard data was already available in the browser cache.');
+    return dashboardCache[id];
+  }
   if(!force&&dashboardFetchPromises[id]) return dashboardFetchPromises[id];
-  const item=(appData.dashboardItems||[]).find(x=>x.id===id); if(!item) return null;
-  const run=(async()=>{ let data=await fetchAPI(`dashboards/${id}/data${force?'?refresh=1':''}`,{silentFail:silent}); if(!data&&getDashboardApi(item)){ try{ const res=await fetch(getDashboardApi(item)); if(res.ok) data=await res.json(); }catch(_){ } } if(data) dashboardCache[id]=data; return data; })();
-  dashboardFetchPromises[id]=run; try{ return await run; } finally{ delete dashboardFetchPromises[id]; }
+  const item=(appData.dashboardItems||[]).find(x=>x.id===id);
+  if(!item) return null;
+
+  const fetchFromWorker = async () => {
+    const url=`${API_URL}/dashboards/${id}/data${force?'?refresh=1':''}`;
+    const res=await fetch(url,{ headers:getHeaders() });
+    if(res.status===401){ if(!silent) logout(); return null; }
+
+    const total=Number(res.headers.get('content-length')||0);
+    let raw='';
+
+    if(res.body){
+      const reader=res.body.getReader();
+      const decoder=new TextDecoder();
+      let loaded=0;
+      while(true){
+        const {done,value}=await reader.read();
+        if(done) break;
+        loaded += value?.length || 0;
+        raw += decoder.decode(value,{stream:true});
+        if(total>0){
+          const pct = 15 + Math.round(Math.min(55,(loaded/total)*55));
+          onProgress?.(pct,'<i class="fas fa-download"></i> Downloading dashboard payload',`Received ${formatBytes(loaded)} of ${formatBytes(total)} from the API response.`);
+        } else {
+          onProgress?.(42,'<i class="fas fa-download"></i> Downloading dashboard payload','Receiving dashboard response from the worker...');
+        }
+      }
+      raw += decoder.decode();
+    } else {
+      raw = await res.text();
+    }
+
+    const data = raw ? JSON.parse(raw) : {};
+    if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`);
+    onProgress?.(74,'<i class="fas fa-box-open"></i> Response received','Parsing dashboard payload and preparing rows...');
+    return data;
+  };
+
+  const run=(async()=>{
+    try{
+      onProgress?.(10,'<i class="fas fa-rotate fa-spin"></i> Requesting dashboard data',`Connecting to API and cache for <strong>${escHtml(item.name||'Dashboard')}</strong>.`);
+      let data = await fetchFromWorker();
+      if(!data && getDashboardApi(item)){
+        onProgress?.(80,'<i class="fas fa-link"></i> Trying source fallback','Worker cache response was empty. Trying the direct source URL fallback.');
+        try{
+          const fallbackRes=await fetch(getDashboardApi(item));
+          if(fallbackRes.ok) data=await fallbackRes.json();
+        }catch(_){ /* ignore */ }
+      }
+      if(data) dashboardCache[id]=data;
+      return data;
+    }catch(e){
+      console.error(e);
+      if(!silent) showToast('Error: '+e.message);
+      return null;
+    }
+  })();
+
+  dashboardFetchPromises[id]=run;
+  try{ return await run; }
+  finally{ delete dashboardFetchPromises[id]; }
 }
+
 async function showDashboardItem(id,name='Dashboard'){
   if(!isLeader()) return showToast('Leader or above required','error');
   currentDashboardId=id; currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'}; currentDashboardPayload=null; currentDashboardRows=[]; initializeDashboardPage();
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden')); el('dashboardPage').classList.remove('hidden'); document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active')); document.querySelectorAll('[data-page="dashboard"]').forEach(b=>b.classList.add('active')); if(el('dashboardDropdown')) el('dashboardDropdown').classList.add('hidden'); renderDashboardPageTabs(); renderDashboardLoading(currentDashboardItem);
-  const data=await fetchDashboardData(id,{silent:false}); if(currentDashboardId!==id) return;
-  if(data){ currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); renderCurrentDashboard(); }
+  const data=await fetchDashboardData(id,{silent:false,onProgress:updateDashboardLoadingUI}); if(currentDashboardId!==id) return;
+  if(data){ updateDashboardLoadingUI(82,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the dashboard payload...'); currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); updateDashboardLoadingUI(90,'<i class="fas fa-filter"></i> Preparing filters','Building tabs, filters, and table state...'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(97,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the page...'); renderCurrentDashboard(); }
   else { renderDashboardEmpty('Unable to load dashboard data. Please check the API URL or worker route.'); }
 }
 async function refreshCurrentDashboard(force=false){
   if(!currentDashboardId||!currentDashboardItem) return showToast('Select a dashboard item first','info');
   renderDashboardLoading(currentDashboardItem);
-  const data=await fetchDashboardData(currentDashboardId,{force:!!force,silent:false});
-  if(data){ currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); renderCurrentDashboard(); }
+  const data=await fetchDashboardData(currentDashboardId,{force:!!force,silent:false,onProgress:updateDashboardLoadingUI});
+  if(data){ updateDashboardLoadingUI(82,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the refreshed payload...'); currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); updateDashboardLoadingUI(90,'<i class="fas fa-filter"></i> Preparing filters','Updating filters and page state...'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(97,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the refreshed page...'); renderCurrentDashboard(); }
   else { renderDashboardEmpty('Refresh failed. Please check the API source.'); }
 }
 function initializeDashboardFilters(item,payload,rows,preserve=false){
@@ -787,8 +856,8 @@ function filterDashboardRows(rows,filters){
 }
 function renderDashboardLoading(item={}){
   destroyDashboardCharts(); clearDashboardLoadPulse(); if(el('dashboardTitleText')) el('dashboardTitleText').textContent=item.name||'Dashboard'; const meta=el('dashboardMeta'); if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; } const bar=el('dashboardFilterBar'); if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; } const tabs=el('dashboardPageTabs'); if(tabs){ tabs.classList.add('hidden'); tabs.innerHTML=''; }
-  el('dashboardContainer').innerHTML=`<div class="dash-fetch-banner"><div class="dash-fetch-copy"><div class="dash-fetch-title"><i class="fas fa-rotate fa-spin"></i> Fetching dashboard data</div><div class="dash-fetch-sub">Loading API data, preparing filters, and building charts for <strong>${escHtml(item.name||'Dashboard')}</strong>.</div></div><div class="dash-fetch-meter"><div class="dash-fetch-track"><div id="dashboardLoadingBar" class="dash-fetch-fill" style="width:18%"></div></div><span id="dashboardLoadingPct" class="dash-fetch-pct">18%</span></div></div><div class="dashboard-skeleton"><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel wide"></div><div class="dash-skel tall"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div></div>`;
-  startDashboardLoadPulse();
+  el('dashboardContainer').innerHTML=`<div class="dash-fetch-banner"><div class="dash-fetch-copy"><div id="dashboardLoadingTitle" class="dash-fetch-title"><i class="fas fa-rotate fa-spin"></i> Fetching dashboard data</div><div id="dashboardLoadingSub" class="dash-fetch-sub">Loading API data, preparing filters, and building charts for <strong>${escHtml(item.name||'Dashboard')}</strong>.</div></div><div class="dash-fetch-meter"><div class="dash-fetch-track"><div id="dashboardLoadingBar" class="dash-fetch-fill" style="width:8%"></div></div><span id="dashboardLoadingPct" class="dash-fetch-pct">8%</span></div></div><div class="dashboard-skeleton"><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel wide"></div><div class="dash-skel tall"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div></div>`;
+  updateDashboardLoadingUI(8,'<i class="fas fa-rotate fa-spin"></i> Requesting dashboard data',`Connecting to API and cache for <strong>${escHtml(item.name||'Dashboard')}</strong>.`);
 }
 function renderDashboardEmpty(message='No dashboard item selected'){ destroyDashboardCharts(); clearDashboardLoadPulse(); const meta=el('dashboardMeta'); if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; } const bar=el('dashboardFilterBar'); if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; } const tabs=el('dashboardPageTabs'); if(tabs){ tabs.classList.add('hidden'); tabs.innerHTML=''; } el('dashboardContainer').innerHTML=`<div class="dash-empty"><i class="fas fa-chart-pie"></i><h3>Dashboard Preview</h3><p>${escHtml(message)}</p></div>`; }
 function renderCurrentDashboard(){
