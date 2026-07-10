@@ -87,18 +87,26 @@
             <button onclick="navigateTo('learning');closeMobileMenu()" class="mob-nbtn" data-page="learning">
                 <i class="fas fa-book"></i> Learning
             </button>
-            <!-- 3. NOC Utilities -->
+            <!-- 3. Dashboard — leader+ only -->
+            <div id="mobileDashboardSection" class="mob-sect hidden">
+                <p class="mob-slabel"><i class="fas fa-chart-pie"></i> Dashboard</p>
+                <div id="mobileDashboardMenu"></div>
+            </div>
+            <!-- 4. NOC Utilities -->
             <button onclick="closeMobileMenu();openUtilities()" class="mob-nbtn">
                 <i class="fas fa-tools"></i> NOC Utilities
             </button>
-            <!-- 4. Information — shows sub-list inline -->
+            <!-- 5. Information — shows sub-list inline -->
             <div class="mob-sect">
                 <p class="mob-slabel"><i class="fas fa-info-circle"></i> Information</p>
                 <div id="mobileInfoMenu"></div>
             </div>
-            <!-- 5. Admin Panel + Categories Setting — admin only -->
+            <!-- 6. Admin Panel + Categories Setting — admin only -->
             <div id="mobileAdminBtn" class="hidden">
                 <div class="mob-divider"></div>
+                <button onclick="closeMobileMenu();openDashboardManagerModal()" class="mob-nbtn">
+                    <i class="fas fa-chart-line"></i> Manage Dashboard
+                </button>
                 <button onclick="closeMobileMenu();openCategoryManagerModal()" class="mob-nbtn">
                     <i class="fas fa-tags"></i> Categories Setting
                 </button>
@@ -106,7 +114,7 @@
                     <i class="fas fa-shield-alt"></i> Admin Panel
                 </button>
             </div>
-            <!-- 6. Settings -->
+            <!-- 7. Settings -->
             <div class="mob-divider"></div>
             <button onclick="openSettings();closeMobileMenu()" class="mob-nbtn">
                 <i class="fas fa-sliders-h"></i> Settings
@@ -127,6 +135,13 @@
             <div class="tnav-right d-lg-flex">
                 <button onclick="navigateTo('home')" class="nav-btn" data-page="home"><i class="fas fa-home"></i> Home</button>
                 <button onclick="navigateTo('learning')" class="nav-btn" data-page="learning"><i class="fas fa-book"></i> Learning</button>
+                <!-- Dashboard dropdown -->
+                <div id="dashboardBtnWrap" class="dd-wrap hidden">
+                    <button onclick="toggleDashboardDropdown()" class="nav-btn" data-page="dashboard">
+                        <i class="fas fa-chart-pie"></i> Dashboard <i class="fas fa-chevron-down caret"></i>
+                    </button>
+                    <div id="dashboardDropdown" class="hidden dd-menu"></div>
+                </div>
                 <!-- Information dropdown -->
                 <div class="dd-wrap">
                     <button onclick="toggleInfoDropdown()" class="nav-btn" data-page="information">
@@ -193,6 +208,26 @@
             <button id="addInfoCardBtn" onclick="openInfoCardModal()" class="hidden btn-primary"><i class="fas fa-plus"></i> Add Item</button>
         </div>
         <div id="infoCardsContainer" class="file-grid"></div>
+    </div>
+
+    <!-- ── Dashboard Page ── -->
+    <div id="dashboardPage" class="page pg-wrap hidden">
+        <div class="pg-hdr">
+            <h2 class="pg-title"><div class="pg-icon ic-purple"><i class="fas fa-chart-pie"></i></div><span id="dashboardTitleText">Dashboard</span></h2>
+            <div class="btn-group">
+                <button id="refreshDashboardBtn" onclick="refreshCurrentDashboard(true)" class="hidden btn-secondary"><i class="fas fa-rotate"></i> Refresh Data</button>
+                <button id="dashboardViewSettingsBtn" onclick="openDashboardSettingsModal()" class="hidden btn-secondary"><i class="fas fa-sliders-h"></i> Dashboard Settings</button>
+                <button id="manageDashboardPageBtn" onclick="openDashboardManagerModal()" class="hidden btn-primary"><i class="fas fa-cog"></i> Manage Dashboard</button>
+            </div>
+        </div>
+        <div id="dashboardMeta" class="dashboard-meta hidden"></div>
+        <div id="dashboardFilterBar" class="dashboard-filter-bar hidden"></div>
+        <div id="dashboardContainer" class="dashboard-shell">
+            <div class="empty-state">
+                <i class="fas fa-chart-pie"></i>
+                <p>Select a dashboard item from the Dashboard menu</p>
+            </div>
+        </div>
     </div>
 
     <!-- ── Admin Page ── -->
@@ -658,6 +693,68 @@
     </div>
 </div>
 
+
+<!-- ════════ DASHBOARD MANAGER ════════ -->
+<div id="dashboardManagerModal" class="hidden modal-bd">
+    <div class="modal-box modal-sm">
+        <div class="modal-hdr">
+            <h3 class="modal-title"><i class="fas fa-chart-line"></i> Manage Dashboard</h3>
+            <button onclick="closeModal('dashboardManagerModal')" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="tab-tb" style="margin-bottom:.75rem">
+                <button onclick="openDashboardItemModal()" class="btn-primary btn-sm"><i class="fas fa-plus"></i> Add Dashboard</button>
+            </div>
+            <div id="dashboardManagerList" class="cat-mgr-list"></div>
+        </div>
+        <div class="modal-ft"><button onclick="closeModal('dashboardManagerModal')" class="btn-primary">Done</button></div>
+    </div>
+</div>
+
+<!-- ════════ DASHBOARD ITEM MODAL ════════ -->
+<div id="dashboardItemModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr">
+            <h3 id="dashboardItemModalTitle" class="modal-title">Add Dashboard</h3>
+            <button onclick="cancelDashboardItemModal()" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="dashboardItemForm" class="modal-body">
+            <input type="hidden" id="dashboardItemId">
+            <div class="fg"><label class="flabel">Dashboard Name</label><input type="text" id="dashboardItemName" class="finput" placeholder="e.g. Ticket Overview" required></div>
+            <div class="fg"><label class="flabel">Icon</label>
+                <select id="dashboardItemIcon" class="finput">
+                    <option value="fa-chart-line">📈 Trend</option>
+                    <option value="fa-chart-pie">🥧 Summary</option>
+                    <option value="fa-chart-column">📊 Bar Chart</option>
+                    <option value="fa-gauge-high">⏱ KPI</option>
+                    <option value="fa-network-wired">🌐 Network</option>
+                    <option value="fa-ticket">🎫 Ticket</option>
+                    <option value="fa-server">🖥 Infrastructure</option>
+                    <option value="fa-bug">🧩 Root Cause</option>
+                </select>
+            </div>
+            <div class="fg"><label class="flabel">API URL</label><input type="url" id="dashboardItemApi" class="finput" placeholder="https://script.google.com/.../exec" required></div>
+                    </form>
+        <div class="modal-ft"><button onclick="cancelDashboardItemModal()" class="btn-secondary">Cancel</button><button onclick="saveDashboardItem()" class="btn-primary">Save</button></div>
+    </div>
+</div>
+
+<!-- ════════ DASHBOARD SETTINGS MODAL ════════ -->
+<div id="dashboardSettingsModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr">
+            <h3 class="modal-title"><i class="fas fa-sliders-h"></i> Dashboard Settings</h3>
+            <button onclick="closeModal('dashboardSettingsModal')" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="dashboardSettingsForm" class="modal-body"></form>
+        <div class="modal-ft">
+            <button onclick="resetDashboardSettingsForm()" class="btn-secondary" style="margin-right:auto"><i class="fas fa-rotate-left"></i> Reset Default</button>
+            <button onclick="closeModal('dashboardSettingsModal')" class="btn-secondary">Cancel</button>
+            <button onclick="saveDashboardSettings()" class="btn-primary">Save Settings</button>
+        </div>
+    </div>
+</div>
+
 <!-- ════════ CHANGE PASSWORD MODAL ════════ -->
 <div id="changePwdModal" class="hidden modal-bd">
     <div class="modal-box modal-sm">
@@ -729,6 +826,7 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="script.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a18de753fda9f91a',t:'MTc4MzY2OTA1MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
