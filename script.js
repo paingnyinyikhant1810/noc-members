@@ -235,9 +235,10 @@ function doShowApp(){
 
 function updateAdminUI(){
   // Admin-only elements
-  ['adminBtn','mobileAdminBtn','manageDashboardPageBtn','dashboardViewSettingsBtn','manageDashboardPagesBtn','manageDashboardWidgetsBtn','clearDashboardCacheBtn'].forEach(id=>{
+  ['adminBtn','mobileAdminBtn','manageDashboardPageBtn','dashboardViewSettingsBtn','clearDashboardCacheBtn'].forEach(id=>{
     const e=el(id);if(e)isAdmin()?e.classList.remove('hidden'):e.classList.add('hidden');
   });
+  ['manageDashboardPagesBtn','manageDashboardWidgetsBtn'].forEach(id=>{ const e=el(id); if(e) e.classList.add('hidden'); });
 
   // Dashboard visibility — leader+ only
   ['dashboardBtnWrap','mobileDashboardSection','refreshDashboardBtn'].forEach(id=>{
@@ -462,6 +463,14 @@ document.addEventListener('click',e=>{
 ══════════════════════════════════════════════════════════ */
 const DASHBOARD_COLOR_SET = ['#6366f1','#3b82f6','#f97316','#10b981','#ec4899','#8b5cf6','#14b8a6','#f59e0b','#ef4444','#64748b'];
 const DASHBOARD_GROUP_LABELS = { day:'Day', week:'Week', month:'Month', year:'Year' };
+const DASHBOARD_FIXED_TABS = [
+  { id:'total-tickets', slug:'total-tickets', name:'Total Ticket Number', icon:'fa-chart-line' },
+  { id:'cpe-models', slug:'cpe-models', name:"CPE Model's Complaint Counts", icon:'fa-microchip' },
+  { id:'duplicate', slug:'duplicate', name:'Duplicate Tickets', icon:'fa-copy' },
+  { id:'overtime', slug:'overtime', name:'OverTime', icon:'fa-clock' },
+  { id:'pivot', slug:'pivot', name:'Pivot', icon:'fa-table-cells-large' },
+  { id:'create-graph', slug:'create-graph', name:'Create Graph', icon:'fa-chart-pie' },
+];
 const DEFAULT_DASHBOARD_PAGES = [
   { id:'summary', slug:'summary', name:'Summary', icon:'fa-gauge-high' },
   { id:'trend', slug:'trend', name:'Trend', icon:'fa-chart-line' },
@@ -661,11 +670,7 @@ function getDashboardWidgetsForPage(pageRef){
 }
 
 function getDashboardPagesForItem(dashboardItemId){
-  const pages=(appData.dashboardPages||[])
-    .filter(p=>Number(p.dashboard_item_id||p.dashboardItemId||0)===Number(dashboardItemId))
-    .sort((a,b)=>(Number(a.sort_order??a.sortOrder??0)-Number(b.sort_order??b.sortOrder??0)) || String(a.name||'').localeCompare(String(b.name||'')));
-  if(pages.length) return pages.map(p=>({ id:p.id, slug:p.slug||normalizeKey(p.name||'page'), name:p.name||'Page', icon:p.icon||iconForPageSlug(p.slug||normalizeKey(p.name||'page')) }));
-  return DEFAULT_DASHBOARD_PAGES.map(p=>({ ...p }));
+  return DASHBOARD_FIXED_TABS.map(p=>({ ...p }));
 }
 function iconForPageSlug(slug){ return DEFAULT_DASHBOARD_PAGES.find(p=>p.slug===slug)?.icon||'fa-layer-group'; }
 function currentFilteredDashboardRows(){ return getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); }
@@ -685,6 +690,7 @@ function sourceSummaryToStats(summary, groupBy='day'){
     closedRate: Number(summary.closedRate||0),
     repeatCustomers: Number(summary.repeatCustomers||0),
     topProblems: Array.isArray(summary.topProblems) ? summary.topProblems : [],
+    topCpeModels: Array.isArray(summary.topCpeModels) ? summary.topCpeModels : [],
     topSites: Array.isArray(summary.topSites) ? summary.topSites : [],
     topRootCauses: Array.isArray(summary.topRootCauses) ? summary.topRootCauses : [],
     topQueues: Array.isArray(summary.topQueues) ? summary.topQueues : [],
@@ -713,6 +719,7 @@ function hydrateDashboardRows(rows){
       status,
       statusKey:normalizeKey(status),
       problem:getRowValue(row,['ticketproblem','problem','issue'])||'Unknown',
+      cpeModel:getRowValue(row,['cpemodel','cpe model','cpetype','cpe type'])||getRowValue(row,['cpeid','cpe id'])||'Unknown',
       site:getRowValue(row,['opisitecode','sitecode','opi site code'])||'',
       township:getRowValue(row,['township'])||'',
       queue:getRowValue(row,['queue'])||'',
@@ -753,7 +760,7 @@ function getFilteredDashboardRows(rows=currentDashboardRows, filters=currentDash
 function getCurrentDashboardPage(){
   const pages=getDashboardPagesForItem(currentDashboardId);
   let page=pages.find(p=>String(p.id)===String(currentDashboardPageId) || p.slug===currentDashboardPageId);
-  if(!page){ page=pages[0]||DEFAULT_DASHBOARD_PAGES[0]; currentDashboardPageId=page.id; }
+  if(!page){ page=pages[0]; currentDashboardPageId=page.id; }
   return page;
 }
 async function ensurePersistentDashboardPage(){
@@ -768,8 +775,9 @@ async function ensurePersistentDashboardPage(){
 function initializeDashboardPage(){
   const pages=getDashboardPagesForItem(currentDashboardId);
   const current=pages.find(p=>String(p.id)===String(currentDashboardPageId));
-  if(!current) currentDashboardPageId=(pages[0]||DEFAULT_DASHBOARD_PAGES[0]).id;
+  if(!current) currentDashboardPageId=(pages[0]).id;
 }
+
 function renderDashboardPageTabs(){
   const wrap=el('dashboardPageTabs');
   if(!wrap) return;
@@ -777,22 +785,12 @@ function renderDashboardPageTabs(){
   const pages=getDashboardPagesForItem(currentDashboardId);
   const current=getCurrentDashboardPage();
   wrap.classList.remove('hidden');
-  wrap.innerHTML=pages.map(page=>{ const count=getDashboardWidgetsForPage(page).length; return `<button class="dash-tab-btn ${String(page.id)===String(current.id)?'active':''}" onclick="setDashboardPage('${escAttr(String(page.id))}')"><i class="fas ${page.icon||'fa-layer-group'}"></i> ${escHtml(page.name)}${count?` <span class="dash-tab-count">${count}</span>`:''}</button>`; }).join('');
+  wrap.innerHTML=pages.map(page=>`<button class=\"dash-tab-btn ${String(page.id)===String(current.id)?'active':''}\" onclick=\"setDashboardPage('${escAttr(String(page.id))}')\"><i class=\"fas ${page.icon||'fa-layer-group'}\"></i> ${escHtml(page.name)}</button>`).join('');
 }
 
-function renderDashboardModeBar(){
-  const bar=el('dashboardModeBar');
-  if(!bar) return;
-  if(!currentDashboardItem){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
-  const modes=[
-    { id:'normal', label:'Normal', icon:'fa-chart-pie' },
-    { id:'compare', label:'Compare', icon:'fa-code-compare' },
-    { id:'duplicate', label:'Duplicate', icon:'fa-copy' },
-    { id:'overtime', label:'Overtime', icon:'fa-clock' },
-  ];
-  bar.classList.remove('hidden');
-  bar.innerHTML=modes.map(mode=>`<button class="dash-mode-btn ${currentDashboardMode===mode.id?'active':''}" onclick="setDashboardMode('${mode.id}')"><i class="fas ${mode.icon}"></i> ${mode.label}</button>`).join('');
-}
+
+function renderDashboardModeBar(){ const bar=el('dashboardModeBar'); if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; } }
+
 function setDashboardMode(mode){
   currentDashboardMode=mode;
   renderDashboardModeBar();
@@ -1412,80 +1410,45 @@ function renderDashboardData(item,payload,rows,filters){
   const settings=getDashboardSettings(item,payload);
   const currentPage=getCurrentDashboardPage();
   const pageSlug=currentPage.slug;
+  const stats=(shouldUseSourceSummary(filters) && payload?.sourceSummary) ? sourceSummaryToStats(payload.sourceSummary, filters.groupBy) : getDashboardStats(rows,item,filters.groupBy,pageSlug);
   const meta=buildDashboardMeta(payload,item,rows.length,filters,currentDashboardRows.length,currentPage.name);
   const metaEl=el('dashboardMeta');
   if(metaEl){ metaEl.classList.toggle('hidden',!meta.length); metaEl.innerHTML=meta.map(m=>`<span class="meta-chip"><i class="fas ${m.icon}"></i> ${escHtml(m.text)}</span>`).join(''); }
   el('dashboardTitleText').textContent=item.name||'Dashboard';
-
-  let stats = null;
-  if(pageSlug!=='raw-data' && currentDashboardMode==='normal') stats = (shouldUseSourceSummary(filters) && payload?.sourceSummary) ? sourceSummaryToStats(payload.sourceSummary, filters.groupBy) : getDashboardStats(rows,item,filters.groupBy,pageSlug);
   const cards=[];
 
-  if(currentDashboardMode==='compare'){
-    const cmp=buildCompareStats(rows, filters.groupBy);
-    const currentLbl=cmp.current?.label || 'Current';
-    const prevLbl=cmp.previous?.label || 'Previous';
-    cards.push(renderInsightCard(`Current ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`, cmp.current ? fmtInt(cmp.current.total) : 0, currentLbl, cmp.previous ? `${prevLbl}: ${fmtInt(cmp.previous.total)}` : 'No previous period', 'info'));
-    cards.push(renderInsightCard('Delta', cmp.previous ? fmtInt(cmp.delta) : 0, `${currentLbl} vs ${prevLbl}`, cmp.deltaPct!=null ? `${cmp.deltaPct.toFixed(1)}% vs previous` : 'Need 2 periods to compare', cmp.delta>=0?'success':'danger'));
-    cards.push(renderInsightCard('Closed', cmp.current ? fmtInt(cmp.current.closed) : 0, currentLbl, cmp.previous ? `${prevLbl}: ${fmtInt(cmp.previous.closed)}` : 'No previous period', 'success'));
-    cards.push(renderInsightCard('Open', cmp.current ? fmtInt(cmp.current.open) : 0, currentLbl, cmp.previous ? `${prevLbl}: ${fmtInt(cmp.previous.open)}` : 'No previous period', 'warning'));
-    cards.push(renderChartCard('Period Comparison',`Compare latest ${DASHBOARD_GROUP_LABELS[filters.groupBy].toLowerCase()} against previous periods`,'fa-code-compare','dashCompareSeriesCanvas','trend'));
-    cards.push(renderChartCard('Current vs Previous Status',`Closed and open comparison for ${currentLbl}`,'fa-layer-group','dashCompareStatusCanvas','bars'));
-  } else if(currentDashboardMode==='duplicate'){
+  if(pageSlug==='total-tickets'){
+    cards.push(renderInsightCard('Total Tickets', fmtInt(stats.totalRows), `Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`, `${fmtInt(stats.closedCount)} closed / ${fmtInt(stats.openCount)} open`, 'info'));
+    cards.push(renderChartCard('Total Ticket Number', `Trend by ${DASHBOARD_GROUP_LABELS[filters.groupBy].toLowerCase()} (day/week/month/year selector above)`, 'fa-chart-line', 'dashTrendCanvas', 'trend'));
+  } else if(pageSlug==='cpe-models'){
+    cards.push(renderChartCard("CPE Model's Complaint Counts", 'Complaint counts by CPE model / type', 'fa-microchip', 'dashCpeCanvas', 'wide'));
+  } else if(pageSlug==='duplicate'){
     const dup=buildDuplicateStats(rows);
     cards.push(renderInsightCard('Repeat Services', fmtInt(dup.repeatEntities), 'Unique Local Service ID / CPE with multiple complaints', `${fmtInt(dup.repeatTickets)} repeated tickets`, 'warning'));
     cards.push(renderInsightCard('Repeat Tickets', fmtInt(dup.repeatTickets), 'Tickets tied to repeated services', dup.avgRepeat ? `${dup.avgRepeat.toFixed(1)} avg repeats` : 'No repeated services', 'info'));
     cards.push(renderChartCard('Top Repeated Services','Highest repeat complaint services','fa-copy','dashDupRepeatCanvas','wide'));
     cards.push(renderChartCard('Repeat by Site','Sites with repeated complaints','fa-network-wired','dashDupSiteCanvas','wide'));
-    cards.push(renderChartCard('Repeat by Township','Townships with repeated complaints','fa-location-dot','dashDupTownshipCanvas','wide'));
-    cards.push(renderChartCard('Repeat Problem Profile','Problem types among repeated complaints','fa-triangle-exclamation','dashDupProblemCanvas','wide'));
-  } else if(currentDashboardMode==='overtime'){
+  } else if(pageSlug==='overtime'){
     const ov=buildOvertimeStats(rows,item);
     cards.push(renderInsightCard('Overtime Tickets', fmtInt(ov.overtimeCount), `Resolution > ${ov.threshold}h`, `${ov.overtimePct.toFixed(1)}% of resolved tickets`, 'danger'));
     cards.push(renderInsightCard('Avg Overtime', formatHours(ov.avgOver), 'Average resolution time of overtime tickets', ov.overtimeCount ? `Max ${formatHours(ov.maxOver)}` : 'No overtime rows', 'warning'));
     cards.push(renderChartCard('Overtime Buckets',`Distribution of tickets over ${ov.threshold}h`,'fa-clock','dashOvtBucketCanvas','bars'));
     cards.push(renderChartCard('Overtime by Site','Sites with most overtime tickets','fa-network-wired','dashOvtSiteCanvas','wide'));
-    cards.push(renderChartCard('Overtime Root Causes','Root causes among overtime tickets','fa-bug','dashOvtRootCanvas','wide'));
-  } else {
-    const pageWidgets=getDashboardWidgetsForPage(currentPage);
-    if(pageWidgets.length){
-      pageWidgets.forEach(widget=>cards.push(renderWidgetByType(widget, stats, settings, rows, filters)));
-    } else if(pageSlug==='summary'){
-      if(settings.showCards.totalTickets) cards.push(renderKpiCard('Total Tickets',stats.totalRows,'fa-ticket','Filtered rows',`${stats.closedCount} closed / ${stats.openCount} open`));
-      if(settings.showCards.avgResolve) cards.push(renderKpiCard('Avg Resolve Time',formatHours(stats.avgResolutionHours),'fa-clock','Resolved tickets only',`${stats.resolvedCount} resolved`));
-      if(settings.showCards.closedRate) cards.push(renderDonutCard('Closed Rate',Math.round(stats.closedRate),'fa-circle-check','Closed vs filtered rows'));
-      if(settings.showCards.quickSummary) cards.push(renderMiniSummaryCard('Overtime / Repeat',[{label:'Overtime',value:stats.overtimeCount,color:'amber'},{label:'Repeat',value:stats.repeatCustomers,color:'violet'},{label:'Group By',value:DASHBOARD_GROUP_LABELS[filters.groupBy],color:'green'}]));
-      if(settings.showCards.statusChart) cards.push(renderChartCard('Status Distribution','Filtered ticket status mix','fa-layer-group','dashStatusCanvas','bars'));
-      if(settings.showCards.problemChart) cards.push(renderChartCard('Top Ticket Problems','Most frequent customer issues','fa-triangle-exclamation','dashProblemCanvas','wide'));
-    } else if(pageSlug==='trend'){
-      if(settings.showCards.trendChart) cards.push(renderChartCard('Ticket Trend',`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy].toLowerCase()}`,'fa-chart-line','dashTrendCanvas','trend'));
-      if(settings.showCards.statusChart) cards.push(renderChartCard('Status Distribution','Trend context by status','fa-layer-group','dashStatusCanvas','bars'));
-      cards.push(renderChartCard('Queue Distribution','Operational queue mix','fa-list-check','dashQueueCanvas','bars'));
-    } else if(pageSlug==='root-cause'){
-      if(settings.showCards.rootCauseChart) cards.push(renderChartCard('Root Cause Trend','Service root cause summary','fa-bug','dashRootCanvas','wide'));
-      if(settings.showCards.problemChart) cards.push(renderChartCard('Top Ticket Problems','Problem distribution','fa-triangle-exclamation','dashProblemCanvas','wide'));
-    } else if(pageSlug==='site'){
-      if(settings.showCards.siteChart) cards.push(renderChartCard('Top Site Codes','Most complaint-heavy sites','fa-network-wired','dashSiteCanvas','wide'));
-      cards.push(renderChartCard('Township Breakdown','Complaint distribution by township','fa-location-dot','dashTownshipCanvas','wide'));
-      cards.push(renderChartCard('Queue Distribution','Operational queue mix','fa-list-check','dashQueueCanvas','bars'));
-    } else if(pageSlug==='customer'){
-      if(settings.showCards.repeatChart){ if(settings.graphTypes.repeatChart==='list') cards.push(renderRepeatListCard(stats,settings)); else cards.push(renderChartCard('Repeat Complaints','Repeated Local Service ID / CPE','fa-rotate-left','dashRepeatCanvas','list')); }
-      if(settings.showCards.problemChart) cards.push(renderChartCard('Top Ticket Problems','Customer issue profile','fa-triangle-exclamation','dashProblemCanvas','wide'));
-    } else if(pageSlug==='raw-data') {
-      cards.push(renderRawDataCard(rows));
-    }
+  } else if(pageSlug==='pivot'){
+    cards.push(`<div class="dash-empty"><i class="fas fa-table-cells-large"></i><h3>Pivot Tab</h3><p>Pivot analytics tab is reserved. We can connect your next pivot function here.</p></div>`);
+  } else if(pageSlug==='create-graph'){
+    cards.push(`<div class="dash-empty"><i class="fas fa-chart-pie"></i><h3>Create Graph</h3><p>Use this tab for your future custom graph builder / filter graph flow.</p></div>`);
   }
 
   const safeCards=cards.filter(Boolean);
-  el('dashboardContainer').innerHTML=safeCards.length ? `<div class="dashboard-board">${safeCards.join('')}</div>` : `<div class="dash-empty"><i class="fas fa-eye-slash"></i><h3>All cards are hidden</h3><p>Open Dashboard Settings / Widgets and enable at least one card for this dashboard item.</p></div>`;
-  if(pageSlug!=='raw-data'){
-    const token = dashboardRenderToken;
-    dashboardRenderRaf = requestAnimationFrame(()=>{
-      if(token !== dashboardRenderToken) return;
-      renderDashboardCharts(stats,settings,filters,currentDashboardMode==='compare' ? buildCompareStats(rows, filters.groupBy) : currentDashboardMode==='duplicate' ? buildDuplicateStats(rows) : currentDashboardMode==='overtime' ? buildOvertimeStats(rows,item) : null);
-      dashboardRenderRaf = null;
-    });
-  }
+  el('dashboardContainer').innerHTML=safeCards.length ? `<div class="dashboard-board">${safeCards.join('')}</div>` : `<div class="dash-empty"><i class="fas fa-eye-slash"></i><h3>No widgets</h3><p>This tab is empty right now.</p></div>`;
+  const token = dashboardRenderToken;
+  dashboardRenderRaf = requestAnimationFrame(()=>{
+    if(token !== dashboardRenderToken) return;
+    const modeData = pageSlug==='duplicate' ? buildDuplicateStats(rows) : pageSlug==='overtime' ? buildOvertimeStats(rows,item) : null;
+    renderDashboardCharts(stats,settings,filters,modeData,pageSlug);
+    dashboardRenderRaf = null;
+  });
 }
 function renderWidgetByType(widget, stats, settings, rows, filters){
   const type=widget.widget_type||widget.widgetType||'';
@@ -1548,7 +1511,7 @@ function buildDashboardStats(rows,item,groupBy='day', mode='all'){
   const needTrend = ['all','trend'].includes(mode);
   const needResolution = ['all','summary'].includes(mode);
 
-  const statusCount={}, issueCount={}, siteCount={}, rootCount={}, queueCount={}, townshipCount={}, repeatCount={}, trendCount={};
+  const statusCount={}, issueCount={}, siteCount={}, rootCount={}, queueCount={}, townshipCount={}, repeatCount={}, trendCount={}, cpeCount={};
   let resolvedCount=0,totalResolutionHours=0,overtimeCount=0,closedCount=0,openCount=0;
   const overtimeHours=getDashboardSla(item);
 
@@ -1560,6 +1523,7 @@ function buildDashboardStats(rows,item,groupBy='day', mode='all'){
       if((meta.statusKey||'').includes('closed')||(meta.statusKey||'').includes('resolved')) closedCount++; else openCount++;
     }
     if(needIssue) incMap(issueCount,meta.problem||'Unknown');
+    incMap(cpeCount,meta.cpeModel||'Unknown');
     if(needSite) incMap(siteCount,meta.site||'Unknown');
     if(needRoot) incMap(rootCount,meta.root||'Unknown');
     if(needQueue) incMap(queueCount,meta.queue||'Unknown');
@@ -1585,6 +1549,7 @@ function buildDashboardStats(rows,item,groupBy='day', mode='all'){
     closedRate: totalRows ? closedCount/totalRows*100 : 0,
     repeatCustomers: repeatEntries.length,
     topProblems: needIssue ? sortMap(issueCount) : [],
+    topCpeModels: sortMap(cpeCount),
     topSites: needSite ? sortMap(siteCount) : [],
     topRootCauses: needRoot ? sortMap(rootCount) : [],
     topQueues: needQueue ? sortMap(queueCount) : [],
@@ -1667,45 +1632,19 @@ function downloadBlob(content, filename, mime){
   a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
-function renderDashboardCharts(stats,settings,filters,modeData=null){
+function renderDashboardCharts(stats,settings,filters,modeData=null,pageSlug='total-tickets'){
   if(typeof Chart==='undefined'){ document.querySelectorAll('.dash-chart-empty').forEach(box=>{ box.classList.remove('hidden'); box.innerHTML='Chart.js did not load in preview. It will work on your deployed Cloudflare Pages site.'; }); return; }
   Chart.defaults.font.family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"; Chart.defaults.color=getComputedStyle(document.documentElement).getPropertyValue('--text2').trim()||'#64748b';
-  if(el('dashTrendCanvas') && stats && settings.showCards.trendChart){ createDashboardChart('dashTrendCanvas', buildTrendChartConfig(stats.trendSeries.slice(-settings.limits.trendPoints), settings.graphTypes.trendChart, filters.groupBy)); }
-  if(el('dashStatusCanvas') && stats && settings.showCards.statusChart){ createDashboardChart('dashStatusCanvas', buildCategoryChartConfig(settings.graphTypes.statusChart, stats.statusSeries.slice(0,settings.limits.statusCount), 'Ticket Status')); }
-  if(el('dashProblemCanvas') && stats && settings.showCards.problemChart){ createDashboardChart('dashProblemCanvas', buildCategoryChartConfig(settings.graphTypes.problemChart, stats.topProblems.slice(0,settings.limits.problemCount), 'Top Problems')); }
-  if(el('dashSiteCanvas') && stats && settings.showCards.siteChart){ createDashboardChart('dashSiteCanvas', buildCategoryChartConfig(settings.graphTypes.siteChart, stats.topSites.slice(0,settings.limits.siteCount), 'Top Sites')); }
-  if(el('dashRootCanvas') && stats && settings.showCards.rootCauseChart){ createDashboardChart('dashRootCanvas', buildCategoryChartConfig(settings.graphTypes.rootCauseChart, stats.topRootCauses.slice(0,settings.limits.rootCauseCount), 'Root Cause')); }
-  if(el('dashRepeatCanvas') && stats && settings.showCards.repeatChart && settings.graphTypes.repeatChart!=='list'){ createDashboardChart('dashRepeatCanvas', buildCategoryChartConfig(settings.graphTypes.repeatChart, stats.repeatEntries.slice(0,settings.limits.repeatCount), 'Repeat Complaint')); }
-  if(el('dashTownshipCanvas') && stats){ createDashboardChart('dashTownshipCanvas', buildCategoryChartConfig(settings.graphTypes.siteChart, stats.topTownships.slice(0,Math.max(5,settings.limits.siteCount)), 'Township')); }
-  if(el('dashQueueCanvas') && stats){ createDashboardChart('dashQueueCanvas', buildCategoryChartConfig('bar', stats.topQueues.slice(0,6), 'Queue')); }
-
-  if(modeData && currentDashboardMode==='compare'){
-    if(el('dashCompareSeriesCanvas')){
-      createDashboardChart('dashCompareSeriesCanvas', {
-        type:'bar',
-        data:{ labels:modeData.series.map(x=>x.label), datasets:[{ label:'Tickets', data:modeData.series.map(x=>x.total), backgroundColor:'rgba(59,130,246,.75)', borderRadius:10, maxBarThickness:36 }] },
-        options: buildChartOptions({ legend:false, indexAxis:'x', showScales:true })
-      });
-    }
-    if(el('dashCompareStatusCanvas') && modeData.current){
-      const prev=modeData.previous||{label:'Previous',closed:0,open:0};
-      createDashboardChart('dashCompareStatusCanvas', {
-        type:'bar',
-        data:{ labels:['Closed','Open'], datasets:[{ label:modeData.current.label, data:[modeData.current.closed, modeData.current.open], backgroundColor:'rgba(16,185,129,.75)', borderRadius:10 }, { label:prev.label, data:[prev.closed, prev.open], backgroundColor:'rgba(249,115,22,.65)', borderRadius:10 }] },
-        options: buildChartOptions({ legend:true, indexAxis:'x', showScales:true })
-      });
-    }
-  }
-  if(modeData && currentDashboardMode==='duplicate'){
+  if(pageSlug==='total-tickets'){
+    if(el('dashTrendCanvas')) createDashboardChart('dashTrendCanvas', buildTrendChartConfig(stats.trendSeries.slice(-Math.max(12,settings.limits.trendPoints)), 'line', filters.groupBy));
+  } else if(pageSlug==='cpe-models'){
+    if(el('dashCpeCanvas')) createDashboardChart('dashCpeCanvas', buildCategoryChartConfig('bar', stats.topCpeModels.slice(0,12), "CPE Model's Complaint Counts"));
+  } else if(pageSlug==='duplicate' && modeData){
     if(el('dashDupRepeatCanvas')) createDashboardChart('dashDupRepeatCanvas', buildCategoryChartConfig('bar', modeData.repeatEntries.slice(0,10), 'Repeated Services'));
     if(el('dashDupSiteCanvas')) createDashboardChart('dashDupSiteCanvas', buildCategoryChartConfig('bar', modeData.topSites.slice(0,8), 'Repeat by Site'));
-    if(el('dashDupTownshipCanvas')) createDashboardChart('dashDupTownshipCanvas', buildCategoryChartConfig('bar', modeData.topTownships.slice(0,8), 'Repeat by Township'));
-    if(el('dashDupProblemCanvas')) createDashboardChart('dashDupProblemCanvas', buildCategoryChartConfig('bar', modeData.topProblems.slice(0,8), 'Repeat Problem Profile'));
-  }
-  if(modeData && currentDashboardMode==='overtime'){
+  } else if(pageSlug==='overtime' && modeData){
     if(el('dashOvtBucketCanvas')) createDashboardChart('dashOvtBucketCanvas', buildCategoryChartConfig('bar', modeData.bucketSeries.slice(0,8), 'Overtime Buckets'));
     if(el('dashOvtSiteCanvas')) createDashboardChart('dashOvtSiteCanvas', buildCategoryChartConfig('bar', modeData.topSites.slice(0,8), 'Overtime by Site'));
-    if(el('dashOvtRootCanvas')) createDashboardChart('dashOvtRootCanvas', buildCategoryChartConfig('bar', modeData.topRoots.slice(0,8), 'Overtime Root Causes'));
   }
 }
 function createDashboardChart(canvasId, config){ const canvas=el(canvasId), empty=el(`${canvasId}_empty`); if(!canvas) return; const labels=config?.data?.labels||[]; if(!labels.length){ if(empty){ empty.classList.remove('hidden'); empty.textContent='No data for current filter.'; } return; } if(empty){ empty.classList.add('hidden'); empty.textContent=''; } try{ const existing=window.Chart && Chart.getChart(canvas); if(existing) existing.destroy(); }catch{} const chart=new Chart(canvas.getContext('2d'), config); dashboardChartInstances.push(chart); }
