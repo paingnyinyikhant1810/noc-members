@@ -911,13 +911,27 @@ function buildDashboardMeta(payload,item,rowCount,filters,totalRows,pageName){
   const out=[]; const src=getDashboardApi(item); const synced=payload?.syncedAt||payload?.lastSynced||payload?.last_sync||payload?.fetched_at||payload?.updatedAt;
   out.push({icon:'fa-table-cells',text:`${pageName} page`}); out.push({icon:'fa-database',text:`${rowCount} of ${totalRows} rows`}); out.push({icon:'fa-calendar-days',text:`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`}); if(filters.fromDate||filters.toDate) out.push({icon:'fa-calendar-range',text:`${filters.fromDate||'Start'} → ${filters.toDate||'Now'}`}); if(filters.site) out.push({icon:'fa-network-wired',text:`Site ${filters.site}`}); if(filters.township) out.push({icon:'fa-location-dot',text:`Township ${filters.township}`}); if(filters.queue) out.push({icon:'fa-filter',text:`Queue ${filters.queue}`}); if(synced) out.push({icon:'fa-rotate',text:`Last sync ${formatMetaDate(synced)}`}); if(src) out.push({icon:'fa-link',text:src}); return out;
 }
+function sheetValuesToObjects(values){
+  if(!Array.isArray(values) || values.length < 2) return [];
+  const headers=(values[0]||[]).map(h=>String(h??'').trim());
+  return values.slice(1)
+    .filter(row=>Array.isArray(row) && row.some(cell=>String(cell??'').trim()!==''))
+    .map(row=>{
+      const obj={};
+      headers.forEach((header,idx)=>{ obj[header || `Column_${idx+1}`] = row[idx] ?? ''; });
+      return obj;
+    });
+}
 function extractDashboardRows(payload){
   const isRowArray = (arr) => Array.isArray(arr) && (!arr.length || typeof arr[0] === 'object');
+  const isSheetMatrix = (arr) => Array.isArray(arr) && arr.length >= 2 && Array.isArray(arr[0]) && Array.isArray(arr[1]);
   const findRows = (node, depth=0) => {
-    if(depth > 5 || node == null) return [];
+    if(depth > 6 || node == null) return [];
     if(isRowArray(node)) return node;
+    if(isSheetMatrix(node)) return sheetValuesToObjects(node);
     if(typeof node !== 'object') return [];
-    const preferred = ['rows','data','result','items','records','payload'];
+    if(isSheetMatrix(node.values)) return sheetValuesToObjects(node.values);
+    const preferred = ['rows','data','result','items','records','payload','values'];
     for(const key of preferred){ if(node[key] !== undefined){ const hit=findRows(node[key], depth+1); if(hit.length || Array.isArray(node[key])) return hit; } }
     for(const key of Object.keys(node)){ const hit=findRows(node[key], depth+1); if(hit.length) return hit; }
     return [];
