@@ -27,6 +27,7 @@ let currentDashboardRows = [];
 let currentDashboardFilters = { groupBy:'day', site:'', township:'', queue:'', fromDate:'', toDate:'' };
 let currentDashboardPageId = null;
 let currentDashboardTableState = { search:'', page:1, pageSize:20 };
+let dashboardAutoRetryDone = false;
 let dashboardCache = {};
 let dashboardFetchPromises = {};
 let dashboardPrefetchStarted = false;
@@ -811,7 +812,7 @@ async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}=
 
 async function showDashboardItem(id,name='Dashboard'){
   if(!isLeader()) return showToast('Leader or above required','error');
-  currentDashboardId=id; currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'}; currentDashboardPayload=null; currentDashboardRows=[]; initializeDashboardPage();
+  currentDashboardId=id; currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'}; currentDashboardPayload=null; currentDashboardRows=[]; dashboardAutoRetryDone=false; initializeDashboardPage();
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden')); el('dashboardPage').classList.remove('hidden'); document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active')); document.querySelectorAll('[data-page="dashboard"]').forEach(b=>b.classList.add('active')); if(el('dashboardDropdown')) el('dashboardDropdown').classList.add('hidden'); renderDashboardPageTabs(); renderDashboardLoading(currentDashboardItem);
   const data=await fetchDashboardData(id,{silent:false,onProgress:updateDashboardLoadingUI}); if(currentDashboardId!==id) return;
   if(data){ updateDashboardLoadingUI(82,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the dashboard payload...'); currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); updateDashboardLoadingUI(90,'<i class="fas fa-filter"></i> Preparing filters','Building tabs, filters, and table state...'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(97,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the page...'); renderCurrentDashboard(); }
@@ -862,7 +863,18 @@ function renderDashboardLoading(item={}){
 function renderDashboardEmpty(message='No dashboard item selected'){ destroyDashboardCharts(); clearDashboardLoadPulse(); const meta=el('dashboardMeta'); if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; } const bar=el('dashboardFilterBar'); if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; } const tabs=el('dashboardPageTabs'); if(tabs){ tabs.classList.add('hidden'); tabs.innerHTML=''; } el('dashboardContainer').innerHTML=`<div class="dash-empty"><i class="fas fa-chart-pie"></i><h3>Dashboard Preview</h3><p>${escHtml(message)}</p></div>`; }
 function renderCurrentDashboard(){
   clearDashboardLoadPulse(); if(!currentDashboardItem||!currentDashboardPayload){ renderDashboardEmpty('Dashboard data is not loaded yet.'); return; }
-  if(!currentDashboardRows.length){ const errMsg=currentDashboardPayload?.lastError ? `Dashboard source sync failed: ${currentDashboardPayload.lastError}` : 'No rows were found in the dashboard data. Please check the API response format or click Refresh Data.'; renderDashboardEmpty(errMsg); return; }
+  if(!currentDashboardRows.length){
+    if(!dashboardAutoRetryDone){
+      dashboardAutoRetryDone=true;
+      renderDashboardLoading(currentDashboardItem);
+      updateDashboardLoadingUI(12,'<i class="fas fa-rotate fa-spin"></i> Re-syncing empty dashboard','No rows were cached, so the dashboard is requesting a fresh sync automatically.');
+      refreshCurrentDashboard(true);
+      return;
+    }
+    const errMsg=currentDashboardPayload?.lastError ? `Dashboard source sync failed: ${currentDashboardPayload.lastError}` : 'No rows were found in the dashboard data. Please check the API response format or click Refresh Data.';
+    renderDashboardEmpty(errMsg);
+    return;
+  }
   initializeDashboardPage(); renderDashboardPageTabs(); const filteredRows=filterDashboardRows(currentDashboardRows,currentDashboardFilters); const currentPage=getCurrentDashboardPage(); if(!filteredRows.length && currentPage.slug!=='raw-data'){ renderDashboardEmpty('No data matched the selected filters. Try changing Site / Township / Queue or date grouping.'); return; } renderDashboardData(currentDashboardItem,currentDashboardPayload,filteredRows,currentDashboardFilters);
 }
 function renderDashboardData(item,payload,rows,filters){
