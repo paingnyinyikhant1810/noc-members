@@ -620,6 +620,78 @@ export const onRequest = async (context) => {
     return ok({ success: true, id: inserted.meta?.last_row_id }, 201);
   }
 
+
+  const dashboardPagesSortMatch = path === 'dashboardPages/sort';
+  if (dashboardPagesSortMatch && method === 'POST') {
+    if (!isAdmin) return err('Admin only', 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
+    const order = Array.isArray(body.order) ? body.order : [];
+    if (!order.length) return err('order must be a non-empty array', 400);
+    for (let i = 0; i < order.length; i++) {
+      const pageId = parseInt(order[i], 10);
+      if (!isNaN(pageId)) {
+        await env.DB.prepare('UPDATE dashboard_pages SET sort_order=? WHERE id=?').bind(i, pageId).run();
+      }
+    }
+    return ok({ success: true });
+  }
+
+  const dashboardPagesCreateMatch = path.match(/^dashboards\/(\d+)\/pages$/);
+  if (dashboardPagesCreateMatch && method === 'POST') {
+    if (!isAdmin) return err('Admin only', 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    const dashId = parseInt(dashboardPagesCreateMatch[1], 10);
+    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
+    const name = String(body.name || '').trim();
+    const slug = String(body.slug || body.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const icon = String(body.icon || 'fa-layer-group').trim() || 'fa-layer-group';
+    if (!name) return err('name is required', 400);
+    const maxRow = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM dashboard_pages WHERE dashboard_item_id=?').bind(dashId).first();
+    const nextSort = (maxRow?.max_sort ?? -1) + 1;
+    const inserted = await env.DB.prepare('INSERT INTO dashboard_pages (dashboard_item_id, slug, name, icon, sort_order) VALUES (?, ?, ?, ?, ?)').bind(dashId, slug || 'page', name, icon, nextSort).run();
+    return ok({ success: true, id: inserted.meta?.last_row_id }, 201);
+  }
+
+  const dashboardPageItemMatch = path.match(/^dashboardPages\/(\d+)$/);
+  if (dashboardPageItemMatch && method === 'PUT') {
+    if (!isAdmin) return err('Admin only', 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    const pageId = parseInt(dashboardPageItemMatch[1], 10);
+    const existing = await env.DB.prepare('SELECT * FROM dashboard_pages WHERE id=?').bind(pageId).first();
+    if (!existing) return err('Dashboard page not found', 404);
+    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
+    const name = String(body.name || existing.name || '').trim();
+    const slug = String(body.slug || body.name || name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const icon = String(body.icon || existing.icon || 'fa-layer-group').trim() || 'fa-layer-group';
+    if (!name) return err('name is required', 400);
+    await env.DB.prepare('UPDATE dashboard_pages SET name=?, slug=?, icon=? WHERE id=?').bind(name, slug || 'page', icon, pageId).run();
+    return ok({ success: true, id: pageId });
+  }
+  if (dashboardPageItemMatch && method === 'DELETE') {
+    if (!isAdmin) return err('Admin only', 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    const pageId = parseInt(dashboardPageItemMatch[1], 10);
+    const existing = await env.DB.prepare('SELECT * FROM dashboard_pages WHERE id=?').bind(pageId).first();
+    if (!existing) return err('Dashboard page not found', 404);
+    const countRow = await env.DB.prepare('SELECT COUNT(*) AS c FROM dashboard_pages WHERE dashboard_item_id=?').bind(existing.dashboard_item_id).first();
+    if (Number(countRow?.c || 0) <= 1) return err('At least one page must remain', 400);
+    await env.DB.prepare('DELETE FROM dashboard_widgets WHERE dashboard_page_id=?').bind(pageId).run();
+    await env.DB.prepare('DELETE FROM dashboard_pages WHERE id=?').bind(pageId).run();
+    return ok({ success: true });
+  }
+
+  const dashboardCacheMatch = path.match(/^dashboards\/(\d+)\/cache$/);
+  if (dashboardCacheMatch && method === 'DELETE') {
+    if (!isAdmin) return err('Admin only', 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    const dashId = parseInt(dashboardCacheMatch[1], 10);
+    await env.DB.prepare('DELETE FROM dashboard_cache WHERE dashboard_item_id=?').bind(dashId).run();
+    await env.DB.prepare('DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?').bind(dashId).run();
+    await env.DB.prepare('DELETE FROM dashboard_sync_logs WHERE dashboard_item_id=?').bind(dashId).run();
+    return ok({ success: true });
+  }
+
   const dashboardItemMatch = path.match(/^dashboardItems\/(\d+)$/);
   if (dashboardItemMatch && method === "PUT") {
     if (!isAdmin) return err("Admin only", 403);
