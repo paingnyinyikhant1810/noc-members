@@ -676,7 +676,7 @@ function iconForPageSlug(slug){ return DEFAULT_DASHBOARD_PAGES.find(p=>p.slug===
 function currentFilteredDashboardRows(){ return getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); }
 function currentDashboardUrlHost(){ try{ return new URL(getDashboardApi(currentDashboardItem||{})).host; }catch{ return ''; } }
 function shouldUseSourceSummary(filters){
-  return !filters.site && !filters.township && !filters.queue && !filters.fromDate && !filters.toDate;
+  return filters.groupBy==='all' && (!filters.subPeriod || filters.subPeriod==='all') && !filters.site && !filters.township && !filters.queue && !filters.fromDate && !filters.toDate;
 }
 function sourceSummaryToStats(summary, groupBy='day'){
   if(!summary) return null;
@@ -753,6 +753,15 @@ function getDashboardSubPeriodOptions(rows, groupBy){
 }
 function subPeriodDefaultLabel(groupBy){
   return groupBy==='week' ? 'All Weeks' : groupBy==='month' ? 'All Months' : groupBy==='year' ? 'All Years' : 'All Days';
+}
+function currentTimeframeLabel(filters){
+  if(filters.groupBy==='all' && (!filters.subPeriod || filters.subPeriod==='all')) return 'Total';
+  if(filters.subPeriod && filters.subPeriod!=='all'){
+    const opts=getDashboardSubPeriodOptions(currentDashboardRows, filters.groupBy);
+    const hit=opts.find(o=>o.value===filters.subPeriod);
+    return hit ? hit.label : filters.subPeriod;
+  }
+  return DASHBOARD_GROUP_UI_LABELS[filters.groupBy] || 'Total';
 }
 function getDashboardFilterCacheSignature(rows,filters){
   return [rows?.length||0,filters.site,filters.township,filters.queue,filters.fromDate,filters.toDate].join('|');
@@ -1430,8 +1439,8 @@ function renderDashboardData(item,payload,rows,filters){
   if(pageSlug==='summary'){
     const dup=buildDuplicateStats(rows);
     const ov=buildOvertimeStats(rows,item);
-    cards.push(renderInsightCard('Total Tickets', fmtInt(stats.totalRows), `Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`, `${fmtInt(stats.closedCount)} closed / ${fmtInt(stats.openCount)} open`, 'info'));
-    cards.push(renderChartCard('Total Ticket Number', `Trend by ${DASHBOARD_GROUP_LABELS[filters.groupBy].toLowerCase()} (day/week/month/year selector above)`, 'fa-chart-line', 'dashTrendCanvas', 'trend'));
+    cards.push(renderInsightCard('Total Tickets', fmtInt(stats.totalRows), `${currentTimeframeLabel(filters)} ticket count`, `${fmtInt(stats.closedCount)} closed / ${fmtInt(stats.openCount)} open`, 'info'));
+    cards.push(renderChartCard('Total Ticket Number', `${currentTimeframeLabel(filters)} view`, 'fa-chart-line', 'dashTrendCanvas', 'trend'));
     cards.push(renderChartCard("CPE Model's Complaint Counts", 'Complaint counts by CPE model / type', 'fa-microchip', 'dashCpeCanvas', 'wide'));
     cards.push(renderChartCard('Duplicate Tickets', 'Repeated complaint services overview', 'fa-copy', 'dashDupRepeatCanvas', 'wide'));
     cards.push(renderChartCard('OverTime Graph', `Resolution over ${ov.threshold}h`, 'fa-clock', 'dashOvtBucketCanvas', 'wide'));
@@ -1484,7 +1493,7 @@ function renderWidgetByType(widget, stats, settings, rows, filters){
 
 function buildDashboardMeta(payload,item,rowCount,filters,totalRows,pageName){
   const out=[]; const src=getDashboardApi(item); const synced=payload?.syncedAt||payload?.lastSynced||payload?.last_sync||payload?.fetched_at||payload?.updatedAt; const host=currentDashboardUrlHost();
-  out.push({icon:'fa-table-cells',text:`${pageName} page`}); out.push({icon:'fa-database',text:`${fmtInt(rowCount)} of ${fmtInt(totalRows)} rows`}); out.push({icon:'fa-calendar-days',text:`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`}); if(filters.fromDate||filters.toDate) out.push({icon:'fa-calendar-range',text:`${filters.fromDate||'Start'} → ${filters.toDate||'Now'}`}); if(filters.site) out.push({icon:'fa-network-wired',text:`Site ${filters.site}`}); if(filters.township) out.push({icon:'fa-location-dot',text:`Township ${filters.township}`}); if(filters.queue) out.push({icon:'fa-filter',text:`Queue ${filters.queue}`}); if(synced) out.push({icon:'fa-rotate',text:`Last sync ${formatMetaDate(synced)}`}); if(payload?.sourceMeta?.range) out.push({icon:'fa-table',text:`Range ${payload.sourceMeta.range}`}); if(host) out.push({icon:'fa-link',text:host.includes('googleapis.com') ? 'Google Sheets API' : host}); return out;
+  out.push({icon:'fa-table-cells',text:`${pageName} page`}); out.push({icon:'fa-database',text:`${fmtInt(rowCount)} of ${fmtInt(totalRows)} rows`}); out.push({icon:'fa-calendar-days',text:`Grouped by ${DASHBOARD_GROUP_UI_LABELS[filters.groupBy]||DASHBOARD_GROUP_LABELS[filters.groupBy]}`}); if(filters.fromDate||filters.toDate) out.push({icon:'fa-calendar-range',text:`${filters.fromDate||'Start'} → ${filters.toDate||'Now'}`}); if(filters.site) out.push({icon:'fa-network-wired',text:`Site ${filters.site}`}); if(filters.township) out.push({icon:'fa-location-dot',text:`Township ${filters.township}`}); if(filters.queue) out.push({icon:'fa-filter',text:`Queue ${filters.queue}`}); if(synced) out.push({icon:'fa-rotate',text:`Last sync ${formatMetaDate(synced)}`}); if(payload?.sourceMeta?.range) out.push({icon:'fa-table',text:`Range ${payload.sourceMeta.range}`}); if(host) out.push({icon:'fa-link',text:host.includes('googleapis.com') ? 'Google Sheets API' : host}); return out;
 }
 function sheetValuesToObjects(values){
   if(!Array.isArray(values) || values.length < 2) return [];
@@ -1649,7 +1658,13 @@ function renderDashboardCharts(stats,settings,filters,modeData=null,pageSlug='to
   if(typeof Chart==='undefined'){ document.querySelectorAll('.dash-chart-empty').forEach(box=>{ box.classList.remove('hidden'); box.innerHTML='Chart.js did not load in preview. It will work on your deployed Cloudflare Pages site.'; }); return; }
   Chart.defaults.font.family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"; Chart.defaults.color=getComputedStyle(document.documentElement).getPropertyValue('--text2').trim()||'#64748b';
   if(pageSlug==='summary'){
-    if(el('dashTrendCanvas')) createDashboardChart('dashTrendCanvas', buildTrendChartConfig(stats.trendSeries.slice(-Math.max(12,settings.limits.trendPoints)), 'line', filters.groupBy));
+    if(el('dashTrendCanvas')){
+      if(filters.groupBy==='all' && (!filters.subPeriod || filters.subPeriod==='all')){
+        createDashboardChart('dashTrendCanvas', buildCategoryChartConfig('bar', [['Total Tickets', stats.totalRows]], 'Total Ticket Number'));
+      } else {
+        createDashboardChart('dashTrendCanvas', buildTrendChartConfig(stats.trendSeries.slice(-Math.max(12,settings.limits.trendPoints)), 'line', effectiveGroupBy(filters.groupBy)));
+      }
+    }
     if(el('dashCpeCanvas')) createDashboardChart('dashCpeCanvas', buildCategoryChartConfig('bar', stats.topCpeModels.slice(0,12), "CPE Model's Complaint Counts"));
     const dup=buildDuplicateStats(currentFilteredDashboardRows());
     if(el('dashDupRepeatCanvas')) createDashboardChart('dashDupRepeatCanvas', buildCategoryChartConfig('bar', dup.repeatEntries.slice(0,10), 'Duplicate Tickets'));
@@ -1673,7 +1688,8 @@ function getRowValue(row,aliases){ if(!row||typeof row!=='object') return ''; co
 function incMap(map,key){ const k=String(key||'Unknown').trim()||'Unknown'; map[k]=(map[k]||0)+1; }
 function sortMap(map){ return Object.entries(map).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])); }
 function sortTrendMap(map){ return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])); }
-function formatTimeBucket(date,groupBy='day'){ const y=date.getFullYear(), m=String(date.getMonth()+1).padStart(2,'0'), d=String(date.getDate()).padStart(2,'0'); if(groupBy==='year') return `${y}`; if(groupBy==='month') return `${y}-${m}`; if(groupBy==='week'){ const start=getWeekStart(date); return `${start.getFullYear()}-W${String(getISOWeek(start)).padStart(2,'0')}`; } return `${y}-${m}-${d}`; }
+function formatTimeBucket(date,groupBy='day'){ const y=date.getFullYear(), m=String(date.getMonth()+1).padStart(2,'0'), d=String(date.getDate()).padStart(2,'0'); if(groupBy==='all') return 'All';
+  if(groupBy==='year') return `${y}`; if(groupBy==='month') return `${y}-${m}`; if(groupBy==='week'){ const start=getWeekStart(date); return `${start.getFullYear()}-W${String(getISOWeek(start)).padStart(2,'0')}`; } return `${y}-${m}-${d}`; }
 function getWeekStart(date){ const d=new Date(date); const day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); d.setHours(0,0,0,0); return d; }
 function getISOWeek(date){ const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())); d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7)); const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1)); return Math.ceil((((d-yearStart)/86400000)+1)/7); }
 function formatBucketLabel(bucket,groupBy){ if(groupBy==='year') return bucket; if(groupBy==='month'){ const [yy,mm]=bucket.split('-'); return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(mm)-1]} ${yy}`; } if(groupBy==='week') return bucket.replace('-', ' '); const d=parseFlexibleDate(bucket); if(!d) return bucket; return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
