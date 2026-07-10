@@ -229,7 +229,7 @@ function doShowApp(){
 
 function updateAdminUI(){
   // Admin-only elements
-  ['adminBtn','mobileAdminBtn','manageDashboardPageBtn','dashboardViewSettingsBtn'].forEach(id=>{
+  ['adminBtn','mobileAdminBtn','manageDashboardPageBtn','dashboardViewSettingsBtn','manageDashboardPagesBtn','clearDashboardCacheBtn'].forEach(id=>{
     const e=el(id);if(e)isAdmin()?e.classList.remove('hidden'):e.classList.add('hidden');
   });
 
@@ -617,6 +617,8 @@ function getDashboardPagesForItem(dashboardItemId){
   return DEFAULT_DASHBOARD_PAGES.map(p=>({ ...p }));
 }
 function iconForPageSlug(slug){ return DEFAULT_DASHBOARD_PAGES.find(p=>p.slug===slug)?.icon||'fa-layer-group'; }
+function currentFilteredDashboardRows(){ return filterDashboardRows(currentDashboardRows,currentDashboardFilters); }
+function currentDashboardUrlHost(){ try{ return new URL(getDashboardApi(currentDashboardItem||{})).host; }catch{ return ''; } }
 function getCurrentDashboardPage(){
   const pages=getDashboardPagesForItem(currentDashboardId);
   let page=pages.find(p=>String(p.id)===String(currentDashboardPageId) || p.slug===currentDashboardPageId);
@@ -700,6 +702,118 @@ async function saveDashboardItem(){
   }catch(e){ hideLoading(); showToast(e.message); }
   isProcessing=false;
 }
+
+let dashPageDragSrc=null;
+
+async function openDashboardPageManagerModal(){
+  if(!isAdmin()) return showToast('Admin only','error');
+  if(!currentDashboardId) return showToast('Open a dashboard item first','info');
+  await refreshData(true);
+  renderDashboardPageManagerList();
+  el('dashboardPageManagerModal').classList.remove('hidden');
+}
+function renderDashboardPageManagerList(){
+  const list=el('dashboardPageManagerList');
+  if(!list) return;
+  const pages=getDashboardPagesForItem(currentDashboardId);
+  list.innerHTML=pages.map(page=>`<div class="cat-mgr-item" draggable="true" data-page-id="${page.id}" ondragstart="dashPageDragStart(event,'${escAttr(String(page.id))}')" ondragover="dashPageDragOver(event)" ondrop="dashPageDrop(event,'${escAttr(String(page.id))}')" ondragend="dashPageDragEnd()"><div class="cat-mgr-drag"><i class="fas fa-grip-vertical"></i></div><div class="cat-mgr-icon"><i class="fas ${page.icon||'fa-layer-group'}"></i></div><div style="flex:1;min-width:0"><div class="cat-mgr-name">${escHtml(page.name)}</div><div class="dash-page-meta">${escHtml(page.slug||'')}</div></div><div class="cat-mgr-actions"><button onclick="openDashboardPageModal('${escAttr(String(page.id))}')" class="icon-btn" title="Edit"><i class="fas fa-edit"></i></button><button onclick="deleteDashboardPageConfirm('${escAttr(String(page.id))}')" class="icon-btn" style="color:#ef4444" title="Delete"><i class="fas fa-trash"></i></button></div></div>`).join('') || `<div class="dash-empty"><i class="fas fa-table-columns"></i><h3>No pages</h3><p>Add a page to organize your dashboard.</p></div>`;
+}
+function dashPageDragStart(e,id){ dashPageDragSrc=String(id); e.dataTransfer.effectAllowed='move'; e.currentTarget.classList.add('cat-dragging'); }
+function dashPageDragOver(e){ e.preventDefault(); e.dataTransfer.dropEffect='move'; document.querySelectorAll('#dashboardPageManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-drag-over')); e.currentTarget.classList.add('cat-drag-over'); }
+function dashPageDragEnd(){ document.querySelectorAll('#dashboardPageManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-dragging','cat-drag-over')); }
+async function dashPageDrop(e,targetId){
+  e.preventDefault();
+  if(String(dashPageDragSrc)===String(targetId)){ dashPageDragEnd(); return; }
+  dashPageDragEnd();
+  const pages=[...getDashboardPagesForItem(currentDashboardId)];
+  const fromIdx=pages.findIndex(x=>String(x.id)===String(dashPageDragSrc));
+  const toIdx=pages.findIndex(x=>String(x.id)===String(targetId));
+  if(fromIdx<0||toIdx<0) return;
+  const [moved]=pages.splice(fromIdx,1); pages.splice(toIdx,0,moved);
+  appData.dashboardPages=pages.map((p,idx)=>({ ...(appData.dashboardPages.find(x=>String(x.id)===String(p.id))||p), sort_order:idx }))
+    .concat((appData.dashboardPages||[]).filter(x=>Number(x.dashboard_item_id||x.dashboardItemId)!==Number(currentDashboardId)));
+  renderDashboardPageManagerList(); renderDashboardPageTabs();
+  try{
+    const res=await fetch(`${API_URL}/dashboardPages/sort`,{ method:'POST', headers:getHeaders(), body:JSON.stringify({ dashboard_item_id:currentDashboardId, order:pages.map(x=>x.id) }) });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to sort pages');
+    refreshData(true);
+  }catch(e){ showToast(e.message,'error'); }
+}
+function cancelDashboardPageModal(){ closeModal('dashboardPageModal'); if(!el('dashboardPageManagerModal').classList.contains('hidden')) return; openDashboardPageManagerModal(); }
+function openDashboardPageModal(id=null){
+  if(!isAdmin()) return showToast('Admin only','error');
+  if(!currentDashboardId) return showToast('Open a dashboard item first','info');
+  el('dashboardPageManagerModal').classList.add('hidden');
+  el('dashboardPageModal').classList.remove('hidden');
+  el('dashboardPageModalTitle').textContent=id?'Edit Page':'Add Page';
+  el('dashboardPageId').value=id||'';
+  if(id){
+    const page=(appData.dashboardPages||[]).find(x=>String(x.id)===String(id));
+    if(!page) return;
+    el('dashboardPageName').value=page.name||'';
+    el('dashboardPageIcon').value=page.icon||'fa-layer-group';
+  } else {
+    el('dashboardPageForm').reset();
+    el('dashboardPageIcon').value='fa-layer-group';
+  }
+}
+async function saveDashboardPage(){
+  if(!isAdmin()) return showToast('Admin only','error');
+  if(!currentDashboardId) return showToast('Open a dashboard item first','info');
+  const id=el('dashboardPageId').value;
+  const name=el('dashboardPageName').value.trim();
+  const icon=el('dashboardPageIcon').value;
+  if(!name) return showToast('Page name is required','error');
+  const payload={ name, slug:slugify(name), icon };
+  const endpoint=id?`${API_URL}/dashboardPages/${id}`:`${API_URL}/dashboards/${currentDashboardId}/pages`;
+  const method=id?'PUT':'POST';
+  if(isProcessing){ showToast('Please wait…','info'); return; }
+  isProcessing=true; showLoading(true); updateProgress(20,'Saving page...');
+  try{
+    const res=await fetch(endpoint,{ method, headers:getHeaders(), body:JSON.stringify(payload) });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to save page');
+    await refreshData(true);
+    initializeDashboardPage(); renderDashboardPageTabs(); renderCurrentDashboard();
+    hideLoading(); closeModal('dashboardPageModal'); await openDashboardPageManagerModal(); showToast('Dashboard page saved','success');
+  }catch(e){ hideLoading(); showToast(e.message); }
+  isProcessing=false;
+}
+async function deleteDashboardPageConfirm(id){
+  if(!isAdmin()) return;
+  if(!confirm('Delete this dashboard page?')) return;
+  if(isProcessing){ showToast('Please wait…','info'); return; }
+  isProcessing=true; showLoading(true); updateProgress(20,'Deleting page...');
+  try{
+    const res=await fetch(`${API_URL}/dashboardPages/${id}`,{ method:'DELETE', headers:getHeaders() });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to delete page');
+    await refreshData(true);
+    initializeDashboardPage(); renderDashboardPageTabs(); renderCurrentDashboard(); renderDashboardPageManagerList();
+    hideLoading(); showToast('Dashboard page deleted','success');
+  }catch(e){ hideLoading(); showToast(e.message); }
+  isProcessing=false;
+}
+async function clearCurrentDashboardCache(){
+  if(!isAdmin()) return showToast('Admin only','error');
+  if(!currentDashboardId) return showToast('Open a dashboard item first','info');
+  if(!confirm('Clear cached dashboard data for this item?')) return;
+  if(isProcessing){ showToast('Please wait…','info'); return; }
+  isProcessing=true; showLoading(true); updateProgress(20,'Clearing cache...');
+  try{
+    const res=await fetch(`${API_URL}/dashboards/${currentDashboardId}/cache`,{ method:'DELETE', headers:getHeaders() });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to clear cache');
+    delete dashboardCache[currentDashboardId];
+    currentDashboardPayload=null; currentDashboardRows=[]; dashboardAutoRetryDone=false;
+    updateProgress(65,'Re-syncing...');
+    await refreshCurrentDashboard(true);
+    hideLoading(); showToast('Cache cleared and dashboard refreshed','success');
+  }catch(e){ hideLoading(); showToast(e.message); }
+  isProcessing=false;
+}
+
 async function deleteDashboardItemConfirm(id){
   if(!isAdmin()) return;
   if(!confirm('Delete this dashboard item?')) return;
@@ -941,8 +1055,8 @@ function renderDashboardData(item,payload,rows,filters){
   if(pageSlug!=='raw-data') requestAnimationFrame(()=>renderDashboardCharts(stats,settings,filters));
 }
 function buildDashboardMeta(payload,item,rowCount,filters,totalRows,pageName){
-  const out=[]; const src=getDashboardApi(item); const synced=payload?.syncedAt||payload?.lastSynced||payload?.last_sync||payload?.fetched_at||payload?.updatedAt;
-  out.push({icon:'fa-table-cells',text:`${pageName} page`}); out.push({icon:'fa-database',text:`${rowCount} of ${totalRows} rows`}); out.push({icon:'fa-calendar-days',text:`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`}); if(filters.fromDate||filters.toDate) out.push({icon:'fa-calendar-range',text:`${filters.fromDate||'Start'} → ${filters.toDate||'Now'}`}); if(filters.site) out.push({icon:'fa-network-wired',text:`Site ${filters.site}`}); if(filters.township) out.push({icon:'fa-location-dot',text:`Township ${filters.township}`}); if(filters.queue) out.push({icon:'fa-filter',text:`Queue ${filters.queue}`}); if(synced) out.push({icon:'fa-rotate',text:`Last sync ${formatMetaDate(synced)}`}); if(src) out.push({icon:'fa-link',text:src}); return out;
+  const out=[]; const src=getDashboardApi(item); const synced=payload?.syncedAt||payload?.lastSynced||payload?.last_sync||payload?.fetched_at||payload?.updatedAt; const host=currentDashboardUrlHost();
+  out.push({icon:'fa-table-cells',text:`${pageName} page`}); out.push({icon:'fa-database',text:`${fmtInt(rowCount)} of ${fmtInt(totalRows)} rows`}); out.push({icon:'fa-calendar-days',text:`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`}); if(filters.fromDate||filters.toDate) out.push({icon:'fa-calendar-range',text:`${filters.fromDate||'Start'} → ${filters.toDate||'Now'}`}); if(filters.site) out.push({icon:'fa-network-wired',text:`Site ${filters.site}`}); if(filters.township) out.push({icon:'fa-location-dot',text:`Township ${filters.township}`}); if(filters.queue) out.push({icon:'fa-filter',text:`Queue ${filters.queue}`}); if(synced) out.push({icon:'fa-rotate',text:`Last sync ${formatMetaDate(synced)}`}); if(payload?.sourceMeta?.range) out.push({icon:'fa-table',text:`Range ${payload.sourceMeta.range}`}); if(host) out.push({icon:'fa-link',text:host.includes('googleapis.com') ? 'Google Sheets API' : host}); return out;
 }
 function sheetValuesToObjects(values){
   if(!Array.isArray(values) || values.length < 2) return [];
@@ -990,11 +1104,65 @@ function renderMiniSummaryCard(title,items){ return `<div class="dash-card dash-
 function renderChartCard(title,sub,icon,canvasId,size='wide'){ const cls=size==='trend' ? 'dash-card dash-card--trend dash-chart-card' : size==='bars' ? 'dash-card dash-card--bars dash-chart-card' : size==='list' ? 'dash-card dash-card--list dash-chart-card' : 'dash-card dash-card--wide dash-chart-card'; const wrapClass=size==='trend' ? 'dash-chart-wrap' : size==='bars' ? 'dash-chart-wrap dash-chart-wrap--sm' : 'dash-chart-wrap dash-chart-wrap--xs'; return `<div class="${cls}"><div class="dash-head"><div><div class="dash-eyebrow">Chart</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">${escHtml(sub)}</div></div><div class="dash-icon-badge"><i class="fas ${icon}"></i></div></div><div class="${wrapClass}"><canvas id="${canvasId}"></canvas><div class="dash-chart-empty hidden" id="${canvasId}_empty"></div></div><div class="dash-chart-note">You can change this chart type from Dashboard Settings.</div></div>`; }
 function renderRepeatListCard(stats,settings){ const rows=stats.repeatEntries.slice(0,settings.limits.repeatCount); return `<div class="dash-card dash-card--list"><div class="dash-head"><div><div class="dash-eyebrow">Repeat</div><div class="dash-title">Multiple-Time Complaints</div><div class="dash-sub">Repeated Local Service ID / CPE</div></div><div class="dash-icon-badge"><i class="fas fa-rotate-left"></i></div></div><div class="repeat-list">${rows.map(([key,val])=>`<div class="repeat-item"><div><strong>${escHtml(key)}</strong><span>Repeated complaint</span></div><div class="repeat-badge">${val}x</div></div>`).join('') || '<div class="dash-empty"><p>No repeat complaint found in current filter.</p></div>'}</div></div>`; }
 function renderRawDataCard(rows){
-  const search=(currentDashboardTableState.search||'').trim().toLowerCase(); const filtered=search ? rows.filter(row=>Object.values(row||{}).some(v=>String(v??'').toLowerCase().includes(search))) : rows; const pageSize=currentDashboardTableState.pageSize||20; const totalPages=Math.max(1,Math.ceil(filtered.length/pageSize)); currentDashboardTableState.page=Math.min(currentDashboardTableState.page,totalPages); const page=currentDashboardTableState.page; const start=(page-1)*pageSize; const pageRows=filtered.slice(start,start+pageSize); const columns=pageRows[0] ? Object.keys(pageRows[0]) : (filtered[0] ? Object.keys(filtered[0]) : []);
-  return `<div class="dash-card dash-card--wide dash-card--table"><div class="dash-head"><div><div class="dash-eyebrow">Data</div><div class="dash-title">Raw Data Table</div><div class="dash-sub">Inspect the currently filtered source rows.</div></div><div class="dash-icon-badge"><i class="fas fa-table"></i></div></div><div class="dash-table-toolbar"><input id="dashboardTableSearch" class="dash-table-search" type="search" placeholder="Search visible rows…" value="${escAttr(currentDashboardTableState.search||'')}" oninput="setDashboardTableSearch(this.value)"><span class="dash-filter-count">${filtered.length} rows</span></div><div class="dash-table-wrap">${columns.length ? `<table class="dash-table"><thead><tr>${columns.map(c=>`<th>${escHtml(c)}</th>`).join('')}</tr></thead><tbody>${pageRows.map(row=>`<tr>${columns.map(c=>`<td>${escHtml(row[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>` : `<div class="dash-empty"><i class="fas fa-table"></i><h3>No rows</h3><p>There is no raw data for the current filter.</p></div>`}</div><div class="dash-table-footer"><span>Page ${page} / ${totalPages}</span><div class="btn-group"><button class="btn-secondary btn-sm" ${page<=1?'disabled':''} onclick="goDashboardTablePage(${page-1})"><i class="fas fa-chevron-left"></i> Prev</button><button class="btn-secondary btn-sm" ${page>=totalPages?'disabled':''} onclick="goDashboardTablePage(${page+1})">Next <i class="fas fa-chevron-right"></i></button></div></div></div>`;
+  const search=(currentDashboardTableState.search||'').trim().toLowerCase();
+  const filtered=search ? rows.filter(row=>Object.values(row||{}).some(v=>String(v??'').toLowerCase().includes(search))) : rows;
+  const pageSize=Number(currentDashboardTableState.pageSize||20)||20;
+  const totalPages=Math.max(1,Math.ceil(filtered.length/pageSize));
+  currentDashboardTableState.page=Math.min(currentDashboardTableState.page,totalPages);
+  const page=currentDashboardTableState.page;
+  const start=(page-1)*pageSize;
+  const pageRows=filtered.slice(start,start+pageSize);
+  const columns=pageRows[0] ? Object.keys(pageRows[0]) : (filtered[0] ? Object.keys(filtered[0]) : []);
+  return `<div class="dash-card dash-card--wide dash-card--table">
+    <div class="dash-head"><div><div class="dash-eyebrow">Data</div><div class="dash-title">Raw Data Table</div><div class="dash-sub">Inspect, search, export, and review the currently filtered source rows.</div></div><div class="dash-icon-badge"><i class="fas fa-table"></i></div></div>
+    <div class="dash-table-toolbar">
+      <input id="dashboardTableSearch" class="dash-table-search" type="search" placeholder="Search visible rows…" value="${escAttr(currentDashboardTableState.search||'')}" oninput="setDashboardTableSearch(this.value)">
+      <div class="dash-table-actions">
+        <select class="dash-table-select" onchange="setDashboardTablePageSize(this.value)">
+          ${[20,50,100,250].map(size=>`<option value="${size}" ${pageSize===size?'selected':''}>${size} rows</option>`).join('')}
+        </select>
+        <button class="btn-secondary btn-sm" onclick="exportCurrentDashboardCSV()"><i class="fas fa-file-csv"></i> CSV</button>
+        <button class="btn-secondary btn-sm" onclick="exportCurrentDashboardExcel()"><i class="fas fa-file-excel"></i> Excel</button>
+      </div>
+    </div>
+    <div class="dash-table-wrap">
+      ${columns.length ? `<table class="dash-table"><thead><tr>${columns.map(c=>`<th>${escHtml(c)}</th>`).join('')}</tr></thead><tbody>${pageRows.map(row=>`<tr>${columns.map(c=>`<td>${escHtml(row[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>` : `<div class="dash-empty"><i class="fas fa-table"></i><h3>No rows</h3><p>There is no raw data for the current filter.</p></div>`}
+    </div>
+    <div class="dash-table-footer">
+      <span>${fmtInt(filtered.length)} rows • Page ${page} / ${totalPages}</span>
+      <div class="btn-group">
+        <button class="btn-secondary btn-sm" ${page<=1?'disabled':''} onclick="goDashboardTablePage(${page-1})"><i class="fas fa-chevron-left"></i> Prev</button>
+        <button class="btn-secondary btn-sm" ${page>=totalPages?'disabled':''} onclick="goDashboardTablePage(${page+1})">Next <i class="fas fa-chevron-right"></i></button>
+      </div>
+    </div>
+  </div>`;
 }
 function setDashboardTableSearch(value){ currentDashboardTableState.search=value; currentDashboardTableState.page=1; renderCurrentDashboard(); }
+function setDashboardTablePageSize(value){ currentDashboardTableState.pageSize=Number(value)||20; currentDashboardTableState.page=1; renderCurrentDashboard(); }
 function goDashboardTablePage(page){ currentDashboardTableState.page=Math.max(1,page); renderCurrentDashboard(); }
+function exportCurrentDashboardCSV(){
+  const rows=currentFilteredDashboardRows();
+  if(!rows.length) return showToast('No rows to export','info');
+  const columns=Object.keys(rows[0]||{});
+  const csv=[columns.join(',')].concat(rows.map(row=>columns.map(col=>`\"${String(row[col]??'').replace(/\"/g,'\"\"')}\"`).join(','))).join('\n');
+  downloadBlob(csv, `${slugify(currentDashboardItem?.name||'dashboard')}-${slugify(getCurrentDashboardPage().slug||'page')}.csv`, 'text/csv;charset=utf-8;');
+}
+function exportCurrentDashboardExcel(){
+  const rows=currentFilteredDashboardRows();
+  if(!rows.length) return showToast('No rows to export','info');
+  if(typeof XLSX==='undefined') return showToast('Excel export library is not loaded','error');
+  const ws=XLSX.utils.json_to_sheet(rows);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Dashboard');
+  XLSX.writeFile(wb, `${slugify(currentDashboardItem?.name||'dashboard')}-${slugify(getCurrentDashboardPage().slug||'page')}.xlsx`);
+}
+function downloadBlob(content, filename, mime){
+  const blob=new Blob([content], { type:mime });
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
 function renderDashboardCharts(stats,settings,filters){
   if(typeof Chart==='undefined'){ document.querySelectorAll('.dash-chart-empty').forEach(box=>{ box.classList.remove('hidden'); box.innerHTML='Chart.js did not load in preview. It will work on your deployed Cloudflare Pages site.'; }); return; }
   Chart.defaults.font.family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"; Chart.defaults.color=getComputedStyle(document.documentElement).getPropertyValue('--text2').trim()||'#64748b';
@@ -1023,6 +1191,7 @@ function getISOWeek(date){ const d=new Date(Date.UTC(date.getFullYear(),date.get
 function formatBucketLabel(bucket,groupBy){ if(groupBy==='year') return bucket; if(groupBy==='month'){ const [yy,mm]=bucket.split('-'); return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(mm)-1]} ${yy}`; } if(groupBy==='week') return bucket.replace('-', ' '); const d=parseFlexibleDate(bucket); if(!d) return bucket; return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
 function formatMetaDate(v){ const d=parseFlexibleDate(v); if(!d) return String(v); return `${String(d.getDate()).padStart(2,'0')} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 function parseFlexibleDate(value){ if(!value) return null; if(value instanceof Date) return isNaN(value)?null:value; const s=String(value).trim(); let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[,\sT]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/); if(m){ const [,yy,mm,dd,hh='0',mi='0',ss='0']=m; const d=new Date(Number(yy),Number(mm)-1,Number(dd),Number(hh),Number(mi),Number(ss)); return isNaN(d)?null:d; } const native=new Date(s.replace(',', '')); return isNaN(native)?null:native; }
+function fmtInt(v){ return Number(v||0).toLocaleString(); }
 function formatHours(v){ const n=Number(v)||0; if(n<=0) return '0m'; if(n<1) return `${Math.round(n*60)}m`; if(n<24) return `${n.toFixed(n>=10?1:2)}h`; return `${(n/24).toFixed(1)}d`; }
 
 /* ══════════════════════════════════════════════════════════
