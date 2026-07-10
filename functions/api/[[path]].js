@@ -142,6 +142,12 @@ export const onRequest = async (context) => {
         last_synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_error TEXT
       )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_cache_chunks (
+        dashboard_item_id INTEGER NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        payload_chunk TEXT NOT NULL,
+        PRIMARY KEY (dashboard_item_id, chunk_index)
+      )`,
       `CREATE TABLE IF NOT EXISTS dashboard_item_settings (
         dashboard_item_id INTEGER PRIMARY KEY,
         settings_json TEXT NOT NULL,
@@ -157,12 +163,83 @@ export const onRequest = async (context) => {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_items_sort ON dashboard_items(sort_order)`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_items_active ON dashboard_items(is_active)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_cache_chunks_item ON dashboard_cache_chunks(dashboard_item_id, chunk_index)`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC)`
     ];
     for (const sql of stmts) {
       await env.DB.prepare(sql).run();
     }
   };
+
+  const DASHBOARD_CHUNK_SIZE = 450000;
+  const buildStoredDashboardPayload = (rawPayload) => {
+    const rows = extractDashboardRows(rawPayload);
+    return {
+      rows,
+      generatedAt: rawPayload?.generatedAt || rawPayload?.generated_at || new Date().toISOString(),
+      sourceMeta: {
+        success: rawPayload?.success,
+        sheet: rawPayload?.sheet || null,
+        rowCount: rows.length,
+        headers: Array.isArray(rawPayload?.headers) ? rawPayload.headers : null,
+      }
+    };
+  };
+  const writeDashboardPayload = async (item, payloadObj, rowCount, lastError = null) => {
+    const payloadJson = JSON.stringify(payloadObj);
+    await env.DB.prepare("DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?").bind(item.id).run();
+    if (payloadJson.length <= DASHBOARD_CHUNK_SIZE) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_cache (dashboard_item_id, dashboard_name, source_url, payload_json, row_count, last_synced_at, last_error)
+        VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+        ON CONFLICT(dashboard_item_id) DO UPDATE SET
+          dashboard_name = excluded.dashboard_name,
+          source_url = excluded.source_url,
+          payload_json = excluded.payload_json,
+          row_count = excluded.row_count,
+          last_synced_at = datetime('now'),
+          last_error = excluded.last_error
+      `).bind(item.id, item.name, item.api_url, payloadJson, rowCount, lastError).run();
+      return;
+    }
+    const chunks = [];
+    for (let i = 0; i < payloadJson.length; i += DASHBOARD_CHUNK_SIZE) {
+      chunks.push(payloadJson.slice(i, i + DASHBOARD_CHUNK_SIZE));
+    }
+    const manifest = JSON.stringify({ chunked: true, parts: chunks.length });
+    await env.DB.prepare(`
+      INSERT INTO dashboard_cache (dashboard_item_id, dashboard_name, source_url, payload_json, row_count, last_synced_at, last_error)
+      VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+      ON CONFLICT(dashboard_item_id) DO UPDATE SET
+        dashboard_name = excluded.dashboard_name,
+        source_url = excluded.source_url,
+        payload_json = excluded.payload_json,
+        row_count = excluded.row_count,
+        last_synced_at = datetime('now'),
+        last_error = excluded.last_error
+    `).bind(item.id, item.name, item.api_url, manifest, rowCount, lastError).run();
+    for (let idx = 0; idx < chunks.length; idx++) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_cache_chunks (dashboard_item_id, chunk_index, payload_chunk)
+        VALUES (?, ?, ?)
+      `).bind(item.id, idx, chunks[idx]).run();
+    }
+  };
+  const readDashboardPayload = async (cacheRow) => {
+    if (!cacheRow?.payload_json) return [];
+    const parsed = safeJson(cacheRow.payload_json, null);
+    if (parsed && parsed.chunked) {
+      const chunkRows = (await env.DB.prepare(`
+        SELECT payload_chunk FROM dashboard_cache_chunks
+         WHERE dashboard_item_id=?
+         ORDER BY chunk_index ASC
+      `).bind(cacheRow.dashboard_item_id).all()).results ?? [];
+      const combined = chunkRows.map(r => r.payload_chunk || '').join('');
+      return safeJson(combined, []);
+    }
+    return parsed ?? [];
+  };
+
   const getDashboardItem = async (id) => {
     await ensureDashboardTables();
     return await env.DB.prepare(`
@@ -178,30 +255,29 @@ export const onRequest = async (context) => {
       const res = await fetch(item.api_url, { headers: { 'Accept': 'application/json' } });
       if (!res.ok) throw new Error(`Source HTTP ${res.status}`);
       const rawText = await res.text();
-      const payload = JSON.parse(rawText);
-      const rows = extractDashboardRows(payload);
-      const payloadJson = JSON.stringify(payload);
-      await env.DB.prepare(`
-        INSERT INTO dashboard_cache (dashboard_item_id, dashboard_name, source_url, payload_json, row_count, last_synced_at, last_error)
-        VALUES (?, ?, ?, ?, ?, datetime('now'), NULL)
-        ON CONFLICT(dashboard_item_id) DO UPDATE SET
-          dashboard_name = excluded.dashboard_name,
-          source_url = excluded.source_url,
-          payload_json = excluded.payload_json,
-          row_count = excluded.row_count,
-          last_synced_at = datetime('now'),
-          last_error = NULL
-      `).bind(item.id, item.name, item.api_url, payloadJson, rows.length).run();
+      const rawPayload = JSON.parse(rawText);
+      const storedPayload = buildStoredDashboardPayload(rawPayload);
+      const rowCount = Array.isArray(storedPayload.rows) ? storedPayload.rows.length : 0;
+      await writeDashboardPayload(item, storedPayload, rowCount, null);
       await env.DB.prepare(`
         INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
         VALUES (?, 'success', ?, 'OK', datetime('now'))
-      `).bind(item.id, rows.length).run();
+      `).bind(item.id, rowCount).run();
       return {
-        payload,
-        rowCount: rows.length,
+        payload: storedPayload,
+        rowCount,
         lastSynced: new Date().toISOString(),
         settings: normalizeDashboardSettings(item.settings_json)
       };
+    } catch (e) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
+        VALUES (?, 'failed', 0, ?, datetime('now'))
+      `).bind(item.id, e.message || 'Unknown error').run();
+      await writeDashboardPayload(item, { rows: [], generatedAt: new Date().toISOString(), sourceMeta: { rowCount: 0 } }, 0, e.message || 'Unknown error');
+      throw e;
+    }
+  };
     } catch (e) {
       await env.DB.prepare(`
         INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
@@ -402,6 +478,7 @@ export const onRequest = async (context) => {
     const dashId = parseInt(dashboardItemMatch[1], 10);
     await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(dashId).run();
     await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(dashId).run();
+    await env.DB.prepare("DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?").bind(dashId).run();
     await env.DB.prepare("DELETE FROM dashboard_sync_logs WHERE dashboard_item_id=?").bind(dashId).run();
     await env.DB.prepare("DELETE FROM dashboard_items WHERE id=?").bind(dashId).run();
     return ok({ success:true });
@@ -461,7 +538,7 @@ export const onRequest = async (context) => {
       }
     }
 
-    const payload = safeJson(cache?.payload_json || '[]', []);
+    const payload = await readDashboardPayload(cache);
     const rows = extractDashboardRows(payload);
     return ok({
       success: true,
@@ -872,6 +949,7 @@ export const onRequest = async (context) => {
           await ensureDashboardTables();
           await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(id).run();
           await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(id).run();
+          await env.DB.prepare("DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?").bind(id).run();
           await env.DB.prepare("DELETE FROM dashboard_sync_logs WHERE dashboard_item_id=?").bind(id).run();
           await env.DB.prepare("DELETE FROM dashboard_items WHERE id=?").bind(id).run();
         } else {
