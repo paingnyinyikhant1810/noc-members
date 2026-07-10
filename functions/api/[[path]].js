@@ -744,7 +744,7 @@ export const onRequest = async (context) => {
       "SELECT * FROM dashboard_cache WHERE dashboard_item_id=?"
     ).bind(dashId).first();
 
-    const shouldRetrySync = !cache || refresh || ((cache?.last_error || '') && Number(cache?.row_count || 0) === 0);
+    const shouldRetrySync = !cache || refresh || Number(cache?.row_count || 0) === 0 || !!(cache?.last_error || '');
 
     if (shouldRetrySync) {
       try {
