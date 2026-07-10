@@ -211,27 +211,9 @@
     </div>
 
     <!-- ── Dashboard Page ── -->
-    <div id="dashboardPage" class="page pg-wrap hidden">
-        <div class="pg-hdr">
-            <h2 class="pg-title"><div class="pg-icon ic-purple"><i class="fas fa-chart-pie"></i></div><span id="dashboardTitleText">Dashboard</span></h2>
-            <div class="btn-group">
-                <button id="refreshDashboardBtn" onclick="refreshCurrentDashboard(true)" class="hidden btn-secondary"><i class="fas fa-rotate"></i> Refresh Data</button>
-                <button id="clearDashboardCacheBtn" onclick="clearCurrentDashboardCache()" class="hidden btn-secondary"><i class="fas fa-broom"></i> Clear Cache</button>
-                <button id="manageDashboardPagesBtn" onclick="openDashboardPageManagerModal()" class="hidden btn-secondary"><i class="fas fa-table-columns"></i> Manage Pages</button>
-                <button id="manageDashboardWidgetsBtn" onclick="openDashboardWidgetManagerModal()" class="hidden btn-secondary"><i class="fas fa-grip"></i> Manage Widgets</button>
-                <button id="dashboardViewSettingsBtn" onclick="openDashboardSettingsModal()" class="hidden btn-secondary"><i class="fas fa-sliders-h"></i> Dashboard Settings</button>
-                <button id="manageDashboardPageBtn" onclick="openDashboardManagerModal()" class="hidden btn-primary"><i class="fas fa-cog"></i> Manage Dashboard</button>
-            </div>
-        </div>
-        <div id="dashboardMeta" class="dashboard-meta hidden"></div>
-        <div id="dashboardFilterBar" class="dashboard-filter-bar hidden"></div>
-        <div id="dashboardPageTabs" class="dashboard-page-tabs hidden"></div>
-        <div id="dashboardModeBar" class="dashboard-mode-bar hidden"></div>
-        <div id="dashboardContainer" class="dashboard-shell">
-            <div class="empty-state">
-                <i class="fas fa-chart-pie"></i>
-                <p>Select a dashboard item from the Dashboard menu</p>
-            </div>
+    <div id="dashboardPage" class="page hidden">
+        <div class="dashboard-ref-wrap">
+            <iframe id="dashboardReferenceFrame" class="dashboard-ref-frame" src="" title="Dashboard"></iframe>
         </div>
     </div>
 
