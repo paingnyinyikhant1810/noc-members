@@ -24,6 +24,9 @@ let currentDashboardId = null;
 let currentDashboardItem = null;
 let currentDashboardPayload = null;
 let currentDashboardRows = [];
+let currentDashboardFilterOptionsCache = { site:[], township:[], queue:[] };
+let currentDashboardFilteredRowsCache = [];
+let currentDashboardFilterCacheKey = '';
 let currentDashboardFilters = { groupBy:'day', site:'', township:'', queue:'', fromDate:'', toDate:'' };
 let currentDashboardPageId = null;
 let currentDashboardTableState = { search:'', page:1, pageSize:20 };
@@ -617,8 +620,55 @@ function getDashboardPagesForItem(dashboardItemId){
   return DEFAULT_DASHBOARD_PAGES.map(p=>({ ...p }));
 }
 function iconForPageSlug(slug){ return DEFAULT_DASHBOARD_PAGES.find(p=>p.slug===slug)?.icon||'fa-layer-group'; }
-function currentFilteredDashboardRows(){ return filterDashboardRows(currentDashboardRows,currentDashboardFilters); }
+function currentFilteredDashboardRows(){ return getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); }
 function currentDashboardUrlHost(){ try{ return new URL(getDashboardApi(currentDashboardItem||{})).host; }catch{ return ''; } }
+function hydrateDashboardRows(rows){
+  return (rows||[]).map(row=>{
+    if(row && row.__noc) return row;
+    const status=getRowValue(row,['status'])||'Unknown';
+    const created=parseFlexibleDate(getRowValue(row,['created','datecreated','date created','createdat']));
+    const resolved=parseFlexibleDate(getRowValue(row,['resolved','closedat']));
+    const meta={
+      status,
+      statusKey:normalizeKey(status),
+      problem:getRowValue(row,['ticketproblem','problem','issue'])||'Unknown',
+      site:getRowValue(row,['opisitecode','sitecode','opi site code'])||'',
+      township:getRowValue(row,['township'])||'',
+      queue:getRowValue(row,['queue'])||'',
+      root:getRowValue(row,['servicerootcause','rootcausecategory','rootcause','service root cause'])||'Unknown',
+      repeatKey:getRowValue(row,['localserviceid','cpeid','serviceid'])||'',
+      created,
+      resolved,
+      resolutionHours:(created&&resolved&&resolved>=created)?((resolved-created)/36e5):null,
+    };
+    try{ Object.defineProperty(row,'__noc',{ value:meta, enumerable:false, configurable:true, writable:true }); }catch{ row.__noc=meta; }
+    return row;
+  });
+}
+function computeDashboardFilterOptions(rows){
+  const unique={ site:new Set(), township:new Set(), queue:new Set() };
+  (rows||[]).forEach(row=>{
+    const meta=row?.__noc||{};
+    if(meta.site) unique.site.add(meta.site);
+    if(meta.township) unique.township.add(meta.township);
+    if(meta.queue) unique.queue.add(meta.queue);
+  });
+  return { site:[...unique.site].sort((a,b)=>a.localeCompare(b)), township:[...unique.township].sort((a,b)=>a.localeCompare(b)), queue:[...unique.queue].sort((a,b)=>a.localeCompare(b)) };
+}
+function getDashboardFilterCacheSignature(rows,filters){
+  return [rows?.length||0,filters.site,filters.township,filters.queue,filters.fromDate,filters.toDate].join('|');
+}
+function getFilteredDashboardRows(rows=currentDashboardRows, filters=currentDashboardFilters){
+  if(rows===currentDashboardRows){
+    const sig=getDashboardFilterCacheSignature(rows,filters);
+    if(sig===currentDashboardFilterCacheKey) return currentDashboardFilteredRowsCache;
+    const computed=filterDashboardRows(rows,filters);
+    currentDashboardFilterCacheKey=sig;
+    currentDashboardFilteredRowsCache=computed;
+    return computed;
+  }
+  return filterDashboardRows(rows,filters);
+}
 function getCurrentDashboardPage(){
   const pages=getDashboardPagesForItem(currentDashboardId);
   let page=pages.find(p=>String(p.id)===String(currentDashboardPageId) || p.slug===currentDashboardPageId);
@@ -962,14 +1012,14 @@ async function showDashboardItem(id,name='Dashboard'){
   currentDashboardId=id; currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'}; currentDashboardPayload=null; currentDashboardRows=[]; dashboardAutoRetryDone=false; initializeDashboardPage();
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden')); el('dashboardPage').classList.remove('hidden'); document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active')); document.querySelectorAll('[data-page="dashboard"]').forEach(b=>b.classList.add('active')); if(el('dashboardDropdown')) el('dashboardDropdown').classList.add('hidden'); renderDashboardPageTabs(); renderDashboardLoading(currentDashboardItem);
   const data=await fetchDashboardData(id,{silent:false,onProgress:updateDashboardLoadingUI}); if(currentDashboardId!==id) return;
-  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the dashboard payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Building tabs, filters, and table state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the page...','indeterminate'); renderCurrentDashboard(); }
+  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the dashboard payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=hydrateDashboardRows(extractDashboardRows(data)); currentDashboardFilterOptionsCache=computeDashboardFilterOptions(currentDashboardRows); currentDashboardFilterCacheKey=''; currentDashboardFilteredRowsCache=[]; updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Building tabs, filters, and table state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the page...','indeterminate'); renderCurrentDashboard(); }
   else { renderDashboardEmpty('Unable to load dashboard data. Please check the API URL or worker route.'); }
 }
 async function refreshCurrentDashboard(force=false){
   if(!currentDashboardId||!currentDashboardItem) return showToast('Select a dashboard item first','info');
   renderDashboardLoading(currentDashboardItem);
   const data=await fetchDashboardData(currentDashboardId,{force:!!force,silent:false,onProgress:updateDashboardLoadingUI});
-  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the refreshed payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Updating filters and page state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the refreshed page...','indeterminate'); renderCurrentDashboard(); }
+  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the refreshed payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=hydrateDashboardRows(extractDashboardRows(data)); currentDashboardFilterOptionsCache=computeDashboardFilterOptions(currentDashboardRows); currentDashboardFilterCacheKey=''; currentDashboardFilteredRowsCache=[]; updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Updating filters and page state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the refreshed page...','indeterminate'); renderCurrentDashboard(); }
   else { renderDashboardEmpty('Refresh failed. Please check the API source.'); }
 }
 function initializeDashboardFilters(item,payload,rows,preserve=false){
@@ -977,28 +1027,30 @@ function initializeDashboardFilters(item,payload,rows,preserve=false){
   currentDashboardFilters = { groupBy: preserve ? (currentDashboardFilters.groupBy||settings.defaultGrouping||'day') : (settings.defaultGrouping||'day'), site: preserve ? currentDashboardFilters.site : '', township: preserve ? currentDashboardFilters.township : '', queue: preserve ? currentDashboardFilters.queue : '', fromDate: preserve ? currentDashboardFilters.fromDate : '', toDate: preserve ? currentDashboardFilters.toDate : '' };
   currentDashboardTableState = { ...currentDashboardTableState, search:'', page:1 };
   const options=getDashboardFilterOptions(rows); ['site','township','queue'].forEach(key=>{ if(currentDashboardFilters[key] && !options[key].includes(currentDashboardFilters[key])) currentDashboardFilters[key]=''; });
+  currentDashboardFilterCacheKey='';
+  currentDashboardFilteredRowsCache=[];
 }
 function getDashboardFilterOptions(rows){
-  const unique = { site:new Set(), township:new Set(), queue:new Set() };
-  rows.forEach(row=>{ const site=getRowValue(row,['opisitecode','sitecode','opi site code']); const township=getRowValue(row,['township']); const queue=getRowValue(row,['queue']); if(site) unique.site.add(site); if(township) unique.township.add(township); if(queue) unique.queue.add(queue); });
-  return { site:[...unique.site].sort((a,b)=>a.localeCompare(b)), township:[...unique.township].sort((a,b)=>a.localeCompare(b)), queue:[...unique.queue].sort((a,b)=>a.localeCompare(b)) };
+  if(rows===currentDashboardRows && currentDashboardFilterOptionsCache.site) return currentDashboardFilterOptionsCache;
+  return computeDashboardFilterOptions(rows);
 }
 function renderDashboardFilterControls(){
   const bar=el('dashboardFilterBar'); if(!bar) return;
   if(!currentDashboardItem){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
-  const options=getDashboardFilterOptions(currentDashboardRows); const filteredCount=filterDashboardRows(currentDashboardRows,currentDashboardFilters).length;
+  const options=getDashboardFilterOptions(currentDashboardRows); const filteredCount=getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters).length;
   bar.classList.remove('hidden');
-  bar.innerHTML=`<div class="dash-filter-left"><span class="dash-filter-title">Date Group</span><div class="dash-seg">${['day','week','month','year'].map(g=>`<button class="dash-seg-btn ${currentDashboardFilters.groupBy===g?'active':''}" onclick="setDashboardGroupBy('${g}')">${DASHBOARD_GROUP_LABELS[g]}</button>`).join('')}</div><input id="dashboardFilter_fromDate" class="dash-fctrl dash-fctrl--date" type="date" value="${escAttr(currentDashboardFilters.fromDate||'')}" onchange="onDashboardFilterChange()" title="From Date"><input id="dashboardFilter_toDate" class="dash-fctrl dash-fctrl--date" type="date" value="${escAttr(currentDashboardFilters.toDate||'')}" onchange="onDashboardFilterChange()" title="To Date"></div><div class="dash-filter-right"><span class="dash-filter-count">Showing ${filteredCount} / ${currentDashboardRows.length} rows</span>${renderDashboardFilterSelect('site','Site Code',options.site,currentDashboardFilters.site)}${renderDashboardFilterSelect('township','Township',options.township,currentDashboardFilters.township)}${renderDashboardFilterSelect('queue','Queue',options.queue,currentDashboardFilters.queue)}<button onclick="resetDashboardFilters()" class="btn-secondary btn-sm"><i class="fas fa-filter-circle-xmark"></i> Reset</button></div>`;
+  bar.innerHTML=`<div class="dash-filter-left"><span class="dash-filter-title">Date Group</span><div class="dash-seg">${['day','week','month','year'].map(g=>`<button class="dash-seg-btn ${currentDashboardFilters.groupBy===g?'active':''}" onclick="setDashboardGroupBy('${g}')">${DASHBOARD_GROUP_LABELS[g]}</button>`).join('')}</div><input id="dashboardFilter_fromDate" class="dash-fctrl dash-fctrl--date" type="date" value="${escAttr(currentDashboardFilters.fromDate||'')}" onchange="onDashboardFilterChange()" title="From Date"><input id="dashboardFilter_toDate" class="dash-fctrl dash-fctrl--date" type="date" value="${escAttr(currentDashboardFilters.toDate||'')}" onchange="onDashboardFilterChange()" title="To Date"></div><div class="dash-filter-right"><span class="dash-filter-count">Showing ${filteredCount.toLocaleString()} / ${currentDashboardRows.length.toLocaleString()} rows</span>${renderDashboardFilterSelect('site','Site Code',options.site,currentDashboardFilters.site)}${renderDashboardFilterSelect('township','Township',options.township,currentDashboardFilters.township)}${renderDashboardFilterSelect('queue','Queue',options.queue,currentDashboardFilters.queue)}<button onclick="resetDashboardFilters()" class="btn-secondary btn-sm"><i class="fas fa-filter-circle-xmark"></i> Reset</button></div>`;
 }
 function renderDashboardFilterSelect(key,label,options,selected){ return `<select id="dashboardFilter_${key}" class="dash-fctrl" onchange="onDashboardFilterChange()"><option value="">All ${escHtml(label)}</option>${options.map(opt=>`<option value="${escAttr(opt)}" ${selected===opt?'selected':''}>${escHtml(opt)}</option>`).join('')}</select>`; }
-function onDashboardFilterChange(){ currentDashboardFilters.site=el('dashboardFilter_site')?.value||''; currentDashboardFilters.township=el('dashboardFilter_township')?.value||''; currentDashboardFilters.queue=el('dashboardFilter_queue')?.value||''; currentDashboardFilters.fromDate=el('dashboardFilter_fromDate')?.value||''; currentDashboardFilters.toDate=el('dashboardFilter_toDate')?.value||''; currentDashboardTableState.page=1; renderDashboardFilterControls(); renderCurrentDashboard(); }
+function onDashboardFilterChange(){ currentDashboardFilters.site=el('dashboardFilter_site')?.value||''; currentDashboardFilters.township=el('dashboardFilter_township')?.value||''; currentDashboardFilters.queue=el('dashboardFilter_queue')?.value||''; currentDashboardFilters.fromDate=el('dashboardFilter_fromDate')?.value||''; currentDashboardFilters.toDate=el('dashboardFilter_toDate')?.value||''; currentDashboardTableState.page=1; currentDashboardFilterCacheKey=''; renderDashboardFilterControls(); renderCurrentDashboard(); }
 function setDashboardGroupBy(groupBy){ currentDashboardFilters.groupBy=groupBy; renderDashboardFilterControls(); renderCurrentDashboard(); }
-function resetDashboardFilters(){ const settings=getDashboardSettings(currentDashboardItem,currentDashboardPayload); currentDashboardFilters={ groupBy:settings.defaultGrouping||'day', site:'', township:'', queue:'', fromDate:'', toDate:'' }; currentDashboardTableState = { ...currentDashboardTableState, search:'', page:1 }; renderDashboardFilterControls(); renderCurrentDashboard(); }
+function resetDashboardFilters(){ const settings=getDashboardSettings(currentDashboardItem,currentDashboardPayload); currentDashboardFilters={ groupBy:settings.defaultGrouping||'day', site:'', township:'', queue:'', fromDate:'', toDate:'' }; currentDashboardTableState = { ...currentDashboardTableState, search:'', page:1 }; currentDashboardFilterCacheKey=''; currentDashboardFilteredRowsCache=[]; renderDashboardFilterControls(); renderCurrentDashboard(); }
 function filterDashboardRows(rows,filters){
   const from = filters.fromDate ? parseFlexibleDate(`${filters.fromDate} 00:00:00`) : null;
   const to = filters.toDate ? parseFlexibleDate(`${filters.toDate} 23:59:59`) : null;
   return rows.filter(row=>{
-    const site=getRowValue(row,['opisitecode','sitecode','opi site code'])||''; const township=getRowValue(row,['township'])||''; const queue=getRowValue(row,['queue'])||''; const created=parseFlexibleDate(getRowValue(row,['created','datecreated','date created','createdat']));
+    const meta=row.__noc||{};
+    const site=meta.site||''; const township=meta.township||''; const queue=meta.queue||''; const created=meta.created||null;
     if(filters.site && site!==filters.site) return false; if(filters.township && township!==filters.township) return false; if(filters.queue && queue!==filters.queue) return false; if(from && created && created < from) return false; if(to && created && created > to) return false; if((from || to) && !created) return false; return true;
   });
 }
@@ -1022,7 +1074,7 @@ function renderCurrentDashboard(){
     renderDashboardEmpty(errMsg);
     return;
   }
-  initializeDashboardPage(); renderDashboardPageTabs(); const filteredRows=filterDashboardRows(currentDashboardRows,currentDashboardFilters); const currentPage=getCurrentDashboardPage(); if(!filteredRows.length && currentPage.slug!=='raw-data'){ renderDashboardEmpty('No data matched the selected filters. Try changing Site / Township / Queue or date grouping.'); return; } renderDashboardData(currentDashboardItem,currentDashboardPayload,filteredRows,currentDashboardFilters);
+  initializeDashboardPage(); renderDashboardPageTabs(); const filteredRows=getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); const currentPage=getCurrentDashboardPage(); if(!filteredRows.length && currentPage.slug!=='raw-data'){ renderDashboardEmpty('No data matched the selected filters. Try changing Site / Township / Queue or date grouping.'); return; } renderDashboardData(currentDashboardItem,currentDashboardPayload,filteredRows,currentDashboardFilters);
 }
 function renderDashboardData(item,payload,rows,filters){
   destroyDashboardCharts(); clearDashboardLoadPulse(); const settings=getDashboardSettings(item,payload); const stats=buildDashboardStats(rows,item,filters.groupBy); const currentPage=getCurrentDashboardPage(); const meta=buildDashboardMeta(payload,item,rows.length,filters,currentDashboardRows.length,currentPage.name); const metaEl=el('dashboardMeta'); if(metaEl){ metaEl.classList.toggle('hidden',!meta.length); metaEl.innerHTML=meta.map(m=>`<span class="meta-chip"><i class="fas ${m.icon}"></i> ${escHtml(m.text)}</span>`).join(''); } el('dashboardTitleText').textContent=item.name||'Dashboard';
@@ -1090,10 +1142,12 @@ function buildDashboardStats(rows,item,groupBy='day'){
   let resolvedCount=0,totalResolutionHours=0,overtimeCount=0,closedCount=0,openCount=0;
   const overtimeHours=getDashboardSla(item);
   rows.forEach(row=>{
-    const status=getRowValue(row,['status'])||'Unknown'; incMap(statusCount,status); const statusKey=normalizeKey(status); if(statusKey.includes('closed')||statusKey.includes('resolved')) closedCount++; else openCount++;
-    incMap(issueCount,getRowValue(row,['ticketproblem','problem','issue'])||'Unknown'); incMap(siteCount,getRowValue(row,['opisitecode','sitecode','opi site code'])||'Unknown'); incMap(rootCount,getRowValue(row,['servicerootcause','rootcausecategory','rootcause','service root cause'])||'Unknown'); incMap(queueCount,getRowValue(row,['queue'])||'Unknown'); incMap(townshipCount,getRowValue(row,['township'])||'Unknown');
-    const repeatKey=getRowValue(row,['localserviceid','cpeid','serviceid'])||''; if(repeatKey) incMap(repeatCount,repeatKey);
-    const created=parseFlexibleDate(getRowValue(row,['created','datecreated','date created','createdat'])); const resolved=parseFlexibleDate(getRowValue(row,['resolved','closedat'])); if(created) incMap(trendCount,formatTimeBucket(created,groupBy)); if(created&&resolved&&resolved>=created){ const hrs=(resolved-created)/36e5; totalResolutionHours+=hrs; resolvedCount++; if(hrs>overtimeHours) overtimeCount++; }
+    const meta=row.__noc||{};
+    const status=meta.status||'Unknown'; incMap(statusCount,status); if((meta.statusKey||'').includes('closed')||(meta.statusKey||'').includes('resolved')) closedCount++; else openCount++;
+    incMap(issueCount,meta.problem||'Unknown'); incMap(siteCount,meta.site||'Unknown'); incMap(rootCount,meta.root||'Unknown'); incMap(queueCount,meta.queue||'Unknown'); incMap(townshipCount,meta.township||'Unknown');
+    if(meta.repeatKey) incMap(repeatCount,meta.repeatKey);
+    if(meta.created) incMap(trendCount,formatTimeBucket(meta.created,groupBy));
+    if(meta.resolutionHours!=null){ totalResolutionHours+=meta.resolutionHours; resolvedCount++; if(meta.resolutionHours>overtimeHours) overtimeCount++; }
   });
   const totalRows=rows.length; const repeatEntries=sortMap(repeatCount).filter(([,v])=>v>1);
   return { totalRows, closedCount, openCount, resolvedCount, avgResolutionHours: resolvedCount ? totalResolutionHours/resolvedCount : 0, overtimeCount, closedRate: totalRows ? closedCount/totalRows*100 : 0, repeatCustomers: repeatEntries.length, topProblems: sortMap(issueCount), topSites: sortMap(siteCount), topRootCauses: sortMap(rootCount), topQueues: sortMap(queueCount), topTownships: sortMap(townshipCount), trendSeries: sortTrendMap(trendCount), statusSeries: sortMap(statusCount), repeatEntries };
@@ -1137,7 +1191,8 @@ function renderRawDataCard(rows){
     </div>
   </div>`;
 }
-function setDashboardTableSearch(value){ currentDashboardTableState.search=value; currentDashboardTableState.page=1; renderCurrentDashboard(); }
+let dashboardTableSearchTimer=null;
+function setDashboardTableSearch(value){ currentDashboardTableState.search=value; currentDashboardTableState.page=1; clearTimeout(dashboardTableSearchTimer); dashboardTableSearchTimer=setTimeout(()=>renderCurrentDashboard(), 140); }
 function setDashboardTablePageSize(value){ currentDashboardTableState.pageSize=Number(value)||20; currentDashboardTableState.page=1; renderCurrentDashboard(); }
 function goDashboardTablePage(page){ currentDashboardTableState.page=Math.max(1,page); renderCurrentDashboard(); }
 function exportCurrentDashboardCSV(){
@@ -1178,7 +1233,7 @@ function renderDashboardCharts(stats,settings,filters){
 function createDashboardChart(canvasId, config){ const canvas=el(canvasId), empty=el(`${canvasId}_empty`); if(!canvas) return; const labels=config?.data?.labels||[]; if(!labels.length){ if(empty){ empty.classList.remove('hidden'); empty.textContent='No data for current filter.'; } return; } if(empty){ empty.classList.add('hidden'); empty.textContent=''; } const chart=new Chart(canvas.getContext('2d'), config); dashboardChartInstances.push(chart); }
 function buildTrendChartConfig(series, graphType, groupBy){ const labels=series.map(x=>formatBucketLabel(x[0],groupBy)); const data=series.map(x=>x[1]); const isBar=graphType==='bar'; const isArea=graphType==='area'; return { type:isBar?'bar':'line', data:{ labels, datasets:[{ label:'Tickets', data, borderColor:'#6366f1', backgroundColor:isBar?'rgba(99,102,241,.72)':(isArea?'rgba(99,102,241,.18)':'rgba(99,102,241,.2)'), fill:!isBar, tension:.35, pointRadius:3, pointHoverRadius:4, borderWidth:3, borderRadius:10, maxBarThickness:34 }] }, options:buildChartOptions({ legend:false, indexAxis:'x' }) }; }
 function buildCategoryChartConfig(graphType, entries, label){ const labels=entries.map(x=>x[0]); const data=entries.map(x=>x[1]); const type=graphType==='hbar' ? 'bar' : graphType; const backgroundColor=labels.map((_,i)=>hexToRgba(DASHBOARD_COLOR_SET[i % DASHBOARD_COLOR_SET.length], type==='bar' ? .78 : .9)); const borderColor=labels.map((_,i)=>DASHBOARD_COLOR_SET[i % DASHBOARD_COLOR_SET.length]); return { type, data:{ labels, datasets:[{ label, data, backgroundColor, borderColor, borderWidth:2, borderRadius:type==='bar' ? 10 : 0, maxBarThickness:38 }] }, options:buildChartOptions({ legend:type!=='bar', indexAxis: graphType==='hbar' ? 'y' : 'x', showScales: !['doughnut','pie','polarArea'].includes(type) }) }; }
-function buildChartOptions({ legend=true, indexAxis='x', showScales=true }={}){ return { responsive:true, maintainAspectRatio:false, indexAxis, plugins:{ legend:{ display:legend, position:'bottom', labels:{ usePointStyle:true, boxWidth:10, boxHeight:10, padding:16 } }, tooltip:{ mode:'index', intersect:false } }, scales: showScales ? { x: indexAxis==='x' ? { grid:{ display:false }, ticks:{ maxRotation:0, autoSkip:true } } : { grid:{ display:false } }, y: indexAxis==='x' ? { beginAtZero:true, ticks:{ precision:0 }, grid:{ color:'rgba(148,163,184,.14)' } } : { beginAtZero:true, ticks:{ precision:0 }, grid:{ display:false } } } : {} }; }
+function buildChartOptions({ legend=true, indexAxis='x', showScales=true }={}){ return { responsive:true, maintainAspectRatio:false, animation:false, indexAxis, plugins:{ legend:{ display:legend, position:'bottom', labels:{ usePointStyle:true, boxWidth:10, boxHeight:10, padding:16 } }, tooltip:{ mode:'index', intersect:false, animation:false } }, scales: showScales ? { x: indexAxis==='x' ? { grid:{ display:false }, ticks:{ maxRotation:0, autoSkip:true } } : { grid:{ display:false } }, y: indexAxis==='x' ? { beginAtZero:true, ticks:{ precision:0 }, grid:{ color:'rgba(148,163,184,.14)' } } : { beginAtZero:true, ticks:{ precision:0 }, grid:{ display:false } } } : {} }; }
 function hexToRgba(hex, alpha){ const h=hex.replace('#',''); const full=h.length===3 ? h.split('').map(ch=>ch+ch).join('') : h; const n=parseInt(full,16); const r=(n>>16)&255, g=(n>>8)&255, b=n&255; return `rgba(${r},${g},${b},${alpha})`; }
 function normalizeKey(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,''); }
 function getRowValue(row,aliases){ if(!row||typeof row!=='object') return ''; const normalized={}; Object.keys(row).forEach(k=>normalized[normalizeKey(k)] = row[k]); for(const alias of aliases){ const hit=normalized[normalizeKey(alias)]; if(hit!==undefined&&hit!==null&&String(hit).trim()!=='') return String(hit).trim(); } return ''; }
