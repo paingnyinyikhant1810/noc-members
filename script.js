@@ -723,6 +723,15 @@ function getCurrentDashboardPage(){
   if(!page){ page=pages[0]||DEFAULT_DASHBOARD_PAGES[0]; currentDashboardPageId=page.id; }
   return page;
 }
+async function ensurePersistentDashboardPage(){
+  let page=getCurrentDashboardPage();
+  if(Number.isFinite(Number(page?.id))) return page;
+  await refreshData(true);
+  const pages=getDashboardPagesForItem(currentDashboardId);
+  page=pages.find(p=>p.slug===page?.slug || p.name===page?.name) || pages[0] || page;
+  if(page) currentDashboardPageId=page.id;
+  return page;
+}
 function initializeDashboardPage(){
   const pages=getDashboardPagesForItem(currentDashboardId);
   const current=pages.find(p=>String(p.id)===String(currentDashboardPageId));
@@ -922,8 +931,9 @@ function widgetTypeLabel(type){
 }
 async function openDashboardWidgetManagerModal(){
   if(!isAdmin()) return showToast('Admin only','error');
-  const page=getCurrentDashboardPage();
+  let page=getCurrentDashboardPage();
   if(!currentDashboardId||!page) return showToast('Open a dashboard page first','info');
+  page = await ensurePersistentDashboardPage();
   const modal=el('dashboardWidgetManagerModal');
   modal.classList.remove('hidden');
   renderDashboardWidgetManagerList();
@@ -962,10 +972,11 @@ async function dashWidgetDrop(e,targetId){
   }catch(e){ showToast(e.message,'error'); }
 }
 function cancelDashboardWidgetModal(){ closeModal('dashboardWidgetModal'); if(!el('dashboardWidgetManagerModal').classList.contains('hidden')) return; openDashboardWidgetManagerModal(); }
-function openDashboardWidgetModal(id=null){
+async function openDashboardWidgetModal(id=null){
   if(!isAdmin()) return showToast('Admin only','error');
-  const page=getCurrentDashboardPage();
+  let page=getCurrentDashboardPage();
   if(!page) return showToast('Open a dashboard page first','info');
+  page = await ensurePersistentDashboardPage();
   el('dashboardWidgetManagerModal').classList.add('hidden');
   el('dashboardWidgetModal').classList.remove('hidden');
   el('dashboardWidgetModalTitle').textContent=id?'Edit Widget':'Add Widget';
@@ -982,8 +993,9 @@ function openDashboardWidgetModal(id=null){
 }
 async function saveDashboardWidget(){
   if(!isAdmin()) return showToast('Admin only','error');
-  const page=getCurrentDashboardPage();
+  let page=getCurrentDashboardPage();
   if(!page) return showToast('Open a dashboard page first','info');
+  page = await ensurePersistentDashboardPage();
   const id=el('dashboardWidgetId').value;
   const title=el('dashboardWidgetTitle').value.trim();
   const widget_type=el('dashboardWidgetType').value;
@@ -996,9 +1008,15 @@ async function saveDashboardWidget(){
     const res=await fetch(endpoint,{ method, headers:getHeaders(), body:JSON.stringify(payload) });
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error||'Failed to save widget');
-    await refreshData(true);
+    if(id){
+      appData.dashboardWidgets=(appData.dashboardWidgets||[]).map(w=>String(w.id)===String(id)?{...w, title:title||null, widget_type, settings_json:'{}'}:w);
+    } else if(data?.id){
+      const list=getDashboardWidgetsForPage(page.id);
+      appData.dashboardWidgets=[...(appData.dashboardWidgets||[]),{ id:data.id, dashboard_page_id:page.id, widget_type, title:title||null, settings_json:'{}', sort_order:list.length }];
+    }
     renderCurrentDashboard();
-    hideLoading(); closeModal('dashboardWidgetModal'); await openDashboardWidgetManagerModal(); showToast('Widget saved','success');
+    refreshData(true).catch(()=>null);
+    hideLoading(); closeModal('dashboardWidgetModal'); await openDashboardWidgetManagerModal(); showToast(`Widget saved on ${page.name} page`,'success');
   }catch(e){ hideLoading(); showToast(e.message); }
   isProcessing=false;
 }
@@ -1011,8 +1029,9 @@ async function deleteDashboardWidgetConfirm(id){
     const res=await fetch(`${API_URL}/dashboardWidgets/${id}`,{ method:'DELETE', headers:getHeaders() });
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error||'Failed to delete widget');
-    await refreshData(true);
+    appData.dashboardWidgets=(appData.dashboardWidgets||[]).filter(w=>String(w.id)!==String(id));
     renderCurrentDashboard(); renderDashboardWidgetManagerList();
+    refreshData(true).catch(()=>null);
     hideLoading(); showToast('Widget deleted','success');
   }catch(e){ hideLoading(); showToast(e.message); }
   isProcessing=false;
