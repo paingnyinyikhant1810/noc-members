@@ -29,6 +29,7 @@ let dashboardCache = {};
 let dashboardFetchPromises = {};
 let dashboardPrefetchStarted = false;
 let dashboardChartInstances = [];
+let dashboardLoadPulseTimer = null;
 let dashDragSrc = null;
 
 const DEFAULT_DASHBOARD_SETTINGS = {
@@ -555,11 +556,48 @@ function getDashboardSettings(item,payload=null){
   return normalizeDashboardSettings(raw);
 }
 
+
+function clearDashboardLoadPulse(){
+  if(dashboardLoadPulseTimer){ clearInterval(dashboardLoadPulseTimer); dashboardLoadPulseTimer=null; }
+}
+function startDashboardLoadPulse(){
+  clearDashboardLoadPulse();
+  let pct=18;
+  dashboardLoadPulseTimer=setInterval(()=>{
+    const bar=el('dashboardLoadingBar');
+    const txt=el('dashboardLoadingPct');
+    if(!bar||!txt){ clearDashboardLoadPulse(); return; }
+    pct = pct >= 86 ? 28 : pct + 11;
+    bar.style.width = `${pct}%`;
+    txt.textContent = `${pct}%`;
+  }, 420);
+}
+function renderDashboardManagerLoading(){
+  const list=el('dashboardManagerList');
+  if(!list) return;
+  list.innerHTML=`
+    <div class="dash-mgr-loading">
+      <div class="dash-mgr-loading-head">
+        <div>
+          <div class="dash-set-title">Loading dashboard items…</div>
+          <div class="dash-manager-note">Please wait while the latest list is being refreshed.</div>
+        </div>
+        <div class="dash-mgr-spinner"><i class="fas fa-spinner fa-spin"></i></div>
+      </div>
+      <div class="dash-mgr-skeleton"></div>
+      <div class="dash-mgr-skeleton"></div>
+      <div class="dash-mgr-skeleton"></div>
+    </div>`;
+}
 async function openDashboardManagerModal(){
   if(!isAdmin()) return showToast('Admin only','error');
-  await refreshData(true);
-  renderDashboardManagerList();
-  el('dashboardManagerModal').classList.remove('hidden');
+  const modal=el('dashboardManagerModal');
+  modal.classList.remove('hidden');
+  if((appData.dashboardItems||[]).length) renderDashboardManagerList();
+  else renderDashboardManagerLoading();
+  refreshData(true)
+    .then(()=>{ if(!modal.classList.contains('hidden')) renderDashboardManagerList(); })
+    .catch(()=>{ if(!modal.classList.contains('hidden')) renderDashboardManagerList(); });
 }
 
 function renderDashboardManagerList(){
@@ -981,12 +1019,23 @@ function filterDashboardRows(rows,filters){
 }
 function renderDashboardLoading(item={}){
   destroyDashboardCharts();
+  clearDashboardLoadPulse();
   if(el('dashboardTitleText')) el('dashboardTitleText').textContent=item.name||'Dashboard';
   const meta=el('dashboardMeta');
   if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; }
   const bar=el('dashboardFilterBar');
   if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; }
   el('dashboardContainer').innerHTML=`
+    <div class="dash-fetch-banner">
+      <div class="dash-fetch-copy">
+        <div class="dash-fetch-title"><i class="fas fa-rotate fa-spin"></i> Fetching dashboard data</div>
+        <div class="dash-fetch-sub">Loading API data, preparing filters, and building charts for <strong>${escHtml(item.name||'Dashboard')}</strong>.</div>
+      </div>
+      <div class="dash-fetch-meter">
+        <div class="dash-fetch-track"><div id="dashboardLoadingBar" class="dash-fetch-fill" style="width:18%"></div></div>
+        <span id="dashboardLoadingPct" class="dash-fetch-pct">18%</span>
+      </div>
+    </div>
     <div class="dashboard-skeleton">
       <div class="dash-skel"></div>
       <div class="dash-skel"></div>
@@ -999,9 +1048,11 @@ function renderDashboardLoading(item={}){
       <div class="dash-skel"></div>
       <div class="dash-skel"></div>
     </div>`;
+  startDashboardLoadPulse();
 }
 function renderDashboardEmpty(message='No dashboard item selected'){
   destroyDashboardCharts();
+  clearDashboardLoadPulse();
   const meta=el('dashboardMeta');
   if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; }
   const bar=el('dashboardFilterBar');
@@ -1014,15 +1065,21 @@ function renderDashboardEmpty(message='No dashboard item selected'){
     </div>`;
 }
 function renderCurrentDashboard(){
+  clearDashboardLoadPulse();
   if(!currentDashboardItem||!currentDashboardPayload){
     renderDashboardEmpty('Dashboard data is not loaded yet.');
     return;
   }
   const filteredRows=filterDashboardRows(currentDashboardRows,currentDashboardFilters);
+  if(!filteredRows.length){
+    renderDashboardEmpty('No data matched the selected filters. Try changing Site / Township / Queue or date grouping.');
+    return;
+  }
   renderDashboardData(currentDashboardItem,currentDashboardPayload,filteredRows,currentDashboardFilters);
 }
 function renderDashboardData(item,payload,rows,filters){
   destroyDashboardCharts();
+  clearDashboardLoadPulse();
   const settings=getDashboardSettings(item,payload);
   const stats=buildDashboardStats(rows,item,filters.groupBy);
   const meta=buildDashboardMeta(payload,item,rows.length,filters,currentDashboardRows.length);
