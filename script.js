@@ -753,7 +753,7 @@ async function startDashboardPrefetch(force=false){
 async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}={}){
   if(!id) return null;
   if(!force&&dashboardCache[id]){
-    onProgress?.(100,'<i class="fas fa-bolt"></i> Loaded from memory cache','Dashboard data was already available in the browser cache.');
+    onProgress?.(100,'<i class="fas fa-bolt"></i> Loaded from memory cache','Dashboard data was already available in the browser cache.','determinate');
     return dashboardCache[id];
   }
   if(!force&&dashboardFetchPromises[id]) return dashboardFetchPromises[id];
@@ -778,10 +778,10 @@ async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}=
         loaded += value?.length || 0;
         raw += decoder.decode(value,{stream:true});
         if(total>0){
-          const pct = 15 + Math.round(Math.min(55,(loaded/total)*55));
-          onProgress?.(pct,'<i class="fas fa-download"></i> Downloading dashboard payload',`Received ${formatBytes(loaded)} of ${formatBytes(total)} from the API response.`);
+          const pct = 15 + Math.round(Math.min(70,(loaded/total)*70));
+          onProgress?.(pct,'<i class="fas fa-download"></i> Downloading dashboard payload',`Received ${formatBytes(loaded)} of ${formatBytes(total)} from the API response.`,'determinate');
         } else {
-          onProgress?.(42,'<i class="fas fa-download"></i> Downloading dashboard payload','Receiving dashboard response from the worker...');
+          onProgress?.(0,'<i class="fas fa-download"></i> Downloading dashboard payload','Receiving dashboard response from the worker...','indeterminate');
         }
       }
       raw += decoder.decode();
@@ -791,19 +791,42 @@ async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}=
 
     const data = raw ? JSON.parse(raw) : {};
     if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`);
-    onProgress?.(74,'<i class="fas fa-box-open"></i> Response received','Parsing dashboard payload and preparing rows...');
+    onProgress?.(0,'<i class="fas fa-box-open"></i> Response received','Parsing dashboard payload and preparing rows...','indeterminate');
     return data;
   };
 
   const run=(async()=>{
     try{
-      onProgress?.(10,'<i class="fas fa-rotate fa-spin"></i> Requesting dashboard data',`Connecting to API and cache for <strong>${escHtml(item.name||'Dashboard')}</strong>.`);
+      onProgress?.(0,'<i class="fas fa-rotate fa-spin"></i> Requesting dashboard data',`Connecting to API and cache for <strong>${escHtml(item.name||'Dashboard')}</strong>.`,'indeterminate');
       let data = await fetchFromWorker();
-      if(!data && getDashboardApi(item)){
-        onProgress?.(80,'<i class="fas fa-link"></i> Trying source fallback','Worker cache response was empty. Trying the direct source URL fallback.');
+      const workerRows = data ? extractDashboardRows(data) : [];
+      if((!data || !workerRows.length) && getDashboardApi(item)){
+        onProgress?.(0,'<i class="fas fa-link"></i> Trying source fallback','Worker cache returned no rows. Trying the direct source URL fallback.','indeterminate');
         try{
           const fallbackRes=await fetch(getDashboardApi(item));
-          if(fallbackRes.ok) data=await fallbackRes.json();
+          if(fallbackRes.ok){
+            const sourceJson=await fallbackRes.json();
+            const sourceRows=extractDashboardRows(sourceJson);
+            if(sourceRows.length){
+              data={
+                ...(data||{}),
+                success:true,
+                dashboardId:id,
+                name:item.name,
+                sourceUrl:getDashboardApi(item),
+                rowCount:sourceRows.length,
+                extractedRowCount:sourceRows.length,
+                sourceMeta:{
+                  ...(data?.sourceMeta||{}),
+                  range:sourceJson?.range||null,
+                  majorDimension:sourceJson?.majorDimension||null,
+                  rowCount:sourceRows.length,
+                  headers:Array.isArray(sourceJson?.values?.[0]) ? sourceJson.values[0] : (data?.sourceMeta?.headers||null)
+                },
+                data:sourceJson
+              };
+            }
+          }
         }catch(_){ /* ignore */ }
       }
       if(data) dashboardCache[id]=data;
