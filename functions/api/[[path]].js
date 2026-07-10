@@ -393,6 +393,9 @@ export const onRequest = async (context) => {
       });
 
       if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error('Source HTTP 404 — check the dashboard API URL / Google Sheets API URL / sheet ID configuration');
+        }
         throw new Error(`Source HTTP ${res.status}`);
       }
 
