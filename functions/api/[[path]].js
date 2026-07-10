@@ -9,6 +9,7 @@
 // ✅ Per-dashboard settings + prefetch routes
 
 export const onRequest = async (context) => {
+  try {
   const { request, env } = context;
   const url    = new URL(request.url);
   const path   = url.pathname.replace('/api/', '').replace(/\/$/, '');
@@ -659,6 +660,15 @@ export const onRequest = async (context) => {
       }
     }
 
+    let dashWidgetRows = { results: [] };
+    if (uRank >= ROLE_RANK.leader) {
+      try {
+        dashWidgetRows = await env.DB.prepare(`SELECT * FROM dashboard_widgets ORDER BY dashboard_page_id ASC, sort_order ASC, id ASC`).all();
+      } catch (_) {
+        dashWidgetRows = { results: [] };
+      }
+    }
+
     return ok({
       updates      : updRows.results ?? [],
       categories   : catRows.results ?? [],
@@ -670,7 +680,7 @@ export const onRequest = async (context) => {
         settings: normalizeDashboardSettings(r.settings_json)
       })),
       dashboardPages: dashPageRows.results ?? [],
-      dashboardWidgets: ((await env.DB.prepare(`SELECT * FROM dashboard_widgets ORDER BY dashboard_page_id ASC, sort_order ASC, id ASC`).all()).results ?? []),
+      dashboardWidgets: dashWidgetRows.results ?? [],
       currentUser  : {
         id          : user.id,
         username    : user.username,
@@ -1601,4 +1611,11 @@ export const onRequest = async (context) => {
   }
 
   return err("Not Found", 404);
+  } catch (e) {
+    const msg = e && e.message ? e.message : String(e);
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 500,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS", "Access-Control-Allow-Headers": "Authorization, Content-Type" }
+    });
+  }
 };
