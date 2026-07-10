@@ -49,12 +49,175 @@ export const onRequest = async (context) => {
     } catch { return null; }
   };
 
+
+  const DEFAULT_DASHBOARD_SETTINGS = {
+    showCards: {
+      totalTickets: true,
+      avgResolve: true,
+      closedRate: true,
+      quickSummary: true,
+      trendChart: true,
+      statusChart: true,
+      problemChart: true,
+      siteChart: true,
+      rootCauseChart: true,
+      repeatChart: true,
+    },
+    limits: {
+      trendPoints: 10,
+      statusCount: 5,
+      problemCount: 5,
+      siteCount: 5,
+      rootCauseCount: 6,
+      repeatCount: 5,
+    },
+    graphTypes: {
+      trendChart: 'line',
+      statusChart: 'doughnut',
+      problemChart: 'bar',
+      siteChart: 'bar',
+      rootCauseChart: 'bar',
+      repeatChart: 'list',
+    },
+    defaultGrouping: 'day'
+  };
+
+  const cloneDashDefaults = () => JSON.parse(JSON.stringify(DEFAULT_DASHBOARD_SETTINGS));
+  const safeJson = (v, fallback=null) => {
+    try { return JSON.parse(v); } catch { return fallback; }
+  };
+  const normalizeDashboardSettings = (raw) => {
+    const base = cloneDashDefaults();
+    const parsed = typeof raw === 'string' ? (safeJson(raw, {}) || {}) : (raw || {});
+    const show = parsed.showCards || parsed.show || {};
+    const limits = parsed.limits || {};
+    const graphTypes = parsed.graphTypes || {};
+    for (const key of Object.keys(base.showCards)) {
+      if (typeof show[key] === 'boolean') base.showCards[key] = show[key];
+    }
+    for (const key of Object.keys(base.limits)) {
+      const v = Number(limits[key]);
+      if (Number.isFinite(v) && v > 0) base.limits[key] = Math.round(v);
+    }
+    for (const key of Object.keys(base.graphTypes)) {
+      if (typeof graphTypes[key] === 'string' && graphTypes[key].trim()) base.graphTypes[key] = graphTypes[key].trim();
+    }
+    if (['day','week','month','year'].includes(parsed.defaultGrouping)) base.defaultGrouping = parsed.defaultGrouping;
+    return base;
+  };
+  const extractDashboardRows = (payload) => {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== 'object') return [];
+    if (Array.isArray(payload.rows)) return payload.rows;
+    if (Array.isArray(payload.data)) return payload.data;
+    if (payload.data && Array.isArray(payload.data.rows)) return payload.data.rows;
+    if (Array.isArray(payload.result)) return payload.result;
+    return [];
+  };
+  const ensureDashboardTables = async () => {
+    await env.DB.exec(`
+      CREATE TABLE IF NOT EXISTS dashboard_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        icon TEXT NOT NULL DEFAULT 'fa-chart-line',
+        api_url TEXT NOT NULL,
+        min_role_required TEXT NOT NULL DEFAULT 'leader',
+        overtime_hours REAL NOT NULL DEFAULT 8,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS dashboard_cache (
+        dashboard_item_id INTEGER PRIMARY KEY,
+        dashboard_name TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        row_count INTEGER NOT NULL DEFAULT 0,
+        last_synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_error TEXT
+      );
+      CREATE TABLE IF NOT EXISTS dashboard_item_settings (
+        dashboard_item_id INTEGER PRIMARY KEY,
+        settings_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS dashboard_sync_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dashboard_item_id INTEGER NOT NULL,
+        sync_status TEXT NOT NULL,
+        row_count INTEGER NOT NULL DEFAULT 0,
+        message TEXT,
+        synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_dashboard_items_sort ON dashboard_items(sort_order);
+      CREATE INDEX IF NOT EXISTS idx_dashboard_items_active ON dashboard_items(is_active);
+      CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC);
+    `);
+  };
+  const getDashboardItem = async (id) => {
+    await ensureDashboardTables();
+    return await env.DB.prepare(`
+      SELECT di.*, dis.settings_json
+        FROM dashboard_items di
+        LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
+       WHERE di.id = ?
+    `).bind(id).first();
+  };
+  const syncDashboardItem = async (item) => {
+    await ensureDashboardTables();
+    try {
+      const res = await fetch(item.api_url, { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error(`Source HTTP ${res.status}`);
+      const rawText = await res.text();
+      const payload = JSON.parse(rawText);
+      const rows = extractDashboardRows(payload);
+      const payloadJson = JSON.stringify(payload);
+      await env.DB.prepare(`
+        INSERT INTO dashboard_cache (dashboard_item_id, dashboard_name, source_url, payload_json, row_count, last_synced_at, last_error)
+        VALUES (?, ?, ?, ?, ?, datetime('now'), NULL)
+        ON CONFLICT(dashboard_item_id) DO UPDATE SET
+          dashboard_name = excluded.dashboard_name,
+          source_url = excluded.source_url,
+          payload_json = excluded.payload_json,
+          row_count = excluded.row_count,
+          last_synced_at = datetime('now'),
+          last_error = NULL
+      `).bind(item.id, item.name, item.api_url, payloadJson, rows.length).run();
+      await env.DB.prepare(`
+        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
+        VALUES (?, 'success', ?, 'OK', datetime('now'))
+      `).bind(item.id, rows.length).run();
+      return {
+        payload,
+        rowCount: rows.length,
+        lastSynced: new Date().toISOString(),
+        settings: normalizeDashboardSettings(item.settings_json)
+      };
+    } catch (e) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
+        VALUES (?, 'failed', 0, ?, datetime('now'))
+      `).bind(item.id, e.message || 'Unknown error').run();
+      await env.DB.prepare(`
+        INSERT INTO dashboard_cache (dashboard_item_id, dashboard_name, source_url, payload_json, row_count, last_synced_at, last_error)
+        VALUES (?, ?, ?, '[]', 0, datetime('now'), ?)
+        ON CONFLICT(dashboard_item_id) DO UPDATE SET
+          last_error = excluded.last_error,
+          last_synced_at = datetime('now')
+      `).bind(item.id, item.name, item.api_url, e.message || 'Unknown error').run();
+      throw e;
+    }
+  };
+
   // ════════════════════════════════════════════════════════════════════════════
   //  Presence Management
   // ════════════════════════════════════════════════════════════════════════════
   if (path === "presence/offline" && method === "POST") {
-    // Explicitly mark as offline by pushing last_seen into the past
-    await env.DB.prepare("UPDATE users SET last_seen = datetime('now', '-10 minutes') WHERE id = ?").bind(user.id).run();
+    const authUser = await getAuth();
+    if (!authUser) return err("Unauthorized", 401);
+    await env.DB.prepare("UPDATE users SET last_seen = datetime('now', '-10 minutes') WHERE id = ?").bind(authUser.id).run();
     return ok({ success: true });
   }
 
@@ -78,6 +241,7 @@ export const onRequest = async (context) => {
   //  getData
   // ════════════════════════════════════════════════════════════════════════════
   if (path === "getData" && method === "GET") {
+    await ensureDashboardTables();
     const folderRows = isAdmin
       ? await env.DB.prepare("SELECT * FROM folders").all()
       : await env.DB.prepare(`SELECT * FROM folders WHERE ${rbacWhere('min_role_required', uRank)}`).all();
@@ -135,12 +299,31 @@ export const onRequest = async (context) => {
       updRows = await env.DB.prepare("SELECT * FROM updates ORDER BY id DESC").all();
     } catch { updRows = { results:[] }; }
 
+    let dashRows = { results: [] };
+    if (uRank >= ROLE_RANK.leader) {
+      dashRows = isAdmin
+        ? await env.DB.prepare(`
+            SELECT di.*, dis.settings_json
+              FROM dashboard_items di
+              LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
+             ORDER BY di.sort_order ASC, di.id ASC
+          `).all()
+        : await env.DB.prepare(`
+            SELECT di.*, dis.settings_json
+              FROM dashboard_items di
+              LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
+             WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)}
+             ORDER BY di.sort_order ASC, di.id ASC
+          `).all();
+    }
+
     return ok({
       updates      : updRows.results  ?? [],
       categories   : catRows.results  ?? [],
       infoCards    : icRows.results   ?? [],
       learningItems: liRows.results   ?? [],
       folders      : folderRows.results ?? [],
+      dashboardItems: (dashRows.results ?? []).map(r => ({ ...r, settings: normalizeDashboardSettings(r.settings_json) })),
       // Always return the requesting user's own data so every role
       // can restore their session correctly on page refresh
       currentUser  : {
@@ -155,6 +338,100 @@ export const onRequest = async (context) => {
         ? (await env.DB.prepare("SELECT * FROM users").all()).results ?? []
         : [],
     });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  DASHBOARDS — item list, caching, per-item settings
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "dashboards/sort" && method === "POST") {
+    if (!isAdmin) return err("Admin only", 403);
+    await ensureDashboardTables();
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const order = Array.isArray(body.order) ? body.order : [];
+    if (!order.length) return err("order must be a non-empty array", 400);
+    for (let i = 0; i < order.length; i++) {
+      const id = parseInt(order[i], 10);
+      if (!isNaN(id)) {
+        await env.DB.prepare("UPDATE dashboard_items SET sort_order=?, updated_at=datetime('now') WHERE id=?").bind(i, id).run();
+      }
+    }
+    return ok({ success: true });
+  }
+
+  if (path === "dashboards/prefetch" && method === "POST") {
+    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
+    await ensureDashboardTables();
+    const items = (await env.DB.prepare(`
+      SELECT di.*, dis.settings_json
+        FROM dashboard_items di
+        LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
+       WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)}
+       ORDER BY di.sort_order ASC, di.id ASC
+    `).all()).results ?? [];
+    let synced = 0;
+    for (const item of items) {
+      try { await syncDashboardItem(item); synced++; } catch { /* keep going */ }
+    }
+    return ok({ success: true, queued: items.length, synced });
+  }
+
+  const dashDataMatch = path.match(/^dashboards\/(\d+)\/data$/);
+  if (dashDataMatch && method === "GET") {
+    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
+    const dashId = parseInt(dashDataMatch[1], 10);
+    const item = await getDashboardItem(dashId);
+    if (!item) return err("Dashboard item not found", 404);
+    if (!isAdmin && (item.is_active !== 1 || (ROLE_RANK[item.min_role_required] ?? 1) > uRank)) return err("Access denied", 403);
+
+    const refresh = url.searchParams.get('refresh') === '1';
+    let cache = await env.DB.prepare("SELECT * FROM dashboard_cache WHERE dashboard_item_id=?").bind(dashId).first();
+    if (refresh || !cache) {
+      try {
+        await syncDashboardItem(item);
+        cache = await env.DB.prepare("SELECT * FROM dashboard_cache WHERE dashboard_item_id=?").bind(dashId).first();
+      } catch (e) {
+        if (!cache) return err(`Dashboard sync failed: ${e.message}`, 502);
+      }
+    }
+
+    const payload = safeJson(cache?.payload_json || '[]', []);
+    const rows = extractDashboardRows(payload);
+    return ok({
+      success: true,
+      dashboardId: dashId,
+      name: item.name,
+      lastSynced: cache?.last_synced_at || null,
+      rowCount: cache?.row_count ?? rows.length,
+      sourceUrl: item.api_url,
+      lastError: cache?.last_error || null,
+      settings: normalizeDashboardSettings(item.settings_json),
+      data: payload,
+    });
+  }
+
+  const dashSettingsMatch = path.match(/^dashboards\/(\d+)\/settings$/);
+  if (dashSettingsMatch && method === "GET") {
+    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
+    const dashId = parseInt(dashSettingsMatch[1], 10);
+    const item = await getDashboardItem(dashId);
+    if (!item) return err("Dashboard item not found", 404);
+    return ok({ success: true, dashboardId: dashId, settings: normalizeDashboardSettings(item.settings_json) });
+  }
+  if (dashSettingsMatch && method === "PUT") {
+    if (!isAdmin) return err("Admin only", 403);
+    const dashId = parseInt(dashSettingsMatch[1], 10);
+    const item = await getDashboardItem(dashId);
+    if (!item) return err("Dashboard item not found", 404);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const normalized = normalizeDashboardSettings(body.settings || body);
+    await env.DB.prepare(`
+      INSERT INTO dashboard_item_settings (dashboard_item_id, settings_json, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(dashboard_item_id) DO UPDATE SET
+        settings_json = excluded.settings_json,
+        updated_at = datetime('now')
+    `).bind(dashId, JSON.stringify(normalized)).run();
+    return ok({ success: true, dashboardId: dashId, settings: normalized });
   }
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -522,9 +799,17 @@ export const onRequest = async (context) => {
     try {
       if (action==="delete") {
         if(!id||!table)throw new Error("Missing id or table");
-        const allowed=["updates","categories","info_cards","learning_items","folders","files","users","sticky_notes"];
+        const allowed=["updates","categories","info_cards","learning_items","folders","files","users","sticky_notes","dashboard_items"];
         if(!allowed.includes(table))throw new Error("Invalid table");
-        await env.DB.prepare(`DELETE FROM ${table} WHERE id=?`).bind(id).run();
+        if (table === "dashboard_items") {
+          await ensureDashboardTables();
+          await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(id).run();
+          await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(id).run();
+          await env.DB.prepare("DELETE FROM dashboard_sync_logs WHERE dashboard_item_id=?").bind(id).run();
+          await env.DB.prepare("DELETE FROM dashboard_items WHERE id=?").bind(id).run();
+        } else {
+          await env.DB.prepare(`DELETE FROM ${table} WHERE id=?`).bind(id).run();
+        }
         return ok({success:true});
       }
       if (action==="save") {
@@ -569,6 +854,45 @@ export const onRequest = async (context) => {
                 .bind(data.topic,data.type,data.link,data.content,data.folderId,data.min_role_required??"intern",data.id).run()
             : await env.DB.prepare("INSERT INTO learning_items (topic,type,link,content,folderId,min_role_required) VALUES (?,?,?,?,?,?)")
                 .bind(data.topic,data.type,data.link,data.content,data.folderId,data.min_role_required??"intern").run();
+        }
+        else if (table==="dashboard_items") {
+          await ensureDashboardTables();
+          const slug = (data.slug || data.name || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          if (!data.name || !data.api_url) throw new Error("name and api_url are required");
+          if (data.id) {
+            await env.DB.prepare(`
+              UPDATE dashboard_items
+                 SET name=?, slug=?, icon=?, api_url=?, min_role_required=?, is_active=?, updated_at=datetime('now')
+               WHERE id=?
+            `).bind(
+              data.name,
+              slug,
+              data.icon || 'fa-chart-line',
+              data.api_url,
+              data.min_role_required || 'leader',
+              data.is_active ?? 1,
+              data.id
+            ).run();
+          } else {
+            const maxRow = await env.DB.prepare("SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM dashboard_items").first();
+            const nextSort = (maxRow?.max_sort ?? -1) + 1;
+            const inserted = await env.DB.prepare(`
+              INSERT INTO dashboard_items (name, slug, icon, api_url, min_role_required, is_active, sort_order, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            `).bind(
+              data.name,
+              slug,
+              data.icon || 'fa-chart-line',
+              data.api_url,
+              data.min_role_required || 'leader',
+              data.is_active ?? 1,
+              nextSort
+            ).run();
+            await env.DB.prepare(`
+              INSERT INTO dashboard_item_settings (dashboard_item_id, settings_json, updated_at)
+              VALUES (?, ?, datetime('now'))
+            `).bind(inserted.meta?.last_row_id, JSON.stringify(cloneDashDefaults())).run();
+          }
         }
         return ok({success:true});
       }
