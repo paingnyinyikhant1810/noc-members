@@ -8,7 +8,7 @@ const API_URL = '/api';
 let currentUser = null;
 let authHeader  = localStorage.getItem('authHeader');
 let isProcessing = false;
-let appData = { users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[] };
+let appData = { users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[] };
 
 // Learning state
 let currentFolderId     = null;
@@ -18,6 +18,50 @@ let searchDebounceTimer = null;
 
 // Sticky notes (D1-backed)
 let stickyNotes = [];
+
+// Dashboard state
+let currentDashboardId = null;
+let currentDashboardItem = null;
+let currentDashboardPayload = null;
+let currentDashboardRows = [];
+let currentDashboardFilters = { groupBy:'day', site:'', township:'', queue:'' };
+let dashboardCache = {};
+let dashboardFetchPromises = {};
+let dashboardPrefetchStarted = false;
+let dashboardChartInstances = [];
+let dashDragSrc = null;
+
+const DEFAULT_DASHBOARD_SETTINGS = {
+  showCards: {
+    totalTickets: true,
+    avgResolve: true,
+    closedRate: true,
+    quickSummary: true,
+    trendChart: true,
+    statusChart: true,
+    problemChart: true,
+    siteChart: true,
+    rootCauseChart: true,
+    repeatChart: true,
+  },
+  limits: {
+    trendPoints: 10,
+    statusCount: 5,
+    problemCount: 5,
+    siteCount: 5,
+    rootCauseCount: 6,
+    repeatCount: 5,
+  },
+  graphTypes: {
+    trendChart: 'line',
+    statusChart: 'doughnut',
+    problemChart: 'bar',
+    siteChart: 'bar',
+    rootCauseChart: 'bar',
+    repeatChart: 'list',
+  },
+  defaultGrouping: 'day'
+};
 
 // ── Role helpers ────────────────────────────────────────────
 const ROLE_RANK  = { admin:4, leader:3, member:2, intern:1 };
@@ -102,12 +146,18 @@ async function refreshData(silent=false){
   if(!silent)showLoading();
   const data=await fetchAPI('getData',{silentFail:silent});
   if(data){
-    appData=data;
+    appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], ...data };
     if(!el('homePage').classList.contains('hidden'))renderUpdates();
     if(!el('learningPage').classList.contains('hidden'))renderLearning();
     if(!el('informationPage').classList.contains('hidden')&&currentInfoCategory)renderInfoCards();
+    if(!el('dashboardPage').classList.contains('hidden')&&currentDashboardId){
+      const activeDash=appData.dashboardItems.find(d=>d.id===currentDashboardId);
+      if(activeDash&&dashboardCache[currentDashboardId]) renderDashboardData(activeDash,dashboardCache[currentDashboardId]);
+    }
     if(!el('adminPage').classList.contains('hidden')&&isAdmin()){renderUsers();}
     renderMobileInfoMenu();renderInfoDropdown();
+    renderMobileDashboardMenu();renderDashboardDropdown();
+    if(isLeader()) startDashboardPrefetch();
   }
   if(!silent)hideLoading();
   return data;
@@ -141,7 +191,7 @@ el('loginForm').addEventListener('submit',async function(e){
       const d=await fetchAPI('getData');
       updateProgress(70,'Preparing...');await delay(200);
       if(d){
-        appData=d;
+        appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], ...d };
         // Prefer currentUser from getData (works for all roles, not just admin)
         if(d.currentUser){
           currentUser={...currentUser,...d.currentUser};
@@ -167,18 +217,24 @@ function doShowApp(){
   el('mainApp').classList.remove('hidden');
   // Show name only — no role badge anywhere on the page
   const wu=el('welcomeUser');if(wu)wu.textContent=currentUser.accountName;
-  updateAdminUI();renderMobileInfoMenu();renderInfoDropdown();
+  updateAdminUI();renderMobileInfoMenu();renderInfoDropdown();renderMobileDashboardMenu();renderDashboardDropdown();
   navigateTo('home');
+  if(isLeader()) startDashboardPrefetch();
   startPolling(); // begin real-time background polling
 }
 
 function updateAdminUI(){
   // Admin-only elements
-  ['adminBtn','mobileAdminBtn'].forEach(id=>{
+  ['adminBtn','mobileAdminBtn','manageDashboardPageBtn','dashboardViewSettingsBtn'].forEach(id=>{
     const e=el(id);if(e)isAdmin()?e.classList.remove('hidden'):e.classList.add('hidden');
   });
-  // All roles can add updates — button always visible after login
-  // (handled in HTML — no hidden class)
+
+  // Dashboard visibility — leader+ only
+  ['dashboardBtnWrap','mobileDashboardSection','refreshDashboardBtn'].forEach(id=>{
+    const e=el(id);if(!e)return;
+    if(id==='refreshDashboardBtn') isLeader()?e.classList.remove('hidden'):e.classList.add('hidden');
+    else isLeader()?e.classList.remove('hidden'):e.classList.add('hidden');
+  });
 
   // Info card add button — leader+
   const addInfo=el('addInfoCardBtn');
@@ -212,7 +268,7 @@ async function initApp(){
   updateProgress(60,'Loading...');await delay(200);
   if(!data){hideLoading();showLoginPage();return;}
   updateProgress(80,'Preparing...');await delay(150);
-  appData=data;
+  appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], ...data };
   if(!currentUser){
     // Prefer currentUser returned by getData (available for ALL roles)
     if(data.currentUser){
@@ -238,7 +294,7 @@ async function initApp(){
 function openMobileMenu(){
   el('mobileMenu').classList.remove('hidden');el('mobileOverlay').classList.remove('hidden');
   setTimeout(()=>el('mobileMenu').classList.add('show'),10);
-  renderMobileInfoMenu();
+  renderMobileInfoMenu();renderMobileDashboardMenu();
 }
 function closeMobileMenu(){
   el('mobileMenu').classList.remove('show');
@@ -255,12 +311,34 @@ function renderMobileInfoMenu(){
     </button>`).join('');
 }
 
+
+function renderMobileDashboardMenu(){
+  const section=el('mobileDashboardSection');
+  const container=el('mobileDashboardMenu');
+  if(!section||!container) return;
+  if(!isLeader()){
+    section.classList.add('hidden');
+    container.innerHTML='';
+    return;
+  }
+  section.classList.remove('hidden');
+  const items=(appData.dashboardItems||[]).filter(d=>canSee(d.min_role_required||'leader'));
+  let html=items.map(item=>`
+    <button onclick="showDashboardItem(${item.id},'${escAttr(item.name)}');closeMobileMenu();" class="mob-nbtn mob-nbtn--sub">
+      <i class="fas ${item.icon||'fa-chart-line'}"></i> ${escHtml(item.name)}
+    </button>`).join('');
+  if(!items.length) html='<div class="dash-manager-note" style="padding:.35rem .9rem .6rem">No dashboard items yet</div>';
+  container.innerHTML=html;
+}
+
 /* ══════════════════════════════════════════════════════════
    NAVIGATION
 ══════════════════════════════════════════════════════════ */
 function navigateTo(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
   document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active'));
+  if(el('infoDropdown'))el('infoDropdown').classList.add('hidden');
+  if(el('dashboardDropdown'))el('dashboardDropdown').classList.add('hidden');
   if(page==='home'){
     el('homePage').classList.remove('hidden');renderUpdates();
   } else if(page==='learning'){
@@ -273,6 +351,15 @@ function navigateTo(page){
     renderLearning();
   } else if(page==='admin'){
     if(!isAdmin())return;el('adminPage').classList.remove('hidden');showAdminTab('users');
+  } else if(page==='dashboard'){
+    el('dashboardPage').classList.remove('hidden');
+    if(currentDashboardId){
+      const item=appData.dashboardItems.find(d=>d.id===currentDashboardId);
+      if(item&&dashboardCache[currentDashboardId]) renderDashboardData(item,dashboardCache[currentDashboardId]);
+      else renderDashboardEmpty('Select a dashboard item from the Dashboard menu');
+    } else {
+      renderDashboardEmpty('Select a dashboard item from the Dashboard menu');
+    }
   }
   document.querySelectorAll(`[data-page="${page}"]`).forEach(b=>b.classList.add('active'));
 }
@@ -353,6 +440,965 @@ document.addEventListener('click',e=>{
   const dd=el('infoDropdown'),btn=document.querySelector('[data-page="information"]');
   if(btn&&dd&&!dd.contains(e.target)&&!btn.contains(e.target))dd.classList.add('hidden');
 });
+
+
+/* ══════════════════════════════════════════════════════════
+   DASHBOARD
+══════════════════════════════════════════════════════════ */
+const DASHBOARD_COLOR_SET = ['#6366f1','#3b82f6','#f97316','#10b981','#ec4899','#8b5cf6','#14b8a6','#f59e0b','#ef4444','#64748b'];
+const DASHBOARD_GROUP_LABELS = { day:'Day', week:'Week', month:'Month', year:'Year' };
+const DASHBOARD_GRAPH_OPTIONS = {
+  trendChart: [
+    { value:'line', label:'Line' },
+    { value:'bar', label:'Bar' },
+    { value:'area', label:'Area' },
+  ],
+  statusChart: [
+    { value:'doughnut', label:'Doughnut' },
+    { value:'pie', label:'Pie' },
+    { value:'bar', label:'Bar' },
+    { value:'polarArea', label:'Polar Area' },
+  ],
+  problemChart: [
+    { value:'bar', label:'Bar' },
+    { value:'hbar', label:'Horizontal Bar' },
+    { value:'doughnut', label:'Doughnut' },
+    { value:'pie', label:'Pie' },
+  ],
+  siteChart: [
+    { value:'bar', label:'Bar' },
+    { value:'hbar', label:'Horizontal Bar' },
+    { value:'doughnut', label:'Doughnut' },
+    { value:'pie', label:'Pie' },
+  ],
+  rootCauseChart: [
+    { value:'bar', label:'Bar' },
+    { value:'hbar', label:'Horizontal Bar' },
+    { value:'doughnut', label:'Doughnut' },
+    { value:'polarArea', label:'Polar Area' },
+  ],
+  repeatChart: [
+    { value:'list', label:'List' },
+    { value:'bar', label:'Bar' },
+    { value:'hbar', label:'Horizontal Bar' },
+    { value:'doughnut', label:'Doughnut' },
+  ],
+};
+
+function destroyDashboardCharts(){
+  dashboardChartInstances.forEach(ch=>{ try{ ch.destroy(); }catch{} });
+  dashboardChartInstances=[];
+}
+
+function toggleDashboardDropdown(){
+  if(!isLeader()) return;
+  const d=el('dashboardDropdown');
+  if(!d) return;
+  d.classList.toggle('hidden');
+  if(!d.classList.contains('hidden')) renderDashboardDropdown();
+}
+function renderDashboardDropdown(){
+  const d=el('dashboardDropdown');
+  if(!d) return;
+  if(!isLeader()){ d.classList.add('hidden'); d.innerHTML=''; return; }
+  const items=(appData.dashboardItems||[]).filter(x=>canSee(x.min_role_required||'leader'));
+  let html=items.map(item=>`
+    <button onclick="showDashboardItem(${item.id},'${escAttr(item.name)}')" class="dd-item">
+      <i class="fas ${item.icon||'fa-chart-line'}"></i> ${escHtml(item.name)}
+    </button>`).join('');
+  if(!items.length) html='<div class="dd-empty">No dashboards yet</div>';
+  if(isAdmin()){
+    html+=`<div class="dd-sep"></div>
+      <button onclick="el('dashboardDropdown').classList.add('hidden');openDashboardManagerModal()" class="dd-item dd-item--setting">
+        <i class="fas fa-cog"></i> Manage Dashboard
+      </button>`;
+  }
+  d.innerHTML=html;
+}
+
+document.addEventListener('click',e=>{
+  const dd=el('dashboardDropdown');
+  const btn=document.querySelector('[data-page="dashboard"]');
+  if(dd&&btn&&!dd.contains(e.target)&&!btn.contains(e.target)) dd.classList.add('hidden');
+});
+
+function getDashboardApi(item){ return item?.api_url||item?.apiUrl||item?.api||''; }
+function getDashboardSla(item){ return Number(item?.overtime_hours||item?.overtimeHours||item?.sla_hours||item?.slaHours||8)||8; }
+function cloneDashboardDefaults(){ return JSON.parse(JSON.stringify(DEFAULT_DASHBOARD_SETTINGS)); }
+function normalizeDashboardSettings(raw){
+  const base=cloneDashboardDefaults();
+  let parsed=raw;
+  if(typeof raw==='string'){
+    try{ parsed=JSON.parse(raw); }catch{ parsed={}; }
+  }
+  if(!parsed||typeof parsed!=='object') parsed={};
+  const show={...(parsed.showCards||parsed.show||{})};
+  const limits={...(parsed.limits||{})};
+  const graphTypes={...(parsed.graphTypes||{})};
+  const defaultGrouping=parsed.defaultGrouping;
+  Object.keys(base.showCards).forEach(k=>{
+    if(typeof show[k]==='boolean') base.showCards[k]=show[k];
+  });
+  Object.keys(base.limits).forEach(k=>{
+    const v=Number(limits[k]);
+    if(Number.isFinite(v)&&v>0) base.limits[k]=Math.round(v);
+  });
+  Object.keys(base.graphTypes).forEach(k=>{
+    const allowed=(DASHBOARD_GRAPH_OPTIONS[k]||[]).map(x=>x.value);
+    if(typeof graphTypes[k]==='string' && allowed.includes(graphTypes[k])) base.graphTypes[k]=graphTypes[k];
+  });
+  if(['day','week','month','year'].includes(defaultGrouping)) base.defaultGrouping=defaultGrouping;
+  return base;
+}
+function getDashboardSettings(item,payload=null){
+  const raw=payload?.settings||item?.settings||item?.settings_json||item?.settingsJson||null;
+  return normalizeDashboardSettings(raw);
+}
+
+function openDashboardManagerModal(){
+  if(!isAdmin()) return showToast('Admin only','error');
+  renderDashboardManagerList();
+  el('dashboardManagerModal').classList.remove('hidden');
+}
+
+function renderDashboardManagerList(){
+  const list=el('dashboardManagerList');
+  if(!list) return;
+  const items=[...(appData.dashboardItems||[])];
+  if(!items.length){
+    list.innerHTML=`<div class="dash-empty"><i class="fas fa-chart-line"></i><h3>No dashboard items</h3><p>Click “Add Dashboard” to create your first dashboard source.</p></div>`;
+    return;
+  }
+  list.innerHTML=items.map(item=>`
+    <div class="cat-mgr-item" draggable="true" data-dash-id="${item.id}"
+         ondragstart="dashDragStart(event,${item.id})"
+         ondragover="dashDragOver(event)"
+         ondrop="dashDrop(event,${item.id})"
+         ondragend="dashDragEnd()">
+      <div class="cat-mgr-drag"><i class="fas fa-grip-vertical"></i></div>
+      <div class="cat-mgr-icon"><i class="fas ${item.icon||'fa-chart-line'}"></i></div>
+      <div style="flex:1;min-width:0">
+        <div class="cat-mgr-name">${escHtml(item.name)}</div>
+        <div class="dash-manager-note">${escHtml(getDashboardApi(item))}</div>
+      </div>
+      <span class="cat-mgr-perm perm-leader">leader+</span>
+      <div class="cat-mgr-actions">
+        <button onclick="openDashboardItemModal(${item.id})" class="icon-btn" title="Edit"><i class="fas fa-edit"></i></button>
+        <button onclick="deleteDashboardItemConfirm(${item.id})" class="icon-btn" style="color:#ef4444" title="Delete"><i class="fas fa-trash"></i></button>
+      </div>
+    </div>`).join('');
+}
+function dashDragStart(e,id){ dashDragSrc=id; e.dataTransfer.effectAllowed='move'; e.currentTarget.classList.add('cat-dragging'); }
+function dashDragOver(e){ e.preventDefault(); e.dataTransfer.dropEffect='move'; document.querySelectorAll('#dashboardManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-drag-over')); e.currentTarget.classList.add('cat-drag-over'); }
+function dashDragEnd(){ document.querySelectorAll('#dashboardManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-dragging','cat-drag-over')); }
+async function dashDrop(e,targetId){
+  e.preventDefault();
+  if(dashDragSrc===targetId){ dashDragEnd(); return; }
+  dashDragEnd();
+  const items=[...(appData.dashboardItems||[])];
+  const fromIdx=items.findIndex(x=>x.id===dashDragSrc);
+  const toIdx=items.findIndex(x=>x.id===targetId);
+  if(fromIdx<0||toIdx<0) return;
+  const [moved]=items.splice(fromIdx,1);
+  items.splice(toIdx,0,moved);
+  appData.dashboardItems=items;
+  renderDashboardManagerList();
+  renderDashboardDropdown();
+  renderMobileDashboardMenu();
+  try{
+    const res=await fetch(`${API_URL}/dashboards/sort`,{
+      method:'POST', headers:getHeaders(), body:JSON.stringify({order:items.map(x=>x.id)})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Sort failed');
+    refreshData(true);
+  }catch(e){ showToast('Failed to save dashboard order: '+e.message,'error'); }
+}
+
+function cancelDashboardItemModal(){
+  closeModal('dashboardItemModal');
+  if(!el('dashboardManagerModal').classList.contains('hidden')) return;
+  if(isAdmin()) openDashboardManagerModal();
+}
+
+function openDashboardItemModal(id=null){
+  if(!isAdmin()) return showToast('Admin only','error');
+  el('dashboardManagerModal').classList.add('hidden');
+  el('dashboardItemModal').classList.remove('hidden');
+  el('dashboardItemModalTitle').textContent=id?'Edit Dashboard':'Add Dashboard';
+  el('dashboardItemId').value=id||'';
+  if(id){
+    const item=(appData.dashboardItems||[]).find(x=>x.id===id);
+    if(!item) return;
+    el('dashboardItemName').value=item.name||'';
+    el('dashboardItemIcon').value=item.icon||'fa-chart-line';
+    el('dashboardItemApi').value=getDashboardApi(item);
+  } else {
+    el('dashboardItemForm').reset();
+    el('dashboardItemIcon').value='fa-chart-line';
+  }
+}
+function slugify(s=''){ return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
+async function saveDashboardItem(){
+  if(!isAdmin()) return showToast('Admin only','error');
+  const id=el('dashboardItemId').value;
+  const name=el('dashboardItemName').value.trim();
+  const icon=el('dashboardItemIcon').value;
+  const api_url=el('dashboardItemApi').value.trim();
+  if(!name||!api_url) return showToast('Name and API URL are required','error');
+  const payload={ id:id?parseInt(id):null, name, slug:slugify(name), icon, api_url, min_role_required:'leader' };
+  if(await saveToApi('dashboard_items',payload)){
+    closeModal('dashboardItemModal');
+    openDashboardManagerModal();
+    dashboardPrefetchStarted=false;
+    startDashboardPrefetch(true);
+  }
+}
+async function deleteDashboardItemConfirm(id){
+  if(!isAdmin()) return;
+  if(!confirm('Delete this dashboard item?')) return;
+  await deleteFromApi('dashboard_items',id);
+  if(currentDashboardId===id){
+    currentDashboardId=null;
+    currentDashboardItem=null;
+    currentDashboardPayload=null;
+    currentDashboardRows=[];
+    renderDashboardEmpty('Dashboard item deleted');
+  }
+  renderDashboardManagerList();
+  renderDashboardDropdown();
+  renderMobileDashboardMenu();
+}
+
+function openDashboardSettingsModal(){
+  if(!isAdmin()) return showToast('Admin only','error');
+  if(!currentDashboardId||!currentDashboardItem) return showToast('Open a dashboard item first','info');
+  renderDashboardSettingsForm(getDashboardSettings(currentDashboardItem,currentDashboardPayload));
+  el('dashboardSettingsModal').classList.remove('hidden');
+}
+function renderDashboardSettingsForm(settings){
+  const form=el('dashboardSettingsForm');
+  if(!form) return;
+  const cardsMeta=[
+    ['totalTickets','Total Tickets KPI','Top left summary card'],
+    ['avgResolve','Avg Resolve KPI','Average resolution duration card'],
+    ['closedRate','Closed Rate KPI','Closed percentage donut'],
+    ['quickSummary','Quick Summary KPI','Overtime and repeat counters'],
+    ['trendChart','Trend Chart','Ticket trend chart'],
+    ['statusChart','Status Chart','Status breakdown chart'],
+    ['problemChart','Problem Chart','Top ticket problems chart'],
+    ['siteChart','Site Chart','Top site code chart'],
+    ['rootCauseChart','Root Cause Chart','Root cause chart'],
+    ['repeatChart','Repeat Complaint','Repeat complaint chart/list'],
+  ];
+  const limitMeta=[
+    ['trendPoints','Trend points','Latest day/week/month/year points to show',3,60],
+    ['statusCount','Status categories','Max number of statuses',1,20],
+    ['problemCount','Problem categories','Max number of problem categories',1,20],
+    ['siteCount','Site categories','Max number of site codes',1,20],
+    ['rootCauseCount','Root cause categories','Max number of root causes',1,20],
+    ['repeatCount','Repeat complaint rows','Max number of repeated services',1,20],
+  ];
+  form.innerHTML=`
+    <div class="dash-set-wrap">
+      <div class="dash-set-section">
+        <div class="dash-set-title">Dashboard Style</div>
+        <div class="dash-set-sub">Choose the default time grouping for this dashboard item.</div>
+        <div class="dash-limit-grid">
+          <div class="dash-limit-item">
+            <div>
+              <label for="ds_defaultGrouping">Default grouping</label>
+              <small>Used when the page opens</small>
+            </div>
+            <select id="ds_defaultGrouping" class="dash-set-select">
+              ${['day','week','month','year'].map(g=>`<option value="${g}" ${settings.defaultGrouping===g?'selected':''}>${DASHBOARD_GROUP_LABELS[g]}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="dash-set-section">
+        <div class="dash-set-title">Show / Hide + Graph Type</div>
+        <div class="dash-set-sub">Each dashboard item can use different charts and hide any card you do not need.</div>
+        <div class="dash-set-grid">
+          ${cardsMeta.map(([key,label,sub])=>`
+            <div class="dash-set-card">
+              <div>
+                <div class="dash-set-card-title">${escHtml(label)}</div>
+                <div class="dash-set-card-sub">${escHtml(sub)}</div>
+              </div>
+              <label style="display:flex;align-items:center;gap:.55rem;font-size:.8rem;font-weight:700;color:var(--text2)">
+                <span>Show</span>
+                <input id="ds_${key}" class="dash-inline-toggle" type="checkbox" ${settings.showCards[key]?'checked':''}>
+              </label>
+              ${DASHBOARD_GRAPH_OPTIONS[key]
+                ? `<select id="dsg_${key}" class="dash-set-select">${DASHBOARD_GRAPH_OPTIONS[key].map(opt=>`<option value="${opt.value}" ${settings.graphTypes[key]===opt.value?'selected':''}>${escHtml(opt.label)}</option>`).join('')}</select>`
+                : `<div></div>`}
+            </div>`).join('')}
+        </div>
+      </div>
+      <div class="dash-set-section">
+        <div class="dash-set-title">Category Limits</div>
+        <div class="dash-set-sub">Limit how many categories or rows each graph shows on this dashboard item.</div>
+        <div class="dash-limit-grid">
+          ${limitMeta.map(([key,label,sub,min,max])=>`
+            <div class="dash-limit-item">
+              <div>
+                <label for="dsl_${key}">${escHtml(label)}</label>
+                <small>${escHtml(sub)}</small>
+              </div>
+              <input id="dsl_${key}" class="dash-limit-input" type="number" min="${min}" max="${max}" value="${settings.limits[key]}">
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+function readDashboardSettingsForm(){
+  const settings=cloneDashboardDefaults();
+  settings.defaultGrouping=el('ds_defaultGrouping')?.value||'day';
+  Object.keys(settings.showCards).forEach(key=>{
+    settings.showCards[key]=!!el(`ds_${key}`)?.checked;
+  });
+  Object.keys(settings.limits).forEach(key=>{
+    const v=Number(el(`dsl_${key}`)?.value||settings.limits[key]);
+    if(Number.isFinite(v)&&v>0) settings.limits[key]=Math.round(v);
+  });
+  Object.keys(settings.graphTypes).forEach(key=>{
+    const val=el(`dsg_${key}`)?.value;
+    if(val) settings.graphTypes[key]=val;
+  });
+  return normalizeDashboardSettings(settings);
+}
+function resetDashboardSettingsForm(){ renderDashboardSettingsForm(cloneDashboardDefaults()); }
+async function saveDashboardSettings(){
+  if(!isAdmin()) return showToast('Admin only','error');
+  if(!currentDashboardId) return showToast('Open a dashboard item first','info');
+  const settings=readDashboardSettingsForm();
+  if(isProcessing){showToast('Please wait…','info');return;}
+  isProcessing=true;showLoading(true);updateProgress(15,'Saving dashboard settings...');
+  try{
+    const res=await fetch(`${API_URL}/dashboards/${currentDashboardId}/settings`,{
+      method:'PUT', headers:getHeaders(), body:JSON.stringify({settings})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to save settings');
+    if(currentDashboardItem){
+      currentDashboardItem.settings=settings;
+      currentDashboardItem.settings_json=JSON.stringify(settings);
+    }
+    const item=(appData.dashboardItems||[]).find(x=>x.id===currentDashboardId);
+    if(item){ item.settings=settings; item.settings_json=JSON.stringify(settings); }
+    currentDashboardFilters.groupBy=settings.defaultGrouping||'day';
+    renderDashboardFilterControls();
+    renderCurrentDashboard();
+    updateProgress(100,'Saved!'); await delay(220); hideLoading();
+    closeModal('dashboardSettingsModal');
+    showToast('Dashboard settings saved','success');
+  }catch(e){ hideLoading(); showToast(e.message); }
+  isProcessing=false;
+}
+
+async function startDashboardPrefetch(force=false){
+  if(!isLeader()) return;
+  const items=(appData.dashboardItems||[]).filter(x=>canSee(x.min_role_required||'leader'));
+  if(!items.length) return;
+  if(dashboardPrefetchStarted&&!force) return;
+  dashboardPrefetchStarted=true;
+  fetch(`${API_URL}/dashboards/prefetch`,{
+    method:'POST', headers:getHeaders(), body:JSON.stringify({ids:items.map(x=>x.id)})
+  }).catch(()=>null);
+  items.forEach(item=>fetchDashboardData(item.id,{silent:true}));
+}
+async function fetchDashboardData(id,{force=false,silent=false}={}){
+  if(!id) return null;
+  if(!force&&dashboardCache[id]) return dashboardCache[id];
+  if(!force&&dashboardFetchPromises[id]) return dashboardFetchPromises[id];
+  const item=(appData.dashboardItems||[]).find(x=>x.id===id);
+  if(!item) return null;
+  const run=(async()=>{
+    let data=await fetchAPI(`dashboards/${id}/data${force?'?refresh=1':''}`,{silentFail:silent});
+    if(!data&&getDashboardApi(item)){
+      try{
+        const res=await fetch(getDashboardApi(item));
+        if(res.ok) data=await res.json();
+      }catch(_){ /* ignore direct fallback errors */ }
+    }
+    if(data) dashboardCache[id]=data;
+    return data;
+  })();
+  dashboardFetchPromises[id]=run;
+  try{ return await run; }
+  finally{ delete dashboardFetchPromises[id]; }
+}
+
+async function showDashboardItem(id,name='Dashboard'){
+  if(!isLeader()) return showToast('Leader or above required','error');
+  currentDashboardId=id;
+  currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'};
+  document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
+  el('dashboardPage').classList.remove('hidden');
+  document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('[data-page="dashboard"]').forEach(b=>b.classList.add('active'));
+  if(el('dashboardDropdown')) el('dashboardDropdown').classList.add('hidden');
+  renderDashboardLoading(currentDashboardItem);
+  const data=await fetchDashboardData(id,{silent:false});
+  if(currentDashboardId!==id) return;
+  if(data){
+    currentDashboardPayload=data;
+    currentDashboardRows=extractDashboardRows(data);
+    initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows);
+    renderDashboardFilterControls();
+    renderCurrentDashboard();
+  } else {
+    renderDashboardEmpty('Unable to load dashboard data. Please check the API URL or worker route.');
+  }
+}
+async function refreshCurrentDashboard(force=false){
+  if(!currentDashboardId||!currentDashboardItem) return showToast('Select a dashboard item first','info');
+  renderDashboardLoading(currentDashboardItem);
+  const data=await fetchDashboardData(currentDashboardId,{force:!!force,silent:false});
+  if(data){
+    currentDashboardPayload=data;
+    currentDashboardRows=extractDashboardRows(data);
+    initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true);
+    renderDashboardFilterControls();
+    renderCurrentDashboard();
+  } else {
+    renderDashboardEmpty('Refresh failed. Please check the API source.');
+  }
+}
+function initializeDashboardFilters(item,payload,rows,preserveSelectors=false){
+  const settings=getDashboardSettings(item,payload);
+  currentDashboardFilters = {
+    groupBy: preserveSelectors ? (currentDashboardFilters.groupBy||settings.defaultGrouping||'day') : (settings.defaultGrouping||'day'),
+    site: preserveSelectors ? currentDashboardFilters.site : '',
+    township: preserveSelectors ? currentDashboardFilters.township : '',
+    queue: preserveSelectors ? currentDashboardFilters.queue : '',
+  };
+  const options=getDashboardFilterOptions(rows);
+  ['site','township','queue'].forEach(key=>{
+    const selected=currentDashboardFilters[key];
+    if(selected && !options[key].includes(selected)) currentDashboardFilters[key]='';
+  });
+}
+function getDashboardFilterOptions(rows){
+  const unique = { site:new Set(), township:new Set(), queue:new Set() };
+  rows.forEach(row=>{
+    const site=getRowValue(row,['opisitecode','sitecode','opi site code']);
+    const township=getRowValue(row,['township']);
+    const queue=getRowValue(row,['queue']);
+    if(site) unique.site.add(site);
+    if(township) unique.township.add(township);
+    if(queue) unique.queue.add(queue);
+  });
+  return {
+    site:[...unique.site].sort((a,b)=>a.localeCompare(b)),
+    township:[...unique.township].sort((a,b)=>a.localeCompare(b)),
+    queue:[...unique.queue].sort((a,b)=>a.localeCompare(b)),
+  };
+}
+function renderDashboardFilterControls(){
+  const bar=el('dashboardFilterBar');
+  if(!bar){ return; }
+  if(!currentDashboardItem){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
+  const options=getDashboardFilterOptions(currentDashboardRows);
+  const filteredCount=filterDashboardRows(currentDashboardRows,currentDashboardFilters).length;
+  bar.classList.remove('hidden');
+  bar.innerHTML=`
+    <div class="dash-filter-left">
+      <span class="dash-filter-title">Date Group</span>
+      <div class="dash-seg">
+        ${['day','week','month','year'].map(g=>`<button class="dash-seg-btn ${currentDashboardFilters.groupBy===g?'active':''}" onclick="setDashboardGroupBy('${g}')">${DASHBOARD_GROUP_LABELS[g]}</button>`).join('')}
+      </div>
+    </div>
+    <div class="dash-filter-right">
+      <span class="dash-filter-count">Showing ${filteredCount} / ${currentDashboardRows.length} rows</span>
+      ${renderDashboardFilterSelect('site','Site Code',options.site,currentDashboardFilters.site)}
+      ${renderDashboardFilterSelect('township','Township',options.township,currentDashboardFilters.township)}
+      ${renderDashboardFilterSelect('queue','Queue',options.queue,currentDashboardFilters.queue)}
+      <button onclick="resetDashboardFilters()" class="btn-secondary btn-sm"><i class="fas fa-filter-circle-xmark"></i> Reset</button>
+    </div>`;
+}
+function renderDashboardFilterSelect(key,label,options,selected){
+  return `<select id="dashboardFilter_${key}" class="dash-fctrl" onchange="onDashboardFilterChange()">
+    <option value="">All ${escHtml(label)}</option>
+    ${options.map(opt=>`<option value="${escAttr(opt)}" ${selected===opt?'selected':''}>${escHtml(opt)}</option>`).join('')}
+  </select>`;
+}
+function onDashboardFilterChange(){
+  currentDashboardFilters.site=el('dashboardFilter_site')?.value||'';
+  currentDashboardFilters.township=el('dashboardFilter_township')?.value||'';
+  currentDashboardFilters.queue=el('dashboardFilter_queue')?.value||'';
+  renderDashboardFilterControls();
+  renderCurrentDashboard();
+}
+function setDashboardGroupBy(groupBy){
+  currentDashboardFilters.groupBy=groupBy;
+  renderDashboardFilterControls();
+  renderCurrentDashboard();
+}
+function resetDashboardFilters(){
+  const settings=getDashboardSettings(currentDashboardItem,currentDashboardPayload);
+  currentDashboardFilters={ groupBy:settings.defaultGrouping||'day', site:'', township:'', queue:'' };
+  renderDashboardFilterControls();
+  renderCurrentDashboard();
+}
+function filterDashboardRows(rows,filters){
+  return rows.filter(row=>{
+    const site=getRowValue(row,['opisitecode','sitecode','opi site code'])||'';
+    const township=getRowValue(row,['township'])||'';
+    const queue=getRowValue(row,['queue'])||'';
+    if(filters.site && site!==filters.site) return false;
+    if(filters.township && township!==filters.township) return false;
+    if(filters.queue && queue!==filters.queue) return false;
+    return true;
+  });
+}
+function renderDashboardLoading(item={}){
+  destroyDashboardCharts();
+  if(el('dashboardTitleText')) el('dashboardTitleText').textContent=item.name||'Dashboard';
+  const meta=el('dashboardMeta');
+  if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; }
+  const bar=el('dashboardFilterBar');
+  if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; }
+  el('dashboardContainer').innerHTML=`
+    <div class="dashboard-skeleton">
+      <div class="dash-skel"></div>
+      <div class="dash-skel"></div>
+      <div class="dash-skel"></div>
+      <div class="dash-skel"></div>
+      <div class="dash-skel wide"></div>
+      <div class="dash-skel tall"></div>
+      <div class="dash-skel"></div>
+      <div class="dash-skel"></div>
+      <div class="dash-skel"></div>
+      <div class="dash-skel"></div>
+    </div>`;
+}
+function renderDashboardEmpty(message='No dashboard item selected'){
+  destroyDashboardCharts();
+  const meta=el('dashboardMeta');
+  if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; }
+  const bar=el('dashboardFilterBar');
+  if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; }
+  el('dashboardContainer').innerHTML=`
+    <div class="dash-empty">
+      <i class="fas fa-chart-pie"></i>
+      <h3>Dashboard Preview</h3>
+      <p>${escHtml(message)}</p>
+    </div>`;
+}
+function renderCurrentDashboard(){
+  if(!currentDashboardItem||!currentDashboardPayload){
+    renderDashboardEmpty('Dashboard data is not loaded yet.');
+    return;
+  }
+  const filteredRows=filterDashboardRows(currentDashboardRows,currentDashboardFilters);
+  renderDashboardData(currentDashboardItem,currentDashboardPayload,filteredRows,currentDashboardFilters);
+}
+function renderDashboardData(item,payload,rows,filters){
+  destroyDashboardCharts();
+  const settings=getDashboardSettings(item,payload);
+  const stats=buildDashboardStats(rows,item,filters.groupBy);
+  const meta=buildDashboardMeta(payload,item,rows.length,filters,currentDashboardRows.length);
+  const metaEl=el('dashboardMeta');
+  if(metaEl){
+    metaEl.classList.toggle('hidden',!meta.length);
+    metaEl.innerHTML=meta.map(m=>`<span class="meta-chip"><i class="fas ${m.icon}"></i> ${escHtml(m.text)}</span>`).join('');
+  }
+  el('dashboardTitleText').textContent=item.name||'Dashboard';
+  const cards=[];
+  if(settings.showCards.totalTickets) cards.push(renderKpiCard('Total Tickets',stats.totalRows,'fa-ticket','Filtered rows',`${stats.closedCount} closed / ${stats.openCount} open`));
+  if(settings.showCards.avgResolve) cards.push(renderKpiCard('Avg Resolve Time',formatHours(stats.avgResolutionHours),'fa-clock','Resolved tickets only',`${stats.resolvedCount} resolved`));
+  if(settings.showCards.closedRate) cards.push(renderDonutCard('Closed Rate',Math.round(stats.closedRate),'fa-circle-check','Closed vs filtered rows'));
+  if(settings.showCards.quickSummary) cards.push(renderMiniSummaryCard('Overtime / Repeat',[
+    {label:'Overtime',value:stats.overtimeCount,color:'amber'},
+    {label:'Repeat',value:stats.repeatCustomers,color:'violet'},
+    {label:'Group By',value:DASHBOARD_GROUP_LABELS[filters.groupBy],color:'green'}
+  ]));
+  if(settings.showCards.trendChart) cards.push(renderChartCard('Ticket Trend',`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy].toLowerCase()}`,'fa-chart-line','dashTrendCanvas','trend'));
+  if(settings.showCards.statusChart) cards.push(renderChartCard('Status Distribution','Filtered ticket status mix','fa-layer-group','dashStatusCanvas','bars'));
+  if(settings.showCards.problemChart) cards.push(renderChartCard('Top Ticket Problems','Most frequent customer issues','fa-triangle-exclamation','dashProblemCanvas','wide'));
+  if(settings.showCards.siteChart) cards.push(renderChartCard('Top Site Codes','Most complaint-heavy sites','fa-network-wired','dashSiteCanvas','wide'));
+  if(settings.showCards.rootCauseChart) cards.push(renderChartCard('Root Cause Trend','Root cause summary','fa-bug','dashRootCanvas','bars'));
+  if(settings.showCards.repeatChart){
+    if(settings.graphTypes.repeatChart==='list') cards.push(renderRepeatListCard(stats,settings));
+    else cards.push(renderChartCard('Repeat Complaints','Repeated Local Service ID / CPE','fa-rotate-left','dashRepeatCanvas','list'));
+  }
+  el('dashboardContainer').innerHTML=cards.length
+    ? `<div class="dashboard-board">${cards.join('')}</div>`
+    : `<div class="dash-empty"><i class="fas fa-eye-slash"></i><h3>All cards are hidden</h3><p>Open Dashboard Settings and enable at least one card for this dashboard item.</p></div>`;
+  requestAnimationFrame(()=>renderDashboardCharts(stats,settings,filters));
+}
+function buildDashboardMeta(payload,item,rowCount,filters,totalRows){
+  const out=[];
+  const src=getDashboardApi(item);
+  const synced=payload?.syncedAt||payload?.lastSynced||payload?.last_sync||payload?.fetched_at||payload?.updatedAt;
+  out.push({icon:'fa-database',text:`${rowCount} of ${totalRows} rows`});
+  out.push({icon:'fa-calendar-days',text:`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`});
+  if(filters.site) out.push({icon:'fa-network-wired',text:`Site ${filters.site}`});
+  if(filters.township) out.push({icon:'fa-location-dot',text:`Township ${filters.township}`});
+  if(filters.queue) out.push({icon:'fa-filter',text:`Queue ${filters.queue}`});
+  if(synced) out.push({icon:'fa-rotate',text:`Last sync ${formatMetaDate(synced)}`});
+  if(src) out.push({icon:'fa-link',text:src});
+  return out;
+}
+function extractDashboardRows(payload){
+  if(Array.isArray(payload)) return payload;
+  if(!payload||typeof payload!=='object') return [];
+  if(Array.isArray(payload.rows)) return payload.rows;
+  if(Array.isArray(payload.data)) return payload.data;
+  if(payload.data&&Array.isArray(payload.data.rows)) return payload.data.rows;
+  if(payload.data&&Array.isArray(payload.data.data)) return payload.data.data;
+  if(payload.data&&Array.isArray(payload.data.result)) return payload.data.result;
+  if(payload.result&&Array.isArray(payload.result)) return payload.result;
+  return [];
+}
+function buildDashboardStats(rows,item,groupBy='day'){
+  const statusCount={};
+  const issueCount={};
+  const siteCount={};
+  const rootCount={};
+  const queueCount={};
+  const townshipCount={};
+  const repeatCount={};
+  const trendCount={};
+  let resolvedCount=0,totalResolutionHours=0,overtimeCount=0,closedCount=0,openCount=0;
+  const overtimeHours=getDashboardSla(item);
+  rows.forEach(row=>{
+    const status=getRowValue(row,['status'])||'Unknown';
+    incMap(statusCount,status);
+    const statusKey=normalizeKey(status);
+    if(statusKey.includes('closed')||statusKey.includes('resolved')) closedCount++;
+    else openCount++;
+    const problem=getRowValue(row,['ticketproblem','problem','issue'])||'Unknown';
+    incMap(issueCount,problem);
+    const site=getRowValue(row,['opisitecode','sitecode','opi site code'])||'Unknown';
+    incMap(siteCount,site);
+    const root=getRowValue(row,['servicerootcause','rootcausecategory','rootcause','service root cause'])||'Unknown';
+    incMap(rootCount,root);
+    const queue=getRowValue(row,['queue'])||'Unknown';
+    incMap(queueCount,queue);
+    const township=getRowValue(row,['township'])||'Unknown';
+    incMap(townshipCount,township);
+    const repeatKey=getRowValue(row,['localserviceid','cpeid','serviceid'])||'';
+    if(repeatKey) incMap(repeatCount,repeatKey);
+    const created=parseFlexibleDate(getRowValue(row,['created','datecreated','createdat']));
+    const resolved=parseFlexibleDate(getRowValue(row,['resolved','closedat']));
+    if(created){
+      const bucket=formatTimeBucket(created,groupBy);
+      incMap(trendCount,bucket);
+    }
+    if(created&&resolved&&resolved>=created){
+      const hrs=(resolved-created)/36e5;
+      totalResolutionHours+=hrs;
+      resolvedCount++;
+      if(hrs>overtimeHours) overtimeCount++;
+    }
+  });
+  const totalRows=rows.length;
+  const repeatEntries=sortMap(repeatCount).filter(([,v])=>v>1);
+  return {
+    totalRows,
+    closedCount,
+    openCount,
+    resolvedCount,
+    avgResolutionHours: resolvedCount ? totalResolutionHours/resolvedCount : 0,
+    overtimeCount,
+    closedRate: totalRows ? closedCount/totalRows*100 : 0,
+    repeatCustomers: repeatEntries.length,
+    topProblems: sortMap(issueCount),
+    topSites: sortMap(siteCount),
+    topRootCauses: sortMap(rootCount),
+    topQueues: sortMap(queueCount),
+    topTownships: sortMap(townshipCount),
+    trendSeries: sortTrendMap(trendCount),
+    statusSeries: sortMap(statusCount),
+    repeatEntries,
+  };
+}
+function renderKpiCard(title,value,icon,sub,note){
+  return `<div class="dash-card dash-card--kpi">
+    <div class="dash-head">
+      <div><div class="dash-eyebrow">Summary</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">${escHtml(sub)}</div></div>
+      <div class="dash-icon-badge"><i class="fas ${icon}"></i></div>
+    </div>
+    <div class="kpi-value">${escHtml(String(value))}</div>
+    <div class="kpi-note"><i class="fas fa-wave-square"></i> ${escHtml(note)}</div>
+  </div>`;
+}
+function renderDonutCard(title,pct,icon,sub){
+  const safe=Math.max(0,Math.min(100,Number(pct)||0));
+  return `<div class="dash-card dash-card--donut">
+    <div class="dash-head">
+      <div><div class="dash-eyebrow">KPI</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">${escHtml(sub)}</div></div>
+      <div class="dash-icon-badge"><i class="fas ${icon}"></i></div>
+    </div>
+    <div class="donut-wrap">
+      <div style="position:relative">
+        <div class="donut-ring" style="--pct:${safe}"></div>
+        <div class="donut-center"><div class="donut-value">${safe}%</div><div class="donut-label">Closed</div></div>
+      </div>
+      <div class="dash-chip-row">
+        <span class="dash-chip"><i class="fas fa-circle-check"></i> Real chart cards are below</span>
+      </div>
+    </div>
+  </div>`;
+}
+function renderMiniSummaryCard(title,items){
+  return `<div class="dash-card dash-card--mini">
+    <div class="dash-head">
+      <div><div class="dash-eyebrow">Quick View</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">Fast operational counters</div></div>
+      <div class="dash-icon-badge"><i class="fas fa-gauge-high"></i></div>
+    </div>
+    <div class="mini-stack">${items.map(item=>`
+      <div>
+        <div class="metric-row"><span>${escHtml(item.label)}</span><strong>${escHtml(String(item.value))}</strong></div>
+        <div class="progress-track"><div class="progress-fill progress-fill--${escAttr(item.color||'slate')}" style="width:${Math.min(100,Math.max(12,Number(item.value)||0))}%"></div></div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+function renderChartCard(title,sub,icon,canvasId,size='wide'){
+  const cls=size==='trend' ? 'dash-card dash-card--trend dash-chart-card'
+    : size==='bars' ? 'dash-card dash-card--bars dash-chart-card'
+    : size==='list' ? 'dash-card dash-card--list dash-chart-card'
+    : 'dash-card dash-card--wide dash-chart-card';
+  const wrapClass=size==='trend' ? 'dash-chart-wrap' : size==='bars' ? 'dash-chart-wrap dash-chart-wrap--sm' : 'dash-chart-wrap dash-chart-wrap--xs';
+  return `<div class="${cls}">
+    <div class="dash-head">
+      <div><div class="dash-eyebrow">Chart</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">${escHtml(sub)}</div></div>
+      <div class="dash-icon-badge"><i class="fas ${icon}"></i></div>
+    </div>
+    <div class="${wrapClass}">
+      <canvas id="${canvasId}"></canvas>
+      <div class="dash-chart-empty hidden" id="${canvasId}_empty"></div>
+    </div>
+    <div class="dash-chart-note">You can change this chart type from Dashboard Settings.</div>
+  </div>`;
+}
+function renderRepeatListCard(stats,settings){
+  const rows=stats.repeatEntries.slice(0,settings.limits.repeatCount);
+  return `<div class="dash-card dash-card--list">
+    <div class="dash-head">
+      <div><div class="dash-eyebrow">Repeat</div><div class="dash-title">Multiple-Time Complaints</div><div class="dash-sub">Repeated Local Service ID / CPE</div></div>
+      <div class="dash-icon-badge"><i class="fas fa-rotate-left"></i></div>
+    </div>
+    <div class="repeat-list">${rows.map(([key,val])=>`
+      <div class="repeat-item">
+        <div><strong>${escHtml(key)}</strong><span>Repeated complaint</span></div>
+        <div class="repeat-badge">${val}x</div>
+      </div>`).join('') || '<div class="dash-empty"><p>No repeat complaint found in current filter.</p></div>'}
+    </div>
+  </div>`;
+}
+function renderDashboardCharts(stats,settings,filters){
+  if(typeof Chart==='undefined'){
+    document.querySelectorAll('.dash-chart-empty').forEach(box=>{
+      box.classList.remove('hidden');
+      box.innerHTML='Chart.js did not load in preview. It will work on your deployed Cloudflare Pages site.';
+    });
+    return;
+  }
+  Chart.defaults.font.family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+  Chart.defaults.color=getComputedStyle(document.documentElement).getPropertyValue('--text2').trim()||'#64748b';
+  if(settings.showCards.trendChart){
+    const series=stats.trendSeries.slice(-settings.limits.trendPoints);
+    createDashboardChart('dashTrendCanvas', buildTrendChartConfig(series, settings.graphTypes.trendChart, filters.groupBy));
+  }
+  if(settings.showCards.statusChart){
+    createDashboardChart('dashStatusCanvas', buildCategoryChartConfig(
+      settings.graphTypes.statusChart,
+      stats.statusSeries.slice(0,settings.limits.statusCount),
+      'Ticket Status'
+    ));
+  }
+  if(settings.showCards.problemChart){
+    createDashboardChart('dashProblemCanvas', buildCategoryChartConfig(
+      settings.graphTypes.problemChart,
+      stats.topProblems.slice(0,settings.limits.problemCount),
+      'Top Problems'
+    ));
+  }
+  if(settings.showCards.siteChart){
+    createDashboardChart('dashSiteCanvas', buildCategoryChartConfig(
+      settings.graphTypes.siteChart,
+      stats.topSites.slice(0,settings.limits.siteCount),
+      'Top Sites'
+    ));
+  }
+  if(settings.showCards.rootCauseChart){
+    createDashboardChart('dashRootCanvas', buildCategoryChartConfig(
+      settings.graphTypes.rootCauseChart,
+      stats.topRootCauses.slice(0,settings.limits.rootCauseCount),
+      'Root Cause'
+    ));
+  }
+  if(settings.showCards.repeatChart && settings.graphTypes.repeatChart!=='list'){
+    createDashboardChart('dashRepeatCanvas', buildCategoryChartConfig(
+      settings.graphTypes.repeatChart,
+      stats.repeatEntries.slice(0,settings.limits.repeatCount),
+      'Repeat Complaint'
+    ));
+  }
+}
+function createDashboardChart(canvasId, config){
+  const canvas=el(canvasId);
+  const empty=el(`${canvasId}_empty`);
+  if(!canvas) return;
+  const labels=config?.data?.labels||[];
+  if(!labels.length){
+    if(empty){ empty.classList.remove('hidden'); empty.textContent='No data for current filter.'; }
+    return;
+  }
+  if(empty){ empty.classList.add('hidden'); empty.textContent=''; }
+  const chart=new Chart(canvas.getContext('2d'), config);
+  dashboardChartInstances.push(chart);
+}
+function buildTrendChartConfig(series, graphType, groupBy){
+  const labels=series.map(x=>formatBucketLabel(x[0],groupBy));
+  const data=series.map(x=>x[1]);
+  const isBar=graphType==='bar';
+  const isArea=graphType==='area';
+  return {
+    type: isBar ? 'bar' : 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Tickets',
+        data,
+        borderColor: '#6366f1',
+        backgroundColor: isBar ? 'rgba(99,102,241,.72)' : (isArea ? 'rgba(99,102,241,.18)' : 'rgba(99,102,241,.2)'),
+        fill: !isBar,
+        tension: .35,
+        pointRadius: 3,
+        pointHoverRadius: 4,
+        borderWidth: 3,
+        borderRadius: 10,
+        maxBarThickness: 34,
+      }]
+    },
+    options: buildChartOptions({ legend:false, indexAxis:'x' })
+  };
+}
+function buildCategoryChartConfig(graphType, entries, label){
+  const labels=entries.map(x=>x[0]);
+  const data=entries.map(x=>x[1]);
+  const type=graphType==='hbar' ? 'bar' : graphType;
+  const backgroundColor=labels.map((_,i)=>hexToRgba(DASHBOARD_COLOR_SET[i % DASHBOARD_COLOR_SET.length], type==='bar' ? .78 : .9));
+  const borderColor=labels.map((_,i)=>DASHBOARD_COLOR_SET[i % DASHBOARD_COLOR_SET.length]);
+  return {
+    type,
+    data: {
+      labels,
+      datasets: [{
+        label,
+        data,
+        backgroundColor,
+        borderColor,
+        borderWidth: 2,
+        borderRadius: type==='bar' ? 10 : 0,
+        maxBarThickness: 38,
+      }]
+    },
+    options: buildChartOptions({ legend:type!=='bar', indexAxis: graphType==='hbar' ? 'y' : 'x', showScales: !['doughnut','pie','polarArea'].includes(type) })
+  };
+}
+function buildChartOptions({ legend=true, indexAxis='x', showScales=true }={}){
+  return {
+    responsive:true,
+    maintainAspectRatio:false,
+    indexAxis,
+    plugins:{
+      legend:{ display:legend, position:'bottom', labels:{ usePointStyle:true, boxWidth:10, boxHeight:10, padding:16 } },
+      tooltip:{ mode:'index', intersect:false },
+    },
+    scales: showScales
+      ? {
+          x: indexAxis==='x' ? { grid:{ display:false }, ticks:{ maxRotation:0, autoSkip:true } } : { grid:{ display:false } },
+          y: indexAxis==='x' ? { beginAtZero:true, ticks:{ precision:0 }, grid:{ color:'rgba(148,163,184,.14)' } } : { beginAtZero:true, ticks:{ precision:0 }, grid:{ display:false } },
+        }
+      : {}
+  };
+}
+function hexToRgba(hex, alpha){
+  const h=hex.replace('#','');
+  const full=h.length===3 ? h.split('').map(ch=>ch+ch).join('') : h;
+  const n=parseInt(full,16);
+  const r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+function normalizeKey(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,''); }
+function getRowValue(row,aliases){
+  if(!row||typeof row!=='object') return '';
+  const keys=Object.keys(row);
+  const normalized={};
+  keys.forEach(k=>normalized[normalizeKey(k)]=row[k]);
+  for(const alias of aliases){
+    const hit=normalized[normalizeKey(alias)];
+    if(hit!==undefined&&hit!==null&&String(hit).trim()!=='') return String(hit).trim();
+  }
+  return '';
+}
+function incMap(map,key){ const k=String(key||'Unknown').trim()||'Unknown'; map[k]=(map[k]||0)+1; }
+function sortMap(map){ return Object.entries(map).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])); }
+function sortTrendMap(map){ return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])); }
+function formatTimeBucket(date,groupBy='day'){
+  const y=date.getFullYear();
+  const m=String(date.getMonth()+1).padStart(2,'0');
+  const d=String(date.getDate()).padStart(2,'0');
+  if(groupBy==='year') return `${y}`;
+  if(groupBy==='month') return `${y}-${m}`;
+  if(groupBy==='week'){
+    const start=getWeekStart(date);
+    return `${start.getFullYear()}-W${String(getISOWeek(start)).padStart(2,'0')}`;
+  }
+  return `${y}-${m}-${d}`;
+}
+function getWeekStart(date){
+  const d=new Date(date); const day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); d.setHours(0,0,0,0); return d;
+}
+function getISOWeek(date){
+  const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));
+  d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7));
+  const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  return Math.ceil((((d-yearStart)/86400000)+1)/7);
+}
+function formatBucketLabel(bucket,groupBy){
+  if(groupBy==='year') return bucket;
+  if(groupBy==='month'){
+    const [yy,mm]=bucket.split('-');
+    return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(mm)-1]} ${yy}`;
+  }
+  if(groupBy==='week') return bucket.replace('-', ' ');
+  const d=parseFlexibleDate(bucket);
+  if(!d) return bucket;
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function formatMetaDate(v){
+  const d=parseFlexibleDate(v);
+  if(!d) return String(v);
+  return `${String(d.getDate()).padStart(2,'0')} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function parseFlexibleDate(value){
+  if(!value) return null;
+  if(value instanceof Date) return isNaN(value)?null:value;
+  const s=String(value).trim();
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[,\sT]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if(m){
+    const [,yy,mm,dd,hh='0',mi='0',ss='0']=m;
+    const d=new Date(Number(yy),Number(mm)-1,Number(dd),Number(hh),Number(mi),Number(ss));
+    return isNaN(d)?null:d;
+  }
+  const native=new Date(s.replace(',', ''));
+  return isNaN(native)?null:native;
+}
+function formatHours(v){
+  const n=Number(v)||0;
+  if(n<=0) return '0m';
+  if(n<1) return `${Math.round(n*60)}m`;
+  if(n<24) return `${n.toFixed(n>=10?1:2)}h`;
+  return `${(n/24).toFixed(1)}d`;
+}
 
 /* ══════════════════════════════════════════════════════════
    GENERIC API WRAPPERS (legacy saveToApi / deleteFromApi for admin CRUD)
@@ -1706,6 +2752,7 @@ function stopPolling(){
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'&&authHeader){
     refreshData(true);
+    if(isLeader()) startDashboardPrefetch(true);
     startPolling(); // restart timer from now so we don't double-poll
   } else {
     stopPolling(); // pause polling when tab is hidden (saves resources)
