@@ -8,7 +8,7 @@ const API_URL = '/api';
 let currentUser = null;
 let authHeader  = localStorage.getItem('authHeader');
 let isProcessing = false;
-let appData = { users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[] };
+let appData = { users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[] };
 
 // Learning state
 let currentFolderId     = null;
@@ -154,7 +154,7 @@ async function refreshData(silent=false){
   if(!silent)showLoading();
   const data=await fetchAPI('getData',{silentFail:silent});
   if(data){
-    appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], ...data };
+    appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[], ...data };
     if(!el('homePage').classList.contains('hidden'))renderUpdates();
     if(!el('learningPage').classList.contains('hidden'))renderLearning();
     if(!el('informationPage').classList.contains('hidden')&&currentInfoCategory)renderInfoCards();
@@ -199,7 +199,7 @@ el('loginForm').addEventListener('submit',async function(e){
       const d=await fetchAPI('getData');
       updateProgress(70,'Preparing...');await delay(200);
       if(d){
-        appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], ...d };
+        appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[], ...d };
         // Prefer currentUser from getData (works for all roles, not just admin)
         if(d.currentUser){
           currentUser={...currentUser,...d.currentUser};
@@ -233,7 +233,7 @@ function doShowApp(){
 
 function updateAdminUI(){
   // Admin-only elements
-  ['adminBtn','mobileAdminBtn','manageDashboardPageBtn','dashboardViewSettingsBtn','manageDashboardPagesBtn','clearDashboardCacheBtn'].forEach(id=>{
+  ['adminBtn','mobileAdminBtn','manageDashboardPageBtn','dashboardViewSettingsBtn','manageDashboardPagesBtn','manageDashboardWidgetsBtn','clearDashboardCacheBtn'].forEach(id=>{
     const e=el(id);if(e)isAdmin()?e.classList.remove('hidden'):e.classList.add('hidden');
   });
 
@@ -276,7 +276,7 @@ async function initApp(){
   updateProgress(60,'Loading...');await delay(200);
   if(!data){hideLoading();showLoginPage();return;}
   updateProgress(80,'Preparing...');await delay(150);
-  appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], ...data };
+  appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[], ...data };
   if(!currentUser){
     // Prefer currentUser returned by getData (available for ALL roles)
     if(data.currentUser){
@@ -613,6 +613,12 @@ function getDashboardSettings(item,payload=null){
   const raw=payload?.settings||item?.settings||item?.settings_json||item?.settingsJson||null;
   return normalizeDashboardSettings(raw);
 }
+function getDashboardWidgetsForPage(pageId){
+  return (appData.dashboardWidgets||[])
+    .filter(w=>Number(w.dashboard_page_id||w.dashboardPageId||0)===Number(pageId))
+    .sort((a,b)=>(Number(a.sort_order??a.sortOrder??0)-Number(b.sort_order??b.sortOrder??0)) || String(a.title||'').localeCompare(String(b.title||'')));
+}
+
 function getDashboardPagesForItem(dashboardItemId){
   const pages=(appData.dashboardPages||[])
     .filter(p=>Number(p.dashboard_item_id||p.dashboardItemId||0)===Number(dashboardItemId))
@@ -901,6 +907,109 @@ async function deleteDashboardPageConfirm(id){
   }catch(e){ hideLoading(); showToast(e.message); }
   isProcessing=false;
 }
+
+let dashWidgetDragSrc=null;
+function widgetTypeLabel(type){
+  return ({ totalTickets:'Total Tickets KPI', avgResolve:'Avg Resolve KPI', closedRate:'Closed Rate KPI', quickSummary:'Quick Summary', trendChart:'Trend Chart', statusChart:'Status Chart', problemChart:'Problem Chart', siteChart:'Site Chart', rootCauseChart:'Root Cause Chart', repeatChart:'Repeat Complaint', townshipChart:'Township Chart', queueChart:'Queue Chart', rawTable:'Raw Data Table' })[type] || type;
+}
+async function openDashboardWidgetManagerModal(){
+  if(!isAdmin()) return showToast('Admin only','error');
+  const page=getCurrentDashboardPage();
+  if(!currentDashboardId||!page) return showToast('Open a dashboard page first','info');
+  const modal=el('dashboardWidgetManagerModal');
+  modal.classList.remove('hidden');
+  renderDashboardWidgetManagerList();
+  refreshData(true).then(()=>{ if(!modal.classList.contains('hidden')) renderDashboardWidgetManagerList(); });
+}
+function renderDashboardWidgetManagerList(){
+  const list=el('dashboardWidgetManagerList');
+  if(!list) return;
+  const page=getCurrentDashboardPage();
+  const widgets=getDashboardWidgetsForPage(page.id);
+  list.innerHTML=widgets.map(w=>`<div class="cat-mgr-item" draggable="true" data-widget-id="${w.id}" ondragstart="dashWidgetDragStart(event,'${escAttr(String(w.id))}')" ondragover="dashWidgetDragOver(event)" ondrop="dashWidgetDrop(event,'${escAttr(String(w.id))}')" ondragend="dashWidgetDragEnd()"><div class="cat-mgr-drag"><i class="fas fa-grip-vertical"></i></div><div class="cat-mgr-icon"><i class="fas fa-chart-bar"></i></div><div style="flex:1;min-width:0"><div class="cat-mgr-name">${escHtml(w.title||widgetTypeLabel(w.widget_type||w.widgetType||''))}</div><div class="dash-widget-type">${escHtml(widgetTypeLabel(w.widget_type||w.widgetType||''))}</div></div><div class="cat-mgr-actions"><button onclick="openDashboardWidgetModal('${escAttr(String(w.id))}')" class="icon-btn" title="Edit"><i class="fas fa-edit"></i></button><button onclick="deleteDashboardWidgetConfirm('${escAttr(String(w.id))}')" class="icon-btn" style="color:#ef4444" title="Delete"><i class="fas fa-trash"></i></button></div></div>`).join('') || `<div class="dash-empty"><i class="fas fa-grip"></i><h3>No widgets on this page</h3><p>Add widgets to customize the current dashboard page.</p></div>`;
+}
+function dashWidgetDragStart(e,id){ dashWidgetDragSrc=String(id); e.dataTransfer.effectAllowed='move'; e.currentTarget.classList.add('cat-dragging'); }
+function dashWidgetDragOver(e){ e.preventDefault(); e.dataTransfer.dropEffect='move'; document.querySelectorAll('#dashboardWidgetManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-drag-over')); e.currentTarget.classList.add('cat-drag-over'); }
+function dashWidgetDragEnd(){ document.querySelectorAll('#dashboardWidgetManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-dragging','cat-drag-over')); }
+async function dashWidgetDrop(e,targetId){
+  e.preventDefault();
+  if(String(dashWidgetDragSrc)===String(targetId)){ dashWidgetDragEnd(); return; }
+  dashWidgetDragEnd();
+  const page=getCurrentDashboardPage();
+  const widgets=[...getDashboardWidgetsForPage(page.id)];
+  const fromIdx=widgets.findIndex(x=>String(x.id)===String(dashWidgetDragSrc));
+  const toIdx=widgets.findIndex(x=>String(x.id)===String(targetId));
+  if(fromIdx<0||toIdx<0) return;
+  const [moved]=widgets.splice(fromIdx,1); widgets.splice(toIdx,0,moved);
+  appData.dashboardWidgets=(appData.dashboardWidgets||[]).map(w=>{
+    const idx=widgets.findIndex(x=>String(x.id)===String(w.id));
+    return idx>=0 ? { ...w, sort_order:idx } : w;
+  });
+  renderDashboardWidgetManagerList();
+  try{
+    const res=await fetch(`${API_URL}/dashboardWidgets/sort`,{ method:'POST', headers:getHeaders(), body:JSON.stringify({ dashboard_page_id:page.id, order:widgets.map(x=>x.id) }) });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to sort widgets');
+    renderCurrentDashboard();
+  }catch(e){ showToast(e.message,'error'); }
+}
+function cancelDashboardWidgetModal(){ closeModal('dashboardWidgetModal'); if(!el('dashboardWidgetManagerModal').classList.contains('hidden')) return; openDashboardWidgetManagerModal(); }
+function openDashboardWidgetModal(id=null){
+  if(!isAdmin()) return showToast('Admin only','error');
+  const page=getCurrentDashboardPage();
+  if(!page) return showToast('Open a dashboard page first','info');
+  el('dashboardWidgetManagerModal').classList.add('hidden');
+  el('dashboardWidgetModal').classList.remove('hidden');
+  el('dashboardWidgetModalTitle').textContent=id?'Edit Widget':'Add Widget';
+  el('dashboardWidgetId').value=id||'';
+  if(id){
+    const widget=(appData.dashboardWidgets||[]).find(x=>String(x.id)===String(id));
+    if(!widget) return;
+    el('dashboardWidgetTitle').value=widget.title||'';
+    el('dashboardWidgetType').value=widget.widget_type||widget.widgetType||'trendChart';
+  } else {
+    el('dashboardWidgetForm').reset();
+    el('dashboardWidgetType').value='trendChart';
+  }
+}
+async function saveDashboardWidget(){
+  if(!isAdmin()) return showToast('Admin only','error');
+  const page=getCurrentDashboardPage();
+  if(!page) return showToast('Open a dashboard page first','info');
+  const id=el('dashboardWidgetId').value;
+  const title=el('dashboardWidgetTitle').value.trim();
+  const widget_type=el('dashboardWidgetType').value;
+  const payload={ title, widget_type, settings_json:'{}' };
+  const endpoint=id?`${API_URL}/dashboardWidgets/${id}`:`${API_URL}/dashboardPages/${page.id}/widgets`;
+  const method=id?'PUT':'POST';
+  if(isProcessing){ showToast('Please wait…','info'); return; }
+  isProcessing=true; showLoading(true); updateProgress(20,'Saving widget...');
+  try{
+    const res=await fetch(endpoint,{ method, headers:getHeaders(), body:JSON.stringify(payload) });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to save widget');
+    await refreshData(true);
+    renderCurrentDashboard();
+    hideLoading(); closeModal('dashboardWidgetModal'); await openDashboardWidgetManagerModal(); showToast('Widget saved','success');
+  }catch(e){ hideLoading(); showToast(e.message); }
+  isProcessing=false;
+}
+async function deleteDashboardWidgetConfirm(id){
+  if(!isAdmin()) return;
+  if(!confirm('Delete this widget?')) return;
+  if(isProcessing){ showToast('Please wait…','info'); return; }
+  isProcessing=true; showLoading(true); updateProgress(20,'Deleting widget...');
+  try{
+    const res=await fetch(`${API_URL}/dashboardWidgets/${id}`,{ method:'DELETE', headers:getHeaders() });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to delete widget');
+    await refreshData(true);
+    renderCurrentDashboard(); renderDashboardWidgetManagerList();
+    hideLoading(); showToast('Widget deleted','success');
+  }catch(e){ hideLoading(); showToast(e.message); }
+  isProcessing=false;
+}
+
 async function clearCurrentDashboardCache(){
   if(!isAdmin()) return showToast('Admin only','error');
   if(!currentDashboardId) return showToast('Open a dashboard item first','info');
@@ -1162,6 +1271,25 @@ function renderDashboardData(item,payload,rows,filters){
   el('dashboardContainer').innerHTML=cards.length ? `<div class="dashboard-board">${cards.join('')}</div>` : `<div class="dash-empty"><i class="fas fa-eye-slash"></i><h3>All cards are hidden</h3><p>Open Dashboard Settings and enable at least one card for this dashboard item.</p></div>`;
   if(pageSlug!=='raw-data') requestAnimationFrame(()=>renderDashboardCharts(stats,settings,filters));
 }
+function renderWidgetByType(widget, stats, settings, rows, filters){
+  const type=widget.widget_type||widget.widgetType||'';
+  const title=widget.title?.trim();
+  if(type==='totalTickets') return renderKpiCard(title||'Total Tickets',stats.totalRows,'fa-ticket','Filtered rows',`${stats.closedCount} closed / ${stats.openCount} open`);
+  if(type==='avgResolve') return renderKpiCard(title||'Avg Resolve Time',formatHours(stats.avgResolutionHours),'fa-clock','Resolved tickets only',`${stats.resolvedCount} resolved`);
+  if(type==='closedRate') return renderDonutCard(title||'Closed Rate',Math.round(stats.closedRate),'fa-circle-check','Closed vs filtered rows');
+  if(type==='quickSummary') return renderMiniSummaryCard(title||'Overtime / Repeat',[{label:'Overtime',value:stats.overtimeCount,color:'amber'},{label:'Repeat',value:stats.repeatCustomers,color:'violet'},{label:'Group By',value:DASHBOARD_GROUP_LABELS[filters.groupBy],color:'green'}]);
+  if(type==='trendChart') return renderChartCard(title||'Ticket Trend',`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy].toLowerCase()}`,'fa-chart-line','dashTrendCanvas','trend');
+  if(type==='statusChart') return renderChartCard(title||'Status Distribution','Filtered ticket status mix','fa-layer-group','dashStatusCanvas','bars');
+  if(type==='problemChart') return renderChartCard(title||'Top Ticket Problems','Most frequent customer issues','fa-triangle-exclamation','dashProblemCanvas','wide');
+  if(type==='siteChart') return renderChartCard(title||'Top Site Codes','Most complaint-heavy sites','fa-network-wired','dashSiteCanvas','wide');
+  if(type==='rootCauseChart') return renderChartCard(title||'Root Cause Trend','Service root cause summary','fa-bug','dashRootCanvas','wide');
+  if(type==='repeatChart') return settings.graphTypes.repeatChart==='list' ? renderRepeatListCard(stats,settings) : renderChartCard(title||'Repeat Complaints','Repeated Local Service ID / CPE','fa-rotate-left','dashRepeatCanvas','list');
+  if(type==='townshipChart') return renderChartCard(title||'Township Breakdown','Complaint distribution by township','fa-location-dot','dashTownshipCanvas','wide');
+  if(type==='queueChart') return renderChartCard(title||'Queue Distribution','Operational queue mix','fa-list-check','dashQueueCanvas','bars');
+  if(type==='rawTable') return renderRawDataCard(rows);
+  return '';
+}
+
 function buildDashboardMeta(payload,item,rowCount,filters,totalRows,pageName){
   const out=[]; const src=getDashboardApi(item); const synced=payload?.syncedAt||payload?.lastSynced||payload?.last_sync||payload?.fetched_at||payload?.updatedAt; const host=currentDashboardUrlHost();
   out.push({icon:'fa-table-cells',text:`${pageName} page`}); out.push({icon:'fa-database',text:`${fmtInt(rowCount)} of ${fmtInt(totalRows)} rows`}); out.push({icon:'fa-calendar-days',text:`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`}); if(filters.fromDate||filters.toDate) out.push({icon:'fa-calendar-range',text:`${filters.fromDate||'Start'} → ${filters.toDate||'Now'}`}); if(filters.site) out.push({icon:'fa-network-wired',text:`Site ${filters.site}`}); if(filters.township) out.push({icon:'fa-location-dot',text:`Township ${filters.township}`}); if(filters.queue) out.push({icon:'fa-filter',text:`Queue ${filters.queue}`}); if(synced) out.push({icon:'fa-rotate',text:`Last sync ${formatMetaDate(synced)}`}); if(payload?.sourceMeta?.range) out.push({icon:'fa-table',text:`Range ${payload.sourceMeta.range}`}); if(host) out.push({icon:'fa-link',text:host.includes('googleapis.com') ? 'Google Sheets API' : host}); return out;
