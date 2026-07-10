@@ -150,15 +150,27 @@ export const onRequest = async (context) => {
   };
 
   const extractDashboardRows = (payload) => {
-    if (Array.isArray(payload)) return payload;
-    if (!payload || typeof payload !== 'object') return [];
-    if (Array.isArray(payload.rows)) return payload.rows;
-    if (Array.isArray(payload.data)) return payload.data;
-    if (payload.data && Array.isArray(payload.data.rows)) return payload.data.rows;
-    if (payload.data && Array.isArray(payload.data.data)) return payload.data.data;
-    if (payload.data && Array.isArray(payload.data.result)) return payload.data.result;
-    if (payload.result && Array.isArray(payload.result)) return payload.result;
-    return [];
+    const isRowArray = (arr) => Array.isArray(arr) && (!arr.length || typeof arr[0] === 'object');
+    const findRows = (node, depth = 0) => {
+      if (depth > 6 || node == null) return [];
+      if (isRowArray(node)) return node;
+      if (typeof node !== 'object') return [];
+
+      const preferred = ['rows', 'data', 'result', 'items', 'records', 'payload'];
+      for (const key of preferred) {
+        if (node[key] !== undefined) {
+          const hit = findRows(node[key], depth + 1);
+          if (hit.length || Array.isArray(node[key])) return hit;
+        }
+      }
+
+      for (const key of Object.keys(node)) {
+        const hit = findRows(node[key], depth + 1);
+        if (hit.length) return hit;
+      }
+      return [];
+    };
+    return findRows(payload);
   };
 
   const ensureDashboardTables = async () => {
@@ -766,6 +778,8 @@ export const onRequest = async (context) => {
       name: item.name,
       lastSynced: cache?.last_synced_at || null,
       rowCount: cache?.row_count ?? rows.length,
+      extractedRowCount: rows.length,
+      sourceMeta: payload?.sourceMeta || null,
       sourceUrl: item.api_url,
       lastError: cache?.last_error || null,
       settings: normalizeDashboardSettings(item.settings_json),
