@@ -874,6 +874,25 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 
 
 
+
+
+/* ── Dashboard analytical modes ───────────────── */
+.dashboard-mode-bar {
+  display:flex; flex-wrap:wrap; gap:.55rem; margin:0 0 1rem;
+}
+.dash-mode-btn {
+  border:1px solid var(--border); background:var(--surface); color:var(--text2);
+  border-radius:14px; padding:.65rem .95rem; font-size:.8rem; font-weight:700; cursor:pointer;
+  display:inline-flex; align-items:center; gap:.45rem; box-shadow:var(--shadow-sm); transition:all var(--transition);
+}
+.dash-mode-btn:hover { border-color:var(--accent); color:var(--accent-text); background:var(--accent-light); }
+.dash-mode-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 10px 20px rgba(59,130,246,.22); }
+.dash-mode-note { font-size:.73rem; color:var(--text3); margin-top:.15rem; }
+@media(max-width:900px){
+  .dashboard-mode-bar { overflow:auto; flex-wrap:nowrap; padding-bottom:.2rem; }
+  .dash-mode-btn { white-space:nowrap; }
+}
+
 /* ── Dashboard page tabs + raw table ──────────── */
 .dashboard-page-tabs {
   display:flex; flex-wrap:wrap; gap:.55rem; margin:0 0 1rem;
