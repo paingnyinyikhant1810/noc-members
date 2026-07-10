@@ -570,6 +570,22 @@ export const onRequest = async (context) => {
   const isAdmin = user.role === "admin";
 
   // ════════════════════════════════════════════════════════════════════════════
+  //  SESSION — lightweight auth check
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "session" && method === "GET") {
+    return ok({
+      success: true,
+      currentUser: {
+        id          : user.id,
+        username    : user.username,
+        accountName : user.accountName || user.account_name || user.username,
+        account_name: user.account_name || user.accountName || user.username,
+        role        : user.role,
+      }
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
   //  getData
   // ════════════════════════════════════════════════════════════════════════════
   if (path === "getData" && method === "GET") {
