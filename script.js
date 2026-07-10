@@ -1112,7 +1112,7 @@ async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}=
     onProgress?.(100,'<i class="fas fa-bolt"></i> Loaded from memory cache','Dashboard data was already available in the browser cache.','determinate');
     return dashboardCache[id];
   }
-  if(!force&&dashboardFetchPromises[id]) return dashboardFetchPromises[id];
+  if(dashboardFetchPromises[id]) return dashboardFetchPromises[id];
   const item=(appData.dashboardItems||[]).find(x=>x.id===id);
   if(!item) return null;
 
