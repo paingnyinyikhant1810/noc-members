@@ -924,6 +924,13 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 
 
 
+
+
+/* ── Dashboard widgets v1.7 ───────────────────── */
+.dash-widget-type {
+  font-size:.72rem; color:var(--text3); margin-top:.15rem;
+}
+
 /* ── Dashboard v1.6 tools ─────────────────────── */
 .dash-table-select {
   min-width:110px; padding:.72rem .85rem; border:1.5px solid var(--border);
