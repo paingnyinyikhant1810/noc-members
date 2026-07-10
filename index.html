@@ -218,6 +218,7 @@
                 <button id="refreshDashboardBtn" onclick="refreshCurrentDashboard(true)" class="hidden btn-secondary"><i class="fas fa-rotate"></i> Refresh Data</button>
                 <button id="clearDashboardCacheBtn" onclick="clearCurrentDashboardCache()" class="hidden btn-secondary"><i class="fas fa-broom"></i> Clear Cache</button>
                 <button id="manageDashboardPagesBtn" onclick="openDashboardPageManagerModal()" class="hidden btn-secondary"><i class="fas fa-table-columns"></i> Manage Pages</button>
+                <button id="manageDashboardWidgetsBtn" onclick="openDashboardWidgetManagerModal()" class="hidden btn-secondary"><i class="fas fa-grip"></i> Manage Widgets</button>
                 <button id="dashboardViewSettingsBtn" onclick="openDashboardSettingsModal()" class="hidden btn-secondary"><i class="fas fa-sliders-h"></i> Dashboard Settings</button>
                 <button id="manageDashboardPageBtn" onclick="openDashboardManagerModal()" class="hidden btn-primary"><i class="fas fa-cog"></i> Manage Dashboard</button>
             </div>
@@ -802,6 +803,56 @@
     </div>
 </div>
 
+
+<!-- ════════ DASHBOARD WIDGET MANAGER ════════ -->
+<div id="dashboardWidgetManagerModal" class="hidden modal-bd">
+    <div class="modal-box modal-sm">
+        <div class="modal-hdr">
+            <h3 class="modal-title"><i class="fas fa-grip"></i> Manage Widgets</h3>
+            <button onclick="closeModal('dashboardWidgetManagerModal')" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="tab-tb" style="margin-bottom:.75rem">
+                <button onclick="openDashboardWidgetModal()" class="btn-primary btn-sm"><i class="fas fa-plus"></i> Add Widget</button>
+            </div>
+            <div id="dashboardWidgetManagerList" class="cat-mgr-list"></div>
+        </div>
+        <div class="modal-ft"><button onclick="closeModal('dashboardWidgetManagerModal')" class="btn-primary">Done</button></div>
+    </div>
+</div>
+
+<!-- ════════ DASHBOARD WIDGET MODAL ════════ -->
+<div id="dashboardWidgetModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr">
+            <h3 id="dashboardWidgetModalTitle" class="modal-title">Add Widget</h3>
+            <button onclick="cancelDashboardWidgetModal()" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="dashboardWidgetForm" class="modal-body">
+            <input type="hidden" id="dashboardWidgetId">
+            <div class="fg"><label class="flabel">Widget Title <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label><input type="text" id="dashboardWidgetTitle" class="finput" placeholder="Leave blank to use default title"></div>
+            <div class="fg"><label class="flabel">Widget Type</label>
+                <select id="dashboardWidgetType" class="finput">
+                    <option value="totalTickets">🎫 Total Tickets KPI</option>
+                    <option value="avgResolve">⏱ Avg Resolve KPI</option>
+                    <option value="closedRate">⭕ Closed Rate KPI</option>
+                    <option value="quickSummary">⚡ Quick Summary</option>
+                    <option value="trendChart">📈 Trend Chart</option>
+                    <option value="statusChart">📊 Status Chart</option>
+                    <option value="problemChart">❗ Problem Chart</option>
+                    <option value="siteChart">🌐 Site Chart</option>
+                    <option value="rootCauseChart">🐞 Root Cause Chart</option>
+                    <option value="repeatChart">🔁 Repeat Complaint</option>
+                    <option value="townshipChart">📍 Township Chart</option>
+                    <option value="queueChart">🗂 Queue Chart</option>
+                    <option value="rawTable">🧾 Raw Data Table</option>
+                </select>
+            </div>
+        </form>
+        <div class="modal-ft"><button onclick="cancelDashboardWidgetModal()" class="btn-secondary">Cancel</button><button onclick="saveDashboardWidget()" class="btn-primary">Save Widget</button></div>
+    </div>
+</div>
+
 <!-- ════════ CHANGE PASSWORD MODAL ════════ -->
 <div id="changePwdModal" class="hidden modal-bd">
     <div class="modal-box modal-sm">
@@ -876,5 +927,5 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="script.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a18fdf28ee59ea90',t:'MTc4MzY4OTY4OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a18ffa76dee1fdfd',t:'MTc4MzY5MDgwNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
