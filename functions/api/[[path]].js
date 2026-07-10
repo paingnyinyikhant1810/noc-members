@@ -667,6 +667,7 @@ export const onRequest = async (context) => {
         settings: normalizeDashboardSettings(r.settings_json)
       })),
       dashboardPages: dashPageRows.results ?? [],
+      dashboardWidgets: ((await env.DB.prepare(`SELECT * FROM dashboard_widgets ORDER BY dashboard_page_id ASC, sort_order ASC, id ASC`).all()).results ?? []),
       currentUser  : {
         id          : user.id,
         username    : user.username,
@@ -778,6 +779,62 @@ export const onRequest = async (context) => {
     if (Number(countRow?.c || 0) <= 1) return err('At least one page must remain', 400);
     await env.DB.prepare('DELETE FROM dashboard_widgets WHERE dashboard_page_id=?').bind(pageId).run();
     await env.DB.prepare('DELETE FROM dashboard_pages WHERE id=?').bind(pageId).run();
+    return ok({ success: true });
+  }
+
+
+  const dashboardWidgetsSortMatch = path === 'dashboardWidgets/sort';
+  if (dashboardWidgetsSortMatch && method === 'POST') {
+    if (!isAdmin) return err('Admin only', 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
+    const order = Array.isArray(body.order) ? body.order : [];
+    if (!order.length) return err('order must be a non-empty array', 400);
+    for (let i = 0; i < order.length; i++) {
+      const widgetId = parseInt(order[i], 10);
+      if (!isNaN(widgetId)) {
+        await env.DB.prepare('UPDATE dashboard_widgets SET sort_order=? WHERE id=?').bind(i, widgetId).run();
+      }
+    }
+    return ok({ success: true });
+  }
+
+  const dashboardWidgetsCreateMatch = path.match(/^dashboardPages\/(\d+)\/widgets$/);
+  if (dashboardWidgetsCreateMatch && method === 'POST') {
+    if (!isAdmin) return err('Admin only', 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    const pageId = parseInt(dashboardWidgetsCreateMatch[1], 10);
+    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
+    const widgetType = String(body.widget_type || body.widgetType || '').trim();
+    const title = String(body.title || '').trim();
+    const settingsJson = typeof body.settings_json === 'string' ? body.settings_json : JSON.stringify(body.settings_json || {});
+    if (!widgetType) return err('widget_type is required', 400);
+    const maxRow = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM dashboard_widgets WHERE dashboard_page_id=?').bind(pageId).first();
+    const nextSort = (maxRow?.max_sort ?? -1) + 1;
+    const inserted = await env.DB.prepare('INSERT INTO dashboard_widgets (dashboard_page_id, widget_type, title, settings_json, sort_order) VALUES (?, ?, ?, ?, ?)').bind(pageId, widgetType, title || null, settingsJson, nextSort).run();
+    return ok({ success: true, id: inserted.meta?.last_row_id }, 201);
+  }
+
+  const dashboardWidgetItemMatch = path.match(/^dashboardWidgets\/(\d+)$/);
+  if (dashboardWidgetItemMatch && method === 'PUT') {
+    if (!isAdmin) return err('Admin only', 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    const widgetId = parseInt(dashboardWidgetItemMatch[1], 10);
+    const existing = await env.DB.prepare('SELECT * FROM dashboard_widgets WHERE id=?').bind(widgetId).first();
+    if (!existing) return err('Dashboard widget not found', 404);
+    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
+    const widgetType = String(body.widget_type || body.widgetType || existing.widget_type || '').trim();
+    const title = String(body.title ?? existing.title ?? '').trim();
+    const settingsJson = typeof body.settings_json === 'string' ? body.settings_json : JSON.stringify(body.settings_json || safeJson(existing.settings_json, {}));
+    if (!widgetType) return err('widget_type is required', 400);
+    await env.DB.prepare('UPDATE dashboard_widgets SET widget_type=?, title=?, settings_json=? WHERE id=?').bind(widgetType, title || null, settingsJson, widgetId).run();
+    return ok({ success: true, id: widgetId });
+  }
+  if (dashboardWidgetItemMatch && method === 'DELETE') {
+    if (!isAdmin) return err('Admin only', 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    const widgetId = parseInt(dashboardWidgetItemMatch[1], 10);
+    await env.DB.prepare('DELETE FROM dashboard_widgets WHERE id=?').bind(widgetId).run();
     return ok({ success: true });
   }
 
