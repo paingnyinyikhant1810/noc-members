@@ -194,7 +194,7 @@ export const onRequest = async (context) => {
     }
   };
 
-  const DASHBOARD_CHUNK_SIZE = 450000;
+  const DASHBOARD_CHUNK_SIZE = 50000;
 
   const buildStoredDashboardPayload = (rawPayload) => {
     const rows = extractDashboardRows(rawPayload);
@@ -691,7 +691,9 @@ export const onRequest = async (context) => {
       "SELECT * FROM dashboard_cache WHERE dashboard_item_id=?"
     ).bind(dashId).first();
 
-    if (refresh || !cache) {
+    const shouldRetrySync = !cache || refresh || ((cache?.last_error || '') && Number(cache?.row_count || 0) === 0);
+
+    if (shouldRetrySync) {
       try {
         await syncDashboardItem(item);
         cache = await env.DB.prepare(
