@@ -191,6 +191,105 @@ export const onRequest = async (context) => {
     return findRows(payload);
   };
 
+
+  const normalizeKey = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const parseFlexibleDate = (value) => {
+    if (!value) return null;
+    if (value instanceof Date && !isNaN(value)) return value;
+    const s = String(value).trim();
+    const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[,\sT]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (m) {
+      const [, yy, mm, dd, hh='0', mi='0', ss='0'] = m;
+      const d = new Date(Number(yy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss));
+      return isNaN(d) ? null : d;
+    }
+    const native = new Date(s.replace(',', ''));
+    return isNaN(native) ? null : native;
+  };
+  const formatBucket = (date, groupBy='day') => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    if (groupBy === 'year') return `${y}`;
+    if (groupBy === 'month') return `${y}-${m}`;
+    if (groupBy === 'week') {
+      const wd = new Date(date); const day = (wd.getDay() + 6) % 7; wd.setDate(wd.getDate() - day); wd.setHours(0,0,0,0);
+      const utc = new Date(Date.UTC(wd.getFullYear(), wd.getMonth(), wd.getDate()));
+      utc.setUTCDate(utc.getUTCDate() + 4 - (utc.getUTCDay() || 7));
+      const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+      const isoWeek = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
+      return `${wd.getFullYear()}-W${String(isoWeek).padStart(2, '0')}`;
+    }
+    return `${y}-${m}-${d}`;
+  };
+  const incMap = (map, key) => {
+    const k = String(key || 'Unknown').trim() || 'Unknown';
+    map[k] = (map[k] || 0) + 1;
+  };
+  const sortMap = (map) => Object.entries(map).sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]));
+  const sortTrendMap = (map) => Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0]));
+  const buildDashboardSummary = (rows) => {
+    const statusCount={}, issueCount={}, siteCount={}, rootCount={}, queueCount={}, townshipCount={}, repeatCount={};
+    const trendDay={}, trendWeek={}, trendMonth={}, trendYear={};
+    let resolvedCount=0,totalResolutionHours=0,overtimeCount=0,closedCount=0,openCount=0;
+    const overtimeHours = 8;
+
+    rows.forEach((row) => {
+      const status = row['Status'] ?? row['status'] ?? 'Unknown';
+      const statusKey = normalizeKey(status);
+      incMap(statusCount, status);
+      if (statusKey.includes('closed') || statusKey.includes('resolved')) closedCount++; else openCount++;
+      incMap(issueCount, row['Ticket Problem'] ?? row['ticket problem'] ?? row['Problem'] ?? 'Unknown');
+      incMap(siteCount, row['Opi Site Code'] ?? row['Opi Site code'] ?? row['opi site code'] ?? 'Unknown');
+      incMap(rootCount, row['Service Root Cause'] ?? row['Root Cause Category'] ?? row['Root Cause'] ?? 'Unknown');
+      incMap(queueCount, row['Queue'] ?? row['queue'] ?? 'Unknown');
+      incMap(townshipCount, row['Township'] ?? row['township'] ?? 'Unknown');
+      const repeatKey = row['Local Service ID'] ?? row['CPE ID'] ?? '';
+      if (repeatKey) incMap(repeatCount, repeatKey);
+
+      const created = parseFlexibleDate(row['Created'] ?? row['Date Created'] ?? row['created'] ?? '');
+      const resolved = parseFlexibleDate(row['Resolved'] ?? row['resolved'] ?? '');
+      if (created) {
+        incMap(trendDay, formatBucket(created, 'day'));
+        incMap(trendWeek, formatBucket(created, 'week'));
+        incMap(trendMonth, formatBucket(created, 'month'));
+        incMap(trendYear, formatBucket(created, 'year'));
+      }
+      if (created && resolved && resolved >= created) {
+        const hrs = (resolved - created) / 36e5;
+        totalResolutionHours += hrs;
+        resolvedCount++;
+        if (hrs > overtimeHours) overtimeCount++;
+      }
+    });
+
+    const totalRows = rows.length;
+    const repeatEntries = sortMap(repeatCount).filter(([,v])=>v>1);
+    return {
+      totalRows,
+      closedCount,
+      openCount,
+      resolvedCount,
+      avgResolutionHours: resolvedCount ? totalResolutionHours / resolvedCount : 0,
+      overtimeCount,
+      closedRate: totalRows ? (closedCount / totalRows) * 100 : 0,
+      repeatCustomers: repeatEntries.length,
+      topProblems: sortMap(issueCount),
+      topSites: sortMap(siteCount),
+      topRootCauses: sortMap(rootCount),
+      topQueues: sortMap(queueCount),
+      topTownships: sortMap(townshipCount),
+      statusSeries: sortMap(statusCount),
+      repeatEntries,
+      trendBy: {
+        day: sortTrendMap(trendDay),
+        week: sortTrendMap(trendWeek),
+        month: sortTrendMap(trendMonth),
+        year: sortTrendMap(trendYear),
+      }
+    };
+  };
+
   const ensureDashboardTables = async () => {
     const stmts = [
       `CREATE TABLE IF NOT EXISTS dashboard_items (
@@ -280,7 +379,8 @@ export const onRequest = async (context) => {
         majorDimension: rawPayload?.majorDimension || null,
         rowCount: rows.length,
         headers: Array.isArray(rawPayload?.headers) ? rawPayload.headers : matrixHeaders,
-      }
+      },
+      sourceSummary: buildDashboardSummary(rows)
     }; 
   };
 
