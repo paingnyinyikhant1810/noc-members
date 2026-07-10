@@ -28,7 +28,7 @@ let currentDashboardFilterOptionsCache = { site:[], township:[], queue:[] };
 let currentDashboardFilteredRowsCache = [];
 let currentDashboardFilterCacheKey = '';
 let dashboardStatsCache = new Map();
-let currentDashboardFilters = { groupBy:'day', site:'', township:'', queue:'', fromDate:'', toDate:'' };
+let currentDashboardFilters = { groupBy:'all', subPeriod:'all', site:'', township:'', queue:'', fromDate:'', toDate:'' };
 let currentDashboardPageId = null;
 let currentDashboardMode = 'normal';
 let currentDashboardTableState = { search:'', page:1, pageSize:20 };
@@ -462,15 +462,15 @@ document.addEventListener('click',e=>{
    DASHBOARD
 ══════════════════════════════════════════════════════════ */
 const DASHBOARD_COLOR_SET = ['#6366f1','#3b82f6','#f97316','#10b981','#ec4899','#8b5cf6','#14b8a6','#f59e0b','#ef4444','#64748b'];
-const DASHBOARD_GROUP_LABELS = { day:'Day', week:'Week', month:'Month', year:'Year' };
+const DASHBOARD_GROUP_LABELS = { all:'All', day:'Day', week:'Week', month:'Month', year:'Year' };
+const DASHBOARD_GROUP_UI_LABELS = { all:'All', day:'Daily', week:'Weekly', month:'Monthly', year:'Yearly' };
 const DASHBOARD_FIXED_TABS = [
-  { id:'total-tickets', slug:'total-tickets', name:'Total Ticket Number', icon:'fa-chart-line' },
-  { id:'cpe-models', slug:'cpe-models', name:"CPE Model's Complaint Counts", icon:'fa-microchip' },
+  { id:'summary', slug:'summary', name:'Summary', icon:'fa-gauge-high' },
   { id:'duplicate', slug:'duplicate', name:'Duplicate Tickets', icon:'fa-copy' },
   { id:'overtime', slug:'overtime', name:'OverTime', icon:'fa-clock' },
   { id:'pivot', slug:'pivot', name:'Pivot', icon:'fa-table-cells-large' },
   { id:'create-graph', slug:'create-graph', name:'Create Graph', icon:'fa-chart-pie' },
-];
+]
 const DEFAULT_DASHBOARD_PAGES = [
   { id:'summary', slug:'summary', name:'Summary', icon:'fa-gauge-high' },
   { id:'trend', slug:'trend', name:'Trend', icon:'fa-chart-line' },
@@ -742,6 +742,17 @@ function computeDashboardFilterOptions(rows){
     if(meta.queue) unique.queue.add(meta.queue);
   });
   return { site:[...unique.site].sort((a,b)=>a.localeCompare(b)), township:[...unique.township].sort((a,b)=>a.localeCompare(b)), queue:[...unique.queue].sort((a,b)=>a.localeCompare(b)) };
+}
+function effectiveGroupBy(groupBy){ return groupBy==='all' ? 'day' : groupBy; }
+function getDashboardSubPeriodOptions(rows, groupBy){
+  const eff=effectiveGroupBy(groupBy);
+  const set=new Set();
+  (rows||[]).forEach(row=>{ const created=row?.__noc?.created; if(created) set.add(formatTimeBucket(created, eff)); });
+  const values=[...set].sort((a,b)=>a.localeCompare(b));
+  return values.map(v=>({ value:v, label:formatBucketLabel(v, eff) }));
+}
+function subPeriodDefaultLabel(groupBy){
+  return groupBy==='week' ? 'All Weeks' : groupBy==='month' ? 'All Months' : groupBy==='year' ? 'All Years' : 'All Days';
 }
 function getDashboardFilterCacheSignature(rows,filters){
   return [rows?.length||0,filters.site,filters.township,filters.queue,filters.fromDate,filters.toDate].join('|');
@@ -1272,7 +1283,7 @@ async function refreshCurrentDashboard(force=false){
 }
 function initializeDashboardFilters(item,payload,rows,preserve=false){
   const settings=getDashboardSettings(item,payload);
-  currentDashboardFilters = { groupBy: preserve ? (currentDashboardFilters.groupBy||settings.defaultGrouping||'day') : (settings.defaultGrouping||'day'), site: preserve ? currentDashboardFilters.site : '', township: preserve ? currentDashboardFilters.township : '', queue: preserve ? currentDashboardFilters.queue : '', fromDate: preserve ? currentDashboardFilters.fromDate : '', toDate: preserve ? currentDashboardFilters.toDate : '' };
+  currentDashboardFilters = { groupBy: preserve ? (currentDashboardFilters.groupBy||'all') : 'all', subPeriod: preserve ? (currentDashboardFilters.subPeriod||'all') : 'all', site: preserve ? currentDashboardFilters.site : '', township: preserve ? currentDashboardFilters.township : '', queue: preserve ? currentDashboardFilters.queue : '', fromDate: '', toDate: '' };
   currentDashboardTableState = { ...currentDashboardTableState, search:'', page:1 };
   const options=getDashboardFilterOptions(rows); ['site','township','queue'].forEach(key=>{ if(currentDashboardFilters[key] && !options[key].includes(currentDashboardFilters[key])) currentDashboardFilters[key]=''; });
   clearDashboardDerivedCaches();
@@ -1284,22 +1295,21 @@ function getDashboardFilterOptions(rows){
 function renderDashboardFilterControls(){
   const bar=el('dashboardFilterBar'); if(!bar) return;
   if(!currentDashboardItem){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
-  const options=getDashboardFilterOptions(currentDashboardRows); const filteredCount=getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters).length;
+  const options=getDashboardFilterOptions(currentDashboardRows); const periodOptions=getDashboardSubPeriodOptions(currentDashboardRows,currentDashboardFilters.groupBy); const filteredCount=getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters).length;
   bar.classList.remove('hidden');
-  bar.innerHTML=`<div class="dash-filter-left"><span class="dash-filter-title">Date Group</span><div class="dash-seg">${['day','week','month','year'].map(g=>`<button class="dash-seg-btn ${currentDashboardFilters.groupBy===g?'active':''}" onclick="setDashboardGroupBy('${g}')">${DASHBOARD_GROUP_LABELS[g]}</button>`).join('')}</div><input id="dashboardFilter_fromDate" class="dash-fctrl dash-fctrl--date" type="date" value="${escAttr(currentDashboardFilters.fromDate||'')}" onchange="onDashboardFilterChange()" title="From Date"><input id="dashboardFilter_toDate" class="dash-fctrl dash-fctrl--date" type="date" value="${escAttr(currentDashboardFilters.toDate||'')}" onchange="onDashboardFilterChange()" title="To Date"></div><div class="dash-filter-right"><span class="dash-filter-count">Showing ${filteredCount.toLocaleString()} / ${currentDashboardRows.length.toLocaleString()} rows</span>${renderDashboardFilterSelect('site','Site Code',options.site,currentDashboardFilters.site)}${renderDashboardFilterSelect('township','Township',options.township,currentDashboardFilters.township)}${renderDashboardFilterSelect('queue','Queue',options.queue,currentDashboardFilters.queue)}<button onclick="resetDashboardFilters()" class="btn-secondary btn-sm"><i class="fas fa-filter-circle-xmark"></i> Reset</button></div>`;
+  bar.innerHTML=`<div class="dash-filter-left"><span class="dash-filter-title">Date Group</span><div class="dash-seg">${['all','day','week','month','year'].map(g=>`<button class="dash-seg-btn ${currentDashboardFilters.groupBy===g?'active':''}" onclick="setDashboardGroupBy('${g}')">${DASHBOARD_GROUP_UI_LABELS[g]}</button>`).join('')}</div><select id="dashboardFilter_subPeriod" class="dash-fctrl dash-fctrl--date" onchange="onDashboardFilterChange()"><option value="all">${subPeriodDefaultLabel(currentDashboardFilters.groupBy)}</option>${periodOptions.map(opt=>`<option value="${escAttr(opt.value)}" ${currentDashboardFilters.subPeriod===opt.value?'selected':''}>${escHtml(opt.label)}</option>`).join('')}</select></div><div class="dash-filter-right"><span class="dash-filter-count">Showing ${filteredCount.toLocaleString()} / ${currentDashboardRows.length.toLocaleString()} rows</span>${renderDashboardFilterSelect('site','Site Code',options.site,currentDashboardFilters.site)}${renderDashboardFilterSelect('township','Township',options.township,currentDashboardFilters.township)}${renderDashboardFilterSelect('queue','Queue',options.queue,currentDashboardFilters.queue)}<button onclick="resetDashboardFilters()" class="btn-secondary btn-sm"><i class="fas fa-filter-circle-xmark"></i> Reset</button></div>`;
 }
 function renderDashboardFilterSelect(key,label,options,selected){ return `<select id="dashboardFilter_${key}" class="dash-fctrl" onchange="onDashboardFilterChange()"><option value="">All ${escHtml(label)}</option>${options.map(opt=>`<option value="${escAttr(opt)}" ${selected===opt?'selected':''}>${escHtml(opt)}</option>`).join('')}</select>`; }
-function onDashboardFilterChange(){ currentDashboardFilters.site=el('dashboardFilter_site')?.value||''; currentDashboardFilters.township=el('dashboardFilter_township')?.value||''; currentDashboardFilters.queue=el('dashboardFilter_queue')?.value||''; currentDashboardFilters.fromDate=el('dashboardFilter_fromDate')?.value||''; currentDashboardFilters.toDate=el('dashboardFilter_toDate')?.value||''; currentDashboardTableState.page=1; currentDashboardFilterCacheKey=''; renderDashboardFilterControls(); renderCurrentDashboard(); }
-function setDashboardGroupBy(groupBy){ currentDashboardFilters.groupBy=groupBy; renderDashboardFilterControls(); renderCurrentDashboard(); }
-function resetDashboardFilters(){ const settings=getDashboardSettings(currentDashboardItem,currentDashboardPayload); currentDashboardFilters={ groupBy:settings.defaultGrouping||'day', site:'', township:'', queue:'', fromDate:'', toDate:'' }; currentDashboardTableState = { ...currentDashboardTableState, search:'', page:1 }; currentDashboardFilterCacheKey=''; currentDashboardFilteredRowsCache=[]; renderDashboardFilterControls(); renderCurrentDashboard(); }
+function onDashboardFilterChange(){ currentDashboardFilters.site=el('dashboardFilter_site')?.value||''; currentDashboardFilters.township=el('dashboardFilter_township')?.value||''; currentDashboardFilters.queue=el('dashboardFilter_queue')?.value||''; currentDashboardFilters.subPeriod=el('dashboardFilter_subPeriod')?.value||'all'; currentDashboardTableState.page=1; currentDashboardFilterCacheKey=''; renderDashboardFilterControls(); renderCurrentDashboard(); }
+function setDashboardGroupBy(groupBy){ currentDashboardFilters.groupBy=groupBy; currentDashboardFilters.subPeriod='all'; renderDashboardFilterControls(); renderCurrentDashboard(); }
+function resetDashboardFilters(){ currentDashboardFilters={ groupBy:'all', subPeriod:'all', site:'', township:'', queue:'', fromDate:'', toDate:'' }; currentDashboardTableState = { ...currentDashboardTableState, search:'', page:1 }; currentDashboardFilterCacheKey=''; currentDashboardFilteredRowsCache=[]; renderDashboardFilterControls(); renderCurrentDashboard(); }
 function filterDashboardRows(rows,filters){
-  const from = filters.fromDate ? parseFlexibleDate(`${filters.fromDate} 00:00:00`) : null;
-  const to = filters.toDate ? parseFlexibleDate(`${filters.toDate} 23:59:59`) : null;
-  if(!filters.site && !filters.township && !filters.queue && !from && !to) return rows;
+  const eff=effectiveGroupBy(filters.groupBy);
+  if(!filters.site && !filters.township && !filters.queue && (!filters.subPeriod || filters.subPeriod==='all')) return rows;
   return rows.filter(row=>{
     const meta=row.__noc||{};
     const site=meta.site||''; const township=meta.township||''; const queue=meta.queue||''; const created=meta.created||null;
-    if(filters.site && site!==filters.site) return false; if(filters.township && township!==filters.township) return false; if(filters.queue && queue!==filters.queue) return false; if(from && created && created < from) return false; if(to && created && created > to) return false; if((from || to) && !created) return false; return true;
+    if(filters.site && site!==filters.site) return false; if(filters.township && township!==filters.township) return false; if(filters.queue && queue!==filters.queue) return false; if(filters.subPeriod && filters.subPeriod!=='all'){ if(!created || formatTimeBucket(created, eff)!==filters.subPeriod) return false; } return true;
   });
 }
 function renderDashboardLoading(item={}){
