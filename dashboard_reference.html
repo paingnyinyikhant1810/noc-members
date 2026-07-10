@@ -1902,6 +1902,12 @@ const DASH_EMBED = (() => {
   };
 })();
 
+function getEmbedApiHeaders(){
+  let auth='';
+  try { auth = localStorage.getItem('authHeader') || ''; } catch(e) {}
+  return auth ? { 'Authorization': auth } : {};
+}
+
 function refSheetValuesToObjects(values){
   if(!Array.isArray(values) || values.length < 2) return [];
   const headers=(values[0]||[]).map(h=>String(h ?? '').trim());
@@ -1938,7 +1944,7 @@ function refExtractRows(payload){
 }
 async function fetchDashboardEmbedData(forceReload){
   const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/data' + (forceReload ? '?refresh=1' : '');
-  const res = await fetch(url, { credentials: 'same-origin' });
+  const res = await fetch(url, { credentials: 'same-origin', headers: getEmbedApiHeaders() });
   const txt = await res.text();
   let json = {};
   try { json = txt ? JSON.parse(txt) : {}; } catch(e) { throw new Error('Dashboard API returned non-JSON response.'); }
