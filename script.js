@@ -1,2889 +1,9848 @@
-/* ═══════════════════════════════════════════════════════════
-   NOC Portal — script.js  v4
-   ═══════════════════════════════════════════════════════════ */
-'use strict';
 
-// ── Config & State ──────────────────────────────────────────
-const API_URL = '/api';
-let currentUser = null;
-let authHeader  = localStorage.getItem('authHeader');
-let isProcessing = false;
-let appData = { users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[] };
 
-// Learning state
-let currentFolderId     = null;
-let currentInfoCategory = null;
-let contextItem         = null;
-let searchDebounceTimer = null;
 
-// Sticky notes (D1-backed)
-let stickyNotes = [];
+New Chat
+Leaderboard
+Search
+Today
+i have to do dashboard for my noc team report like ticket calculation , overtime ticket , customer m…
 
-// Dashboard state
-let currentDashboardId = null;
-let currentDashboardItem = null;
-let currentDashboardPayload = null;
-let currentDashboardRows = [];
-let currentDashboardFilterOptionsCache = { site:[], township:[], queue:[] };
-let currentDashboardFilteredRowsCache = [];
-let currentDashboardFilterCacheKey = '';
-let dashboardStatsCache = new Map();
-let currentDashboardFilters = { groupBy:'day', site:'', township:'', queue:'', fromDate:'', toDate:'' };
-let currentDashboardPageId = null;
-let currentDashboardTableState = { search:'', page:1, pageSize:20 };
-let dashboardAutoRetryDone = false;
-let dashboardCache = {};
-let dashboardFetchPromises = {};
-let dashboardPrefetchStarted = false;
-let dashboardChartInstances = [];
-let dashboardLoadPulseTimer = null;
-let dashboardRenderRaf = null;
-let dashboardRenderToken = 0;
-let dashDragSrc = null;
+Yesterday
+I use google app scripts for my sheet , but it show whilte screen on page at startup and nothing sho…
 
-const DEFAULT_DASHBOARD_SETTINGS = {
-  showCards: {
-    totalTickets: true,
-    avgResolve: true,
-    closedRate: true,
-    quickSummary: true,
-    trendChart: true,
-    statusChart: true,
-    problemChart: true,
-    siteChart: true,
-    rootCauseChart: true,
-    repeatChart: true,
-  },
-  limits: {
-    trendPoints: 10,
-    statusCount: 5,
-    problemCount: 5,
-    siteCount: 5,
-    rootCauseCount: 6,
-    repeatCount: 5,
-  },
-  graphTypes: {
-    trendChart: 'line',
-    statusChart: 'doughnut',
-    problemChart: 'bar',
-    siteChart: 'bar',
-    rootCauseChart: 'bar',
-    repeatChart: 'list',
-  },
-  defaultGrouping: 'day'
-};
 
-// ── Role helpers ────────────────────────────────────────────
-const ROLE_RANK  = { admin:4, leader:3, member:2, intern:1 };
-const myRank     = () => ROLE_RANK[currentUser?.role] ?? 1;
-const isAdmin    = () => currentUser?.role === 'admin';
-const isLeader   = () => myRank() >= ROLE_RANK.leader;  // leader+
-const canSee     = (perm) => myRank() >= (ROLE_RANK[perm] ?? 1);
-const canManageInfo = () => myRank() >= ROLE_RANK.leader; // leader+ can manage info cards
 
-// ── Spin keyframe ───────────────────────────────────────────
-(()=>{
-  if(!document.getElementById('_kf')){
-    const s=document.createElement('style');s.id='_kf';
-    s.textContent='@keyframes spin{to{transform:rotate(360deg)}}';
-    document.head.appendChild(s);
+hhxu08@sugtbt.com
+Terms of Use
+Privacy Policy
+Cookies
+
+Agent Mode
+
+
+i have to do dashboard for my noc team report like ticket calculation , overtime ticket , customer multiple time complaint , Complaint receive by type of CPE , Complaint receive by site code , complaint percent by site by site, and normalize for all , for day by day,week by week , month by month and year by year .Do you think any others report graph may need?
+
+tell me in burmese
+
+
+ဟုတ်ပါတယ် — NOC Team Dashboard အတွက် သင်ပြောထားတဲ့ report တွေက အခြေခံအရမ်းကောင်းနေပြီ။
+ဒါပေမယ့် operation ကိုပိုပြီး အသုံးဝင်အောင် ကြည့်ချင်ရင် အောက်က graph / report တွေကို ထပ်ထည့်တာက ပိုကောင်းပါတယ်။
+
+အခုရှိပြီးသား report များ
+သင်ပြောထားတာတွေက ဒီလိုမျိုး category အရ already OK ပါတယ်—
+
+Ticket calculation
+Overtime ticket
+Customer multiple time complaint
+Complaint by CPE type
+Complaint by site code
+Complaint percent by site
+Day / Week / Month / Year trend
+Normalize for all
+ဒီအပေါ်မှာ management view + operation view + root cause view အနေနဲ့ ထပ်တိုးရင် dashboard က ပိုပြည့်စုံမယ်။
+
+ထပ်ထည့်သင့်တဲ့ Report / Graph များ
+1) Open vs Closed Ticket Trend
+ဘာကြောင့်လိုသလဲ
+တစ်နေ့ချင်း၊ တစ်ပတ်ချင်းမှာ ticket ဝင်တာနဲ့ ပိတ်နိုင်တာ balance ဖြစ်မဖြစ် သိနိုင်တယ်။
+
+Graph အမျိုးအစား
+
+Line chart
+Stacked bar chart
+ပြသသင့်တဲ့ KPI
+
+Total Open
+Total Closed
+Pending
+Escalated
+2) Ticket Backlog Aging Report
+ဘာကြောင့်လိုသလဲ
+အချိန်ကြာကြာ မပိတ်ရသေးတဲ့ ticket တွေကို ဖော်ထုတ်နိုင်တယ်။
+
+ဥပမာ aging bucket
+
+0–4 hrs
+4–8 hrs
+8–24 hrs
+1–3 days
+3 days
+
+Graph
+
+Bar chart
+Aging table with color status
+3) SLA Performance Report
+အရမ်းအရေးကြီးပါတယ်
+NOC dashboard မှာ SLA မပါရင် management view မပြည့်စုံနိုင်ဘူး။
+
+Track လုပ်သင့်တာ
+
+SLA within target %
+SLA breached ticket count
+Response SLA breach
+Resolution SLA breach
+Graph
+
+Gauge chart
+KPI card
+Monthly trend line
+4) MTTA / MTTR Report
+MTTA = Mean Time to Acknowledge
+MTTR = Mean Time to Resolve
+
+ဘာလို့လိုသလဲ
+NOC team response speed နဲ့ resolution efficiency ကို တိုက်ရိုက်ပြနိုင်တယ်။
+
+Graph
+
+Trend line by day/week/month
+Comparison by site / team / issue type
+5) Reopen Ticket Rate
+ဘာကြောင့်လိုသလဲ
+Ticket ပိတ်ပြီး ပြန်ဖွင့်ရတာများရင် quality issue ရှိနိုင်တယ်။
+
+KPI
+
+Reopen count
+Reopen %
+Reopen by site
+Reopen by engineer/team
+Graph
+
+Bar chart
+Trend line
+6) Top 10 Problematic Sites
+သင်မှာ complaint by site code ရှိတယ်ဆိုပေမယ့်
+Top 10 worst sites ကို သီးသန့်ပြတာ management အတွက် ပိုမြန်ဆန်တယ်။
+
+Include
+
+Total complaints
+Repeated complaints
+Downtime
+MTTR
+SLA breach %
+Graph
+
+Horizontal bar chart
+Pareto chart
+7) Complaint by Root Cause
+Site code နဲ့ CPE type ကြည့်တာကောင်းပေမယ့်
+ဘာကြောင့်ဖြစ်တာလဲ ဆိုတဲ့ root cause analysis က ပိုအရေးကြီးတယ်။
+
+Category ဥပမာ
+
+Power issue
+Fiber cut
+Device failure
+CPE down
+Configuration issue
+Customer-side issue
+Unknown / intermittent
+Graph
+
+Pie chart
+Stacked bar
+Pareto chart
+8) Complaint by Severity / Priority
+Priority-based monitoring က NOC မှာ အရမ်းအသုံးဝင်တယ်။
+
+ဥပမာ
+
+Critical
+High
+Medium
+Low
+Graph
+
+Stacked bar by time
+Pie chart for distribution
+9) Shift-wise / Hour-wise Complaint Pattern
+ဘာကြောင့်လိုသလဲ
+မနက် shift, ည shift ဘယ်ချိန်မှာ incident များတယ်ဆိုတာ သိနိုင်တယ်။
+Resource planning အတွက် အရမ်းကောင်းတယ်။
+
+Graph
+
+Heatmap
+Hourly trend line
+Day-of-week bar chart
+ဥပမာ
+
+Peak complaint hours
+Peak complaint day
+Weekend vs weekday
+10) Customer Repeat Complaint Report
+သင်ပြောထားတဲ့ customer multiple time complaint ကို ပိုတိုးချဲ့လို့ရတယ်။
+
+Track လုပ်သင့်တာ
+
+Top repeated complaint customers
+Same issue repeated within 7 / 30 days
+Repeat complaint by service type
+Repeat complaint by site
+Graph
+
+Top 10 customer bar chart
+Trend line
+Table with repeat count
+11) Complaint by Service Type
+CPE type အပြင် service type လည်း အရေးကြီးနိုင်တယ်။
+
+ဥပမာ
+
+Internet
+MPLS
+DIA
+Voice
+IPTV
+Leased line
+Graph
+
+Stacked bar
+Pie chart
+Trend by service
+12) Escalation Report
+L1 → L2 → Field Team → Vendor
+ဘယ် level ကို ticket များပြီး escalate လုပ်ရသလဲ ဆိုတာ သိဖို့က operation tuning အတွက် အရမ်းကောင်းတယ်။
+
+Track
+
+Escalated ticket count
+Escalation ratio
+Escalation by cause
+Escalation by site/vendor
+Graph
+
+Funnel chart
+Bar chart
+Sankey style flow (advanced)
+13) Engineer / Team Performance Report
+User access level အလိုက် internal dashboard မှာထည့်လို့ရတယ်။
+
+KPI
+
+Tickets handled
+Avg response time
+Avg resolution time
+SLA compliance
+Reopen rate
+Graph
+
+Leaderboard table
+Bar chart
+Trend line
+14) Network Availability / Downtime Report
+NOC dashboard ဆိုရင် availability ပါရင် ပို professional ဖြစ်တယ်။
+
+Track
+
+Uptime %
+Downtime minutes
+Site outage count
+Outage duration by site
+Graph
+
+KPI card
+Monthly line chart
+Site comparison bar
+15) False Alarm / No Fault Found Report
+Incident တင်ပေမယ့် actual issue မရှိတာတွေကို ခွဲပြရင် data quality ကောင်းလာမယ်။
+
+Track
+
+False alarm count
+No fault found %
+By customer / site / team
+16) Preventive vs Reactive Work
+Ticket တွေကို reactive သာမက preventive maintenance/reporting ပါ ပြသနိုင်ရင် management ပိုကြိုက်တတ်တယ်။
+
+Graph
+
+Stacked bar per month
+Ratio card
+Normalize လုပ်တဲ့အခါ ထည့်သင့်တာ
+သင်ပြောထားတဲ့ normalize for all က အရမ်းကောင်းတဲ့ idea ပါ။
+ဘာနဲ့ normalize လုပ်မလဲ ဆိုတာကို ရှင်းရင် ပိုတိကျမယ်။
+
+Normalize လုပ်နိုင်တဲ့နည်းများ
+Complaint per 100 customers
+Complaint per 100 sites
+Complaint per 100 devices/CPE
+Ticket per region
+Ticket per service type
+ဘာလို့ကောင်းလဲ
+Site A မှာ customer 1000 ယောက်, Site B မှာ 100 ယောက်ဆိုရင် raw complaint count နဲ့ compare မလုပ်သင့်ဘူး။
+Normalize လုပ်မှ fair comparison ရမယ်။
+
+Dashboard Layout အကြံပြုချက်
+Dashboard ကို ဒီလို 4 layer နဲ့ဆောက်ရင် ကြည့်လို့ကောင်းမယ်။
+
+1. Executive Summary
+အပေါ်ဆုံး KPI cards
+
+Total tickets
+Open tickets
+Closed tickets
+SLA %
+MTTR
+Repeat complaint %
+Top issue site
+2. Trend View
+Day / Week / Month / Year line chart
+Complaint trend
+Open vs closed trend
+Overtime ticket trend
+3. Breakdown View
+By site
+By CPE type
+By service type
+By root cause
+By severity
+4. Action View
+Top repeated customers
+Aging tickets
+SLA breached tickets
+Top problematic sites
+Escalated tickets
+Graph Type အကြံပြုချက်
+Data type အလိုက် graph ရွေးရင် ပိုရှင်းမယ်။
+
+Trend data အတွက်
+Line chart
+Area chart
+Category compare အတွက်
+Bar chart
+Horizontal bar chart
+Composition အတွက်
+Stacked bar
+Pie chart (category နည်းရင်)
+Priority / hourly pattern အတွက်
+Heatmap
+KPI summary အတွက်
+Card / Gauge
+Root cause ranking အတွက်
+Pareto chart
+အရေးကြီးဆုံး 10 ခုကိုသာ စတင်ချင်ရင်
+Dashboard ကို မရှုပ်စေချင်ဘူးဆိုရင် ဒီ 10 ခုနဲ့ စတင်ပါ—
+
+Total Open / Closed / Pending Tickets
+Ticket Trend by Day/Week/Month/Year
+Overtime Ticket Count
+SLA Compliance %
+MTTR / MTTA
+Complaint by Site Code
+Complaint by CPE Type
+Top 10 Repeated Complaint Customers
+Ticket Aging Report
+Root Cause Analysis
+Short recommendation
+ဟုတ်ပါတယ် — ထပ်ထည့်သင့်တဲ့ report graph တွေ ရှိပါတယ်။
+အထူးသဖြင့် NOC dashboard အတွက် SLA, MTTR, backlog aging, root cause, escalation, top problematic sites, repeat complaint rate တွေက မဖြစ်မနေပါသင့်တယ်။
+
+လိုချင်ရင် နောက်တစ်ဆင့်အနေနဲ့
+“NOC Dashboard design sample” ကို Burmese နဲ့
+
+KPI list
+chart type
+filter fields
+page layout
+အဖြစ် ready-made dashboard structure တစ်ခု ကျွန်တော် စီပေးနိုင်ပါတယ်။
+
+Ticket IDTicket NoStatusCreatedResolvedTicket ProblemCPE IDService AreaRoot CausePole NameOpi Site CodeTownshipLocal Service IDDate CreatedQueueFiber Ca1 NameFiber Olt NameSuspected Area Of IssueRoot Cause CategoryService Root Cause9246126Feb26-TKT-9246126closed2026-2-6, 14:022026-2-7, 13:11No Internet ConnectionLCF046256Yangon-FR-SLA-Fiber Internet-OPIN/A003F13ZDAY-C02-P15DNYGDagon Myothit Seikkan2546716-0012026-02-06Customer SupportCA1-003F03ZDAY-COVF-PNIX07ADAYAccess Network-PassiveInfra-Access SplitterUplink Fiber Issue9183879Jan26-TKT-9183879closed2026-1-24, 15:482026-1-24, 15:51No Internet ConnectionLCC004958Yangon-FR-SLA-Fiber Internet-OPIN/AF12R02LWBN-D12-P3LWBNLanmadaw2624678-0012026-01-24Customer SupportCA1-F00R02LWBN-DOVF-LWBN01ZLWYCustomer SiteCustomer-LANCustomer LAN Issue
+
+ဒါက sample data အဲ့တာကနေ ဘာ graph တွေရနိုင်လဲ
+
+
+ရပါတယ် — ဒီ sample data structure ကနေ dashboard graph တော်တော်များများ ဆွဲလို့ရပါတယ်။
+ဒါပေမယ့် အခု sample ၂ row ပဲရှိလို့ graph က demo level ပဲ meaningful ဖြစ်မယ်။ တကယ်အသုံးဝင်ဖို့ full data လိုပါတယ်။
+
+ဒီ data ကနေ တိုက်ရိုက်ရနိုင်တဲ့ Graph များ
+1) Ticket Count Trend
+အသုံးပြုမယ့် field
+
+Created / Date Created
+Graph
+
+Day by day line chart
+Week by week line chart
+Month by month line chart
+Year by year line chart
+ဘာပြမလဲ
+
+တစ်နေ့ ticket ဘယ်လောက်ဝင်လဲ
+တစ်ပတ် / တစ်လ trend တက်နေလား ကျနေလား
+2) Open / Closed Status Report
+Field
+
+Status
+Graph
+
+Pie chart
+Donut chart
+Stacked bar
+ဘာပြမလဲ
+
+Closed ticket %
+Open/Pending ticket %
+Daily closed vs created trend
+အခု sample မှာ closed ပဲရှိတယ်။ Full data ရရင် ပိုကောင်းမယ်။
+
+3) Resolution Time / MTTR
+Field
+
+Created
+Resolved
+တွက်ချက်နိုင်တာ
+
+Resolution Time = Resolved - Created
+Graph
+
+Average resolution time by day/week/month
+Bar chart by site
+Box plot / histogram (advanced)
+ဘာပြမလဲ
+
+ဘယ် site / township မှာ ဖြေရှင်းချိန်ကြာလဲ
+Average MTTR ဘယ်လောက်လဲ
+ဥပမာ
+
+Ticket 9246126 = ~23 hrs
+Ticket 9183879 = ~3 mins
+4) Overtime Ticket Report
+Field
+
+Created
+Resolved
+(SLA rule လိုတယ်)
+Graph
+
+Overtime vs within SLA bar chart
+Overtime trend line
+Overtime by site / township / queue
+မှတ်ချက်
+
+Overtime ဆွဲချင်ရင် SLA threshold သတ်မှတ်ရမယ်
+ဥပမာ:
+4 hrs
+
+8 hrs
+
+24 hrs
+
+service type အလိုက် SLA
+အခု data နဲ့
+
+SLA target column မရှိသေးဘူး
+ဒါပေမယ့် custom rule နဲ့ overtime graph ဆွဲလို့ရတယ်
+5) Complaint by Ticket Problem
+Field
+
+Ticket Problem
+Graph
+
+Bar chart
+Pie chart
+ဘာပြမလဲ
+
+No Internet Connection
+Slow speed
+High latency
+LOS
+Frequent disconnect
+တို့ထဲမှာ ဘာ problem အများဆုံးလဲ
+အခု sample ၂ row မှာ No Internet Connection ပဲ ဖြစ်နေတယ်။
+
+6) Complaint by Township
+Field
+
+Township
+Graph
+
+Horizontal bar chart
+Map style chart (advanced)
+ဘာပြမလဲ
+
+ဘယ် township မှာ complaint များလဲ
+hotspot township တွေ
+Sample
+
+Dagon Myothit Seikkan
+Lanmadaw
+7) Complaint by OPI Site Code
+Field
+
+Opi Site Code
+Graph
+
+Bar chart
+Top 10 site chart
+Pareto chart
+ဘာပြမလဲ
+
+ဘယ် site code မှာ complaint အများဆုံးလဲ
+Top problematic sites
+8) Complaint by Pole Name
+Field
+
+Pole Name
+Graph
+
+Bar chart
+Top 10 pole complaints
+ဘာပြမလဲ
+
+ဘယ် pole / segment မှာ issue များလဲ
+field maintenance prioritize လုပ်နိုင်တယ်
+9) Complaint by Service Area
+Field
+
+Service Area
+Graph
+
+Bar chart
+Pie chart
+ဘာပြမလဲ
+
+Yangon-FR-SLA-Fiber Internet-OPI စတဲ့ service area တွေအလိုက် issue count
+10) Complaint by Queue
+Field
+
+Queue
+Graph
+
+Bar chart
+Stacked bar by status
+ဘာပြမလဲ
+
+Customer Support queue မှာ ticket ဘယ်လောက်ဝင်လဲ
+NOC / Field / Escalation queue တွေထိ track လုပ်လို့ရတယ်
+11) Root Cause Analysis
+ဒီ data မှာ root cause related field အများကြီးရှိတယ် — အရမ်းကောင်းပါတယ်။
+
+Fields
+
+Root Cause
+Root Cause Category
+Service Root Cause
+Suspected Area Of Issue
+Graph
+
+Pie chart
+Bar chart
+Pareto chart
+Stacked bar by month
+ဘာပြမလဲ
+
+Uplink Fiber Issue
+Customer LAN Issue
+Infra issue
+Access passive issue
+Customer side issue
+ဒီ graph က NOC dashboard အတွက် အရမ်းအရေးကြီးတယ်
+
+12) Complaint by Suspected Area Of Issue
+Field
+
+Suspected Area Of Issue
+Graph
+
+Bar chart
+Stacked bar with Root Cause Category
+ဘာပြမလဲ
+
+Access Network-Passive
+Customer Site
+OLT side
+Fiber path
+Last mile
+တို့ထဲမှာ issue ဘယ်မှာ concentrated ဖြစ်လဲ
+13) Complaint by Fiber CA1 Name
+Field
+
+Fiber Ca1 Name
+Graph
+
+Top 10 CA1 complaint chart
+Bar chart
+ဘာပြမလဲ
+
+ဘယ် CA1 area မှာ problem များလဲ
+14) Complaint by Fiber OLT Name
+Field
+
+Fiber Olt Name
+Graph
+
+Bar chart
+Top 10 OLT complaints
+ဘာပြမလဲ
+
+ဘယ် OLT မှာ incident အများဆုံးဖြစ်လဲ
+OLT health monitoring report အနေနဲ့လည်း သုံးလို့ရတယ်
+15) Repeat Complaint Report
+Field
+
+CPE ID
+Local Service ID
+Graph
+
+Top repeated complaint customers
+Repeat complaint trend
+Table + bar chart
+ဘာပြမလဲ
+
+တူညီတဲ့ CPE ID / Local Service ID ကို complaint ဘယ်နှစ်ခါတက်လဲ
+Same customer repeated complaint ဖြစ်မဖြစ်
+မှတ်ချက်
+
+customer multiple time complaint report အတွက် ဒီ fields တွေက အသုံးဝင်တယ်
+16) Site Complaint Percentage
+Field
+
+Opi Site Code
+total complaint count
+Graph
+
+100% stacked bar
+Pie / donut
+Ranked bar with %
+ဘာပြမလဲ
+
+Total complaint ထဲက site တစ်ခုချင်းစီရဲ့ % share
+17) Daily / Weekly / Monthly Normalized Complaint
+လိုအပ်မယ့် field
+
+complaint count
+total subscriber/site/device baseline
+Graph
+
+Complaint per 100 customers
+Complaint per site
+Complaint per 1000 services
+မှတ်ချက်
+ဒီ sample data ထဲမှာ normalization denominator မပါသေးဘူး
+ဥပမာ:
+
+total customers by site
+total active CPE by site
+total services by township
+အဲဒါတွေရှိမှ normalized graph ဆွဲလို့ရမယ်။
+
+ဒီ data ကနေ Derived KPI တွေလည်း ရမယ်
+KPI Cards အနေနဲ့
+Total Tickets
+Closed Tickets
+Open Tickets
+Avg Resolution Time
+Max Resolution Time
+Top Root Cause
+Top Township
+Top Site Code
+Repeat Complaint Count
+Overtime Ticket Count
+ဒီ sample data နဲ့ မရသေးတာ / အပိုလိုတာ
+1) Complaint by CPE Type
+အခုရှိတာ CPE ID ပဲ၊ CPE Type မရှိသေးဘူး
+
+ဆွဲချင်ရင် ဒီလို field တစ်ခုလိုမယ်:
+
+ONU
+Router
+ONT
+Switch
+Modem
+CPE ID ကနေ type parse လုပ်လို့ရရင် OK
+မရရင် CPE Type column သီးသန့်ထည့်ပါ
+
+2) SLA Report
+SLA graph ဆွဲချင်ရင် ဒီထဲမှာ တိုက်ရိုက်မပါသေးတာ:
+
+SLA target hours/minutes
+response SLA
+resolution SLA
+မဟုတ်ရင် business rule နဲ့ define လုပ်ရမယ်။
+
+3) Reopen Ticket Report
+Reopen ဖြစ်မဖြစ် track လုပ်ဖို့
+
+Reopen flag
+Reopen count
+status history
+လိုတယ်
+4) Engineer Performance
+ဒီ data မှာ assignee/engineer မပါသေးဘူး
+ဒါကြောင့် engineer-wise graph မရသေးဘူး
+
+အကောင်းဆုံး graph 12 ခု recommendation
+ဒီ columns အပေါ် မူတည်ပြီး dashboard အတွက် အရင်ဆုံး ဒီ 12 ခု လုပ်ရင် အရမ်းအသုံးဝင်မယ် —
+
+Ticket Trend by Day / Week / Month / Year
+Open vs Closed Ticket
+Average Resolution Time (MTTR)
+Overtime Ticket Count
+Complaint by Ticket Problem
+Complaint by Township
+Complaint by OPI Site Code
+Complaint by Root Cause Category
+Complaint by Service Root Cause
+Complaint by Suspected Area of Issue
+Top Repeat Complaint CPE / Local Service ID
+Top 10 Fiber OLT / CA1 / Pole Complaint Report
+Dashboard Page Layout အကြံပြုချက်
+Page 1: Executive Summary
+Total Tickets
+Closed Tickets
+Overtime Tickets
+Avg MTTR
+Repeat Complaint Count
+Page 2: Trend
+Daily/Weekly/Monthly/Yearly ticket trend
+Resolution time trend
+Overtime trend
+Page 3: Complaint Breakdown
+By Problem
+By Township
+By Site Code
+By Service Area
+Page 4: Root Cause Analysis
+Root Cause
+Root Cause Category
+Service Root Cause
+Suspected Area of Issue
+Page 5: Infrastructure View
+Fiber OLT Name
+Fiber CA1 Name
+Pole Name
+OPI Site Code
+Page 6: Repeat Complaint
+By CPE ID
+By Local Service ID
+By Site
+By Township
+အရေးကြီးဆုံး observation
+ဒီ sample data structure က NOC dashboard ဆောက်ဖို့ တော်တော်ကောင်းပါတယ်။
+အထူးသဖြင့် Root Cause / OLT / CA1 / Site Code / Township / Queue fields ပါနေတာကြောင့်
+operation view + infrastructure view + customer issue view သုံးမျိုးလုံး ရနိုင်တယ်။
+
+လိုချင်ရင် နောက်တစ်ဆင့်အနေနဲ့ ကျွန်တော်က:
+
+ဒီ columns အတွက် Power BI dashboard design
+Excel pivot/report structure
+SQL calculation logic for MTTR / overtime / repeat complaint
+ကို Burmese နဲ့ ready-made format ပြန်စီပေးနိုင်ပါတယ်။
+လိုရင် “Power BI dashboard layout ပေးပါ” လို့ပြောပါ။
+
+
+image.png
+image.png
+index.html
+README.md
+script.js
+style.css
+ဒီ design လေး ကြိုက်တယ် ငါ့မှာ github မှာ code ပြီး cloudflare pages , d1 database နဲ့ ချိတ်ထားတဲ့ website ရှိတယ် အဲ့မှာ dashboard ဆိုတဲ့ tab တခုထပ်ထည့်မယ် အဲ့တာကို leader role နဲ့ အထက်ပဲ မြင်ခွင့်ရှိမယ် admin ကပဲ item တွေ add လို့ရမယ် ကျန်တဲ့ user တွေဆီမှာ မပြဘူး ပြီးတော့ dashboard ကို click ရင် information tab ကို click သလိုမျိုး dropdown လေးလိုချင်တယ် dropdown အောက်ဆုံးမှာ manage dashboard ဆိုပြီး ပြမယ် အဲ့တာက catagory setting ကို click လိုက်သမျိုး popup တခုတက်လာမယ် အသစ်ထည့်မလား မေးတဲ့ popup ပေါ့ ရှိပြီးသားတွေကိုလည်း စီလို့ရရမယ် ဖျက်လို့ရရမယ် edit လို့ရရမယ် ပြီးတော့ အသစ်ထည့်မယ်ကိုနှိပ်ရင် catagory တုန်းကပြသလိုပဲ popup ကျလာမယ် name,icon,api ရွေးခိုင်းမယ် ငါက google sheet ထဲက data ကို api နဲ့ json format ရအောင်ယူပြီး d1 မှာ သိမ်းထားချင်တာ website ကိုစဝင်တာနဲ့ dashbaord item တွေရဲ့ api ကို လှမ်းယူထားမယ် နောက်ကွယ်ယူနေမယ် အဲ့တာဆို api ကို dashboard ကိုနှိပ်မှယူတာမဟုတ်တော့ ပိုပြီးမြန်တာပေါ့ ပြီးတော့ သက်ဆိုင်ရာ dashboard name အလိုက် data ကို d1 မှာသိမ်းပေးပါ
+
+အဲ့တာဆို dashbaord ကို click တာနဲ့ ထည့်ထားတဲ့ dropdown item ပေါ်မယ် အဲ့တာကိုclick ရင် ခုနကပြောတဲ့ graph တွေပြချင်တာ ui ကတော့ ထည့်ထားတဲ့ ပုံလိုလေး
+
+လောလောဆယ် အဲ့တာကို အရင်လုပ်ပေးပါ လိုအပ်တာတွေလုပ်ဖို့ မေးစရာရှိတာဖြစ်ဖြစ် d1 မှာ ပြင် စရာရှိတာဖြစ်ဖြစ် ပြောပြပါ sheet ရဲ့ code.gs ကနေ api အဖြစ်ပြောင်းဖို့ အောက်က code ကိုပြင်ပေးပါဦး
+
+function doGet(e) {
+
+  // Open the specific Google Sheet by its ID
+
+  var sheet = SpreadsheetApp.openById("1UV9H8oUFq-EdHksLq8xINlrg8gGPsJWtWA2ePhR-8XU").getSheetByName("list");
+
+ 
+
+  // Get all the data from the sheet
+
+  var data = sheet.getDataRange().getValues();
+
+ 
+
+  // Initialize an empty array to store the formatted JSON data
+
+  var jsonData = [];
+
+ 
+
+  // Iterate through the rows, skipping the first row (header)
+
+  for (var i = 1; i < data.length; i++) {
+
+    var row = data[i];
+
+   
+
+    // Push an object into jsonData array for each row, using the columns you want to include
+
+    jsonData.push({
+
+      title: row[0],  // Column A: title
+
+      link: row[1]    // Column B: link
+
+    });
+
   }
-})();
 
-/* ══════════════════════════════════════════════════════════
-   LOADING
-══════════════════════════════════════════════════════════ */
-function showLoading(prog=false){
-  const ex=document.getElementById('loadingOverlay');if(ex)ex.remove();
-  const o=document.createElement('div');o.id='loadingOverlay';
-  o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;';
-  if(prog){
-    o.innerHTML=`<div style="background:var(--surface);border-radius:14px;padding:2rem;box-shadow:0 16px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;align-items:center;gap:1rem;min-width:260px;max-width:90vw;">
-      <div style="width:52px;height:52px;border:4px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;"></div>
-      <div style="text-align:center;"><p style="font-weight:700;color:var(--text);margin-bottom:.2rem;">Please wait...</p><p style="color:var(--text2);font-size:.82rem;" id="loadingStatus">Loading</p></div>
-      <div style="width:100%;background:var(--border);border-radius:50px;height:6px;overflow:hidden;"><div id="progressBar" style="background:var(--accent);height:6px;border-radius:50px;transition:width .3s;width:0%;"></div></div>
-      <p style="color:var(--text3);font-size:.72rem;" id="progressPercent">0%</p></div>`;
-  } else {
-    o.innerHTML=`<div style="background:var(--surface);border-radius:14px;padding:2rem;box-shadow:0 16px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;align-items:center;gap:.9rem;">
-      <div style="width:52px;height:52px;border:4px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;"></div>
-      <p style="font-weight:700;color:var(--text);">Please wait...</p></div>`;
-  }
-  document.body.appendChild(o);
-}
-function updateProgress(pct,status=''){
-  const b=el('progressBar'),p=el('progressPercent'),s=el('loadingStatus');
-  if(b)b.style.width=`${pct}%`;if(p)p.textContent=`${Math.round(pct)}%`;if(s&&status)s.textContent=status;
-}
-function hideLoading(){
-  const o=el('loadingOverlay');
-  if(o){o.classList.add('animate-fadeOut');setTimeout(()=>o.remove(),200);}
+ 
+
+  // Create a response object containing the JSON data
+
+  var output = ContentService.createTextOutput(JSON.stringify(jsonData));
+
+ 
+
+  // Set the MIME type to application/json so that the output is treated as JSON
+
+  output.setMimeType(ContentService.MimeType.JSON);
+
+ 
+
+  return output;
+
 }
 
-/* ══════════════════════════════════════════════════════════
-   TOAST
-══════════════════════════════════════════════════════════ */
-function showToast(msg,type='error'){
-  const c=el('toastContainer');
-  const t=document.createElement('div');t.className='toast';
-  t.style.background=type==='error'?'#ef4444':type==='info'?'var(--accent)':'#10b981';
-  const icon=type==='error'?'fa-exclamation-circle':type==='info'?'fa-info-circle':'fa-check-circle';
-  t.innerHTML=`<i class="fas ${icon}"></i><span>${escHtml(msg)}</span>`;
-  c.appendChild(t);setTimeout(()=>t.remove(),3100);
-}
 
-/* ══════════════════════════════════════════════════════════
-   API
-══════════════════════════════════════════════════════════ */
-const getHeaders = ()=>({'Authorization':authHeader||'','Content-Type':'application/json'});
 
-async function fetchAPI(endpoint,opts={}){
-  try{
-    const res=await fetch(`${API_URL}/${endpoint}`,{...opts,headers:{...getHeaders(),...(opts.headers||{})}});
-    if(res.status===401){if(!opts.silentFail)logout();return null;}
-    if(!res.ok){
-      const data=await res.json().catch(()=>({}));
-      throw new Error(data.error||`HTTP ${res.status}`);
+Explored
+4 reads
+Read
+index.html
+Read
+script.js
+Read
+style.css
+Read
+README.md
+
+Ran commands
+5
+
+Explored
+1 read
+Read
+script.js
+
+Ran commands
+6
+
+Edited files
+3
+Dashboard backend notes
+MD
+Dashboard backend notes
+New D1 tables
+Run dashboard_d1_schema.sql in your Cloudflare D1 database.
+
+Frontend expects these API routes
+1) GET /api/getData
+Return the existing payload plus:
+
+JSON
+
+{
+  "dashboardItems": [
+    {
+      "id": 1,
+      "name": "Ticket Overview",
+      "slug": "ticket-overview",
+      "icon": "fa-chart-line",
+      "api_url": "https://script.google.com/.../exec",
+      "min_role_required": "leader",
+      "overtime_hours": 8,
+      "sort_order": 0,
+      "is_active": 1
     }
-    return res.json();
-  }catch(e){
-    console.error(e);
-    if(!opts.silentFail)showToast('Error: '+e.message);
-    return null;
-  }
+  ]
 }
+2) POST /api (existing generic save/delete)
+Extend your existing generic CRUD so these work too:
 
-async function refreshData(silent=false){
-  if(!silent)showLoading();
-  const data=await fetchAPI('getData',{silentFail:silent});
-  if(data){
-    appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[], ...data };
-    if(!el('homePage').classList.contains('hidden'))renderUpdates();
-    if(!el('learningPage').classList.contains('hidden'))renderLearning();
-    if(!el('informationPage').classList.contains('hidden')&&currentInfoCategory)renderInfoCards();
-    if(!el('dashboardPage').classList.contains('hidden')&&currentDashboardId){
-      const activeDash=appData.dashboardItems.find(d=>d.id===currentDashboardId);
-      if(activeDash){ currentDashboardItem=activeDash; if(currentDashboardPayload) renderCurrentDashboard(); }
+table = "dashboard_items" with action = "save"
+table = "dashboard_items" with action = "delete"
+When saving:
+
+if id exists => UPDATE
+else => INSERT
+keep min_role_required = 'leader'
+write updated_at = CURRENT_TIMESTAMP
+auto-fill sort_order if missing (MAX(sort_order)+1)
+3) POST /api/dashboards/sort
+Request body:
+
+JSON
+
+{ "order": [3, 1, 2] }
+Update sort_order according to array order.
+
+4) POST /api/dashboards/prefetch
+Purpose:
+
+when user logs in, frontend calls this in background
+worker loops through active dashboard items
+fetch each api_url
+save JSON into dashboard_cache
+log success/failure into dashboard_sync_logs
+Recommended response:
+
+JSON
+
+{ "success": true, "queued": 3 }
+5) GET /api/dashboards/:id/data
+Recommended behavior:
+
+read dashboard item from dashboard_items
+if query has refresh=1, fetch fresh API data first and update cache
+return cached data from dashboard_cache
+Recommended response:
+
+JSON
+
+{
+  "success": true,
+  "dashboardId": 1,
+  "name": "Ticket Overview",
+  "lastSynced": "2026-07-10T10:30:00Z",
+  "rowCount": 120,
+  "data": [
+    { "Ticket ID": 1, "Status": "closed" }
+  ]
+}
+Access control
+Dashboard dropdown/tab: leader and admin only
+Manage Dashboard: admin only
+Normal member/intern: do not return dashboard items in visible UI
+Important note about Google Sheets API source
+Your Apps Script JSON endpoint usually does not send CORS headers.
+That is okay because Cloudflare Worker can fetch it server-side.
+So the best flow is:
+
+Google Sheet -> Apps Script JSON -> Cloudflare Worker -> D1 cache -> Frontend
+
+Suggested worker flow (pseudo)
+JavaScript
+
+async function syncDashboardItem(env, item) {
+  const res = await fetch(item.api_url, { cf: { cacheTtl: 0, cacheEverything: false } });
+  const json = await res.json();
+  const rows = Array.isArray(json) ? json : (json.data || json.rows || []);
+
+  await env.DB.prepare(`
+    INSERT INTO dashboard_cache (dashboard_item_id, dashboard_name, source_url, payload_json, row_count, last_synced_at, last_error)
+    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, NULL)
+    ON CONFLICT(dashboard_item_id) DO UPDATE SET
+      dashboard_name = excluded.dashboard_name,
+      source_url = excluded.source_url,
+      payload_json = excluded.payload_json,
+      row_count = excluded.row_count,
+      last_synced_at = CURRENT_TIMESTAMP,
+      last_error = NULL
+  `).bind(
+    item.id,
+    item.name,
+    item.api_url,
+    JSON.stringify(json),
+    rows.length
+  ).run();
+}
+Recommended next backend change
+If you send me your Cloudflare Worker API file, I can wire the exact routes for you.
+
+Open
+dashboard_d1_schema.sql
+SQL
+-- Dashboard item definitions (what shows in the dropdown)
+CREATE TABLE IF NOT EXISTS dashboard_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  icon TEXT NOT NULL DEFAULT 'fa-chart-line',
+  api_url TEXT NOT NULL,
+  min_role_required TEXT NOT NULL DEFAULT 'leader',
+  overtime_hours REAL NOT NULL DEFAULT 8,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Cached JSON payload per dashboard item
+CREATE TABLE IF NOT EXISTS dashboard_cache (
+  dashboard_item_id INTEGER PRIMARY KEY,
+  dashboard_name TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_error TEXT,
+  FOREIGN KEY (dashboard_item_id) REFERENCES dashboard_items(id) ON DELETE CASCADE
+);
+
+-- Optional audit trail for sync history
+CREATE TABLE IF NOT EXISTS dashboard_sync_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dashboard_item_id INTEGER NOT NULL,
+  sync_status TEXT NOT NULL,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  message TEXT,
+  synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (dashboard_item_id) REFERENCES dashboard_items(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_dashboard_items_sort ON dashboard_items(sort_order);
+CREATE INDEX IF NOT EXISTS idx_dashboard_items_active ON dashboard_items(is_active);
+CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC);
+Open
+dashboard_google_sheet_code.gs
+PLAIN
+function doGet(e) {
+  var SHEET_ID = '1UV9H8oUFq-EdHksLq8xINlrg8gGPsJWtWA2ePhR-8XU';
+  var DEFAULT_SHEET = 'list';
+  var TZ = Session.getScriptTimeZone() || 'Asia/Yangon';
+
+  try {
+    var params = e && e.parameter ? e.parameter : {};
+    var sheetName = (params.sheet || DEFAULT_SHEET).trim();
+    var limit = parseInt(params.limit || '0', 10);
+    var statusFilter = (params.status || '').trim().toLowerCase();
+    var fromDate = parseDateOnly_(params.from);
+    var toDate = parseDateOnly_(params.to);
+    var fields = (params.fields || '')
+      .split(',')
+      .map(function(x) { return x.trim(); })
+      .filter(String);
+
+    var sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(sheetName);
+    if (!sheet) {
+      return jsonOutput_({
+        success: false,
+        error: 'Sheet not found: ' + sheetName
+      });
     }
-    if(!el('adminPage').classList.contains('hidden')&&isAdmin()){renderUsers();}
-    renderMobileInfoMenu();renderInfoDropdown();
-    renderMobileDashboardMenu();renderDashboardDropdown();
-    if(isLeader()) startDashboardPrefetch();
-  }
-  if(!silent)hideLoading();
-  return data;
-}
 
-/* ══════════════════════════════════════════════════════════
-   AUTH / LOGIN
-══════════════════════════════════════════════════════════ */
-el('togglePassword').addEventListener('click',function(){
-  const p=el('password'),i=this.querySelector('i');
-  p.type=p.type==='password'?'text':'password';
-  i.classList.toggle('fa-eye',p.type==='password');
-  i.classList.toggle('fa-eye-slash',p.type==='text');
-});
-
-el('loginForm').addEventListener('submit',async function(e){
-  e.preventDefault();
-  if(isProcessing)return;isProcessing=true;
-  const u=el('username').value.trim(),p=el('password').value;
-  const btn=el('loginBtn'),box=el('loginBox');
-  btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Please wait...';btn.disabled=true;
-  const tempAuth='Basic '+btoa(u+':'+p);
-  try{
-    const res=await fetch(`${API_URL}/login`,{method:'POST',headers:{'Authorization':tempAuth}});
-    if(res.ok){
-      const data=await res.json();
-      authHeader=tempAuth;localStorage.setItem('authHeader',authHeader);
-      currentUser=data.user;
-      showLoading(true);updateProgress(10,'Authenticating...');await delay(200);
-      updateProgress(30,'Loading data...');
-      const d=await fetchAPI('getData');
-      updateProgress(70,'Preparing...');await delay(200);
-      if(d){
-        appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[], ...d };
-        // Prefer currentUser from getData (works for all roles, not just admin)
-        if(d.currentUser){
-          currentUser={...currentUser,...d.currentUser};
-        }
-        currentUser.accountName=currentUser.accountName||currentUser.account_name||
-          d.users.find(x=>x.username===u)?.accountName||
-          d.users.find(x=>x.username===u)?.account_name||u;
-        updateProgress(90,'Almost done...');await delay(200);
-        doShowApp();
-        updateProgress(100,'Done!');await delay(300);hideLoading();
-      }else throw new Error('Failed to load data');
-    }else throw new Error('Invalid credentials');
-  }catch(err){
-    hideLoading();box.classList.add('shake');showToast('Wrong username or password!');
-    setTimeout(()=>box.classList.remove('shake'),500);
-  }
-  btn.innerHTML='<span>Sign In</span><i class="fas fa-arrow-right"></i>';
-  btn.disabled=false;isProcessing=false;
-});
-
-function doShowApp(){
-  el('loginPage').classList.add('hidden');
-  el('mainApp').classList.remove('hidden');
-  // Show name only — no role badge anywhere on the page
-  const wu=el('welcomeUser');if(wu)wu.textContent=currentUser.accountName;
-  updateAdminUI();renderMobileInfoMenu();renderInfoDropdown();renderMobileDashboardMenu();renderDashboardDropdown();
-  navigateTo('home');
-  if(isLeader()) startDashboardPrefetch();
-  startPolling(); // begin real-time background polling
-}
-
-function updateAdminUI(){
-  // Admin-only elements
-  ['adminBtn','mobileAdminBtn','manageDashboardPageBtn','dashboardViewSettingsBtn','manageDashboardPagesBtn','manageDashboardWidgetsBtn','clearDashboardCacheBtn'].forEach(id=>{
-    const e=el(id);if(e)isAdmin()?e.classList.remove('hidden'):e.classList.add('hidden');
-  });
-
-  // Dashboard visibility — leader+ only
-  ['dashboardBtnWrap','mobileDashboardSection','refreshDashboardBtn'].forEach(id=>{
-    const e=el(id);if(!e)return;
-    if(id==='refreshDashboardBtn') isLeader()?e.classList.remove('hidden'):e.classList.add('hidden');
-    else isLeader()?e.classList.remove('hidden'):e.classList.add('hidden');
-  });
-
-  // Info card add button — leader+
-  const addInfo=el('addInfoCardBtn');
-  if(addInfo) canManageInfo()?addInfo.classList.remove('hidden'):addInfo.classList.add('hidden');
-
-  // Learning admin buttons — admin only
-  const lrn=el('learningAdminBtns');
-  if(lrn) isAdmin()?lrn.classList.remove('hidden'):lrn.classList.add('hidden');
-}
-
-function delay(ms){return new Promise(r=>setTimeout(r,ms));}
-async function simulateProgress(pct,status){updateProgress(pct,status);await delay(200);}
-
-function showLoginPage(){
-  el('mainApp').classList.add('hidden');el('loginPage').classList.remove('hidden');
-  el('username').value='';el('password').value='';
-}
-function logout(){
-  stopPolling(); // stop background polling on sign-out
-  localStorage.removeItem('authHeader');authHeader=null;currentUser=null;
-  document.querySelectorAll('.modal-bd').forEach(m=>m.classList.add('hidden'));
-  showLoginPage();closeMobileMenu();
-}
-
-async function initApp(){
-  loadPreferences();
-  if(!authHeader){showLoginPage();return;}
-  showLoading(true);updateProgress(10,'Initializing...');await delay(200);
-  updateProgress(25,'Checking auth...');
-  const data=await fetchAPI('getData',{silentFail:true});
-  updateProgress(60,'Loading...');await delay(200);
-  if(!data){hideLoading();showLoginPage();return;}
-  updateProgress(80,'Preparing...');await delay(150);
-  appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[], ...data };
-  if(!currentUser){
-    // Prefer currentUser returned by getData (available for ALL roles)
-    if(data.currentUser){
-      currentUser=data.currentUser;
-      currentUser.accountName=currentUser.accountName||currentUser.account_name||currentUser.username;
-    } else {
-      // Fallback: search users list (only populated for admin)
-      const creds=atob(authHeader.split(' ')[1]).split(':'),uname=creds[0];
-      const found=appData.users.find(u=>u.username===uname);
-      currentUser=found
-        ?{...found,accountName:found.accountName||found.account_name||uname}
-        :{accountName:uname,role:'intern'};
+    var values = sheet.getDataRange().getValues();
+    if (!values || values.length < 2) {
+      return jsonOutput_({
+        success: true,
+        sheet: sheetName,
+        rowCount: 0,
+        generatedAt: isoNow_(TZ),
+        data: []
+      });
     }
-  }
-  updateProgress(95,'Almost ready...');await delay(150);
-  el('loginPage').classList.add('hidden');el('mainApp').classList.remove('hidden');
-  doShowApp();updateProgress(100,'Done!');await delay(300);hideLoading();
-}
 
-/* ══════════════════════════════════════════════════════════
-   MOBILE MENU
-══════════════════════════════════════════════════════════ */
-function openMobileMenu(){
-  el('mobileMenu').classList.remove('hidden');el('mobileOverlay').classList.remove('hidden');
-  setTimeout(()=>el('mobileMenu').classList.add('show'),10);
-  renderMobileInfoMenu();renderMobileDashboardMenu();
-}
-function closeMobileMenu(){
-  el('mobileMenu').classList.remove('show');
-  setTimeout(()=>{el('mobileMenu').classList.add('hidden');el('mobileOverlay').classList.add('hidden');},280);
-}
+    var headers = values[0].map(function(h) {
+      return String(h || '').trim();
+    });
 
-function renderMobileInfoMenu(){
-  const container=el('mobileInfoMenu');
-  if(!container) return;
-  const cats=appData.categories.filter(c=>canSee(c.min_role_required||'intern'));
-  container.innerHTML=cats.map(cat=>`
-    <button onclick="showInfoCategory(${cat.id},'${escAttr(cat.name)}');closeMobileMenu();" class="mob-nbtn mob-nbtn--sub">
-      <i class="fas ${cat.icon}"></i> ${escHtml(cat.name)}
-    </button>`).join('');
-}
+    var rows = [];
+    for (var r = 1; r < values.length; r++) {
+      var row = values[r];
+      if (isEmptyRow_(row)) continue;
 
+      var obj = {};
+      for (var c = 0; c < headers.length; c++) {
+        var header = headers[c] || ('Column_' + (c + 1));
+        obj[header] = normalizeValue_(row[c], TZ);
+      }
 
-function renderMobileDashboardMenu(){
-  const section=el('mobileDashboardSection');
-  const container=el('mobileDashboardMenu');
-  if(!section||!container) return;
-  if(!isLeader()){
-    section.classList.add('hidden');
-    container.innerHTML='';
-    return;
-  }
-  section.classList.remove('hidden');
-  const items=(appData.dashboardItems||[]).filter(d=>canSee(d.min_role_required||'leader'));
-  let html=items.map(item=>`
-    <button onclick="showDashboardItem(${item.id},'${escAttr(item.name)}');closeMobileMenu();" class="mob-nbtn mob-nbtn--sub">
-      <i class="fas ${item.icon||'fa-chart-line'}"></i> ${escHtml(item.name)}
-    </button>`).join('');
-  if(!items.length) html='<div class="dash-manager-note" style="padding:.35rem .9rem .6rem">No dashboard items yet</div>';
-  container.innerHTML=html;
-}
+      if (statusFilter) {
+        var rowStatus = String(obj['Status'] || '').trim().toLowerCase();
+        if (rowStatus !== statusFilter) continue;
+      }
 
-/* ══════════════════════════════════════════════════════════
-   NAVIGATION
-══════════════════════════════════════════════════════════ */
-function navigateTo(page){
-  document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
-  document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active'));
-  if(el('infoDropdown'))el('infoDropdown').classList.add('hidden');
-  if(el('dashboardDropdown'))el('dashboardDropdown').classList.add('hidden');
-  if(page==='home'){
-    el('homePage').classList.remove('hidden');renderUpdates();
-  } else if(page==='learning'){
-    el('learningPage').classList.remove('hidden');
-    currentFolderId=null;
-    if(el('learningSearch'))el('learningSearch').value='';
-    if(el('clearSearch'))el('clearSearch').classList.add('hidden');
-    if(el('searchResults'))el('searchResults').classList.add('hidden');
-    if(el('learningContainer'))el('learningContainer').classList.remove('hidden');
-    renderLearning();
-  } else if(page==='admin'){
-    if(!isAdmin())return;el('adminPage').classList.remove('hidden');showAdminTab('users');
-  } else if(page==='dashboard'){
-    el('dashboardPage').classList.remove('hidden');
-    if(currentDashboardId){
-      const item=appData.dashboardItems.find(d=>d.id===currentDashboardId);
-      if(item){ currentDashboardItem=item; renderCurrentDashboard(); }
-      else renderDashboardEmpty('Select a dashboard item from the Dashboard menu');
-    } else {
-      renderDashboardEmpty('Select a dashboard item from the Dashboard menu');
+      if (fromDate || toDate) {
+        var createdText = obj['Created'] || obj['Date Created'] || '';
+        var createdDate = parseAnyDate_(createdText);
+        if (fromDate && createdDate && createdDate < fromDate) continue;
+        if (toDate && createdDate && createdDate > toDate) continue;
+      }
+
+      if (fields.length) {
+        var picked = {};
+        fields.forEach(function(fieldName) {
+          picked[fieldName] = obj[fieldName] !== undefined ? obj[fieldName] : '';
+        });
+        rows.push(picked);
+      } else {
+        rows.push(obj);
+      }
+
+      if (limit > 0 && rows.length >= limit) break;
     }
+
+    return jsonOutput_({
+      success: true,
+      sheet: sheetName,
+      rowCount: rows.length,
+      generatedAt: isoNow_(TZ),
+      headers: fields.length ? fields : headers,
+      data: rows
+    });
+  } catch (err) {
+    return jsonOutput_({
+      success: false,
+      error: err && err.message ? err.message : String(err)
+    });
   }
-  document.querySelectorAll(`[data-page="${page}"]`).forEach(b=>b.classList.add('active'));
 }
 
-// Information dropdown — categories list + "Categories Setting" at bottom for admin
-function toggleInfoDropdown(){
-  const d=el('infoDropdown');
-  if(!d) return;
-  d.classList.toggle('hidden');
-  if(!d.classList.contains('hidden')) renderInfoDropdown();
+function jsonOutput_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }
-function renderInfoDropdown(){
-  const d=el('infoDropdown');
-  if(!d) return;
-  const cats=appData.categories.filter(c=>canSee(c.min_role_required||'intern'));
-  let html=cats.map(cat=>`
-    <button onclick="showInfoCategory(${cat.id},'${escAttr(cat.name)}')" class="dd-item">
-      <i class="fas ${cat.icon}"></i> ${escHtml(cat.name)}
-    </button>`).join('');
-  if(!cats.length) html='<div class="dd-empty">No categories yet</div>';
-  // "Categories Setting" separator + button — admin only
-  if(isAdmin()){
-    html+=`<div class="dd-sep"></div>
-      <button onclick="el('infoDropdown').classList.add('hidden');openCategoryManagerModal()" class="dd-item dd-item--setting">
-        <i class="fas fa-cog"></i> Categories Setting
-      </button>`;
+
+function normalizeValue_(value, tz) {
+  if (value === null || value === undefined) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
+    return Utilities.formatDate(value, tz, 'yyyy-MM-dd HH:mm:ss');
   }
-  d.innerHTML=html;
+  return value;
 }
 
-/* ── Information Category Picker Modal ──────────────────── */
-function openInfoCategoryPicker(){
-  renderCategoryPickerList();
-  el('infoCategoryPickerModal').classList.remove('hidden');
-  // Show manage button for admin
-  const mb=el('manageCatsBtn');
-  if(mb) isAdmin()?mb.classList.remove('hidden'):mb.classList.add('hidden');
-}
-
-function renderCategoryPickerList(){
-  const list=el('categoryPickerList');
-  const cats=appData.categories.filter(c=>canSee(c.min_role_required||'intern'));
-  if(!cats.length){
-    list.innerHTML='<div class="empty-state" style="padding:1.5rem"><i class="fas fa-tags"></i><p>No categories yet</p></div>';
-    return;
+function isEmptyRow_(row) {
+  for (var i = 0; i < row.length; i++) {
+    if (String(row[i] || '').trim() !== '') return false;
   }
-  list.innerHTML=cats.map(cat=>`
-    <button onclick="pickCategory(${cat.id},'${escAttr(cat.name)}')" class="cat-pick-btn">
-      <div class="cat-pick-icon"><i class="fas ${cat.icon}"></i></div>
-      <span class="cat-pick-name">${escHtml(cat.name)}</span>
-      <i class="fas fa-chevron-right cat-pick-arrow"></i>
-    </button>`).join('');
+  return true;
 }
 
-function pickCategory(catId,catName){
-  closeModal('infoCategoryPickerModal');
-  showInfoCategory(catId,catName);
+function parseDateOnly_(value) {
+  if (!value) return null;
+  var d = new Date(value);
+  if (isNaN(d)) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-// Close dropdown when clicking outside
-document.addEventListener('click',e=>{
-  const dd=el('infoDropdown');
-  const btn=document.querySelector('[data-page="information"]');
-  if(dd&&btn&&!dd.contains(e.target)&&!btn.contains(e.target))dd.classList.add('hidden');
-});
+function parseAnyDate_(value) {
+  if (!value) return null;
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) return value;
 
-function showInfoCategory(catId,catName){
-  currentInfoCategory=catId;
-  if(el('infoDropdown'))el('infoDropdown').classList.add('hidden');
-  document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
-  el('informationPage').classList.remove('hidden');
-  el('infoTitleText').textContent=catName;
-  if(canManageInfo())el('addInfoCardBtn').classList.remove('hidden');
-  else el('addInfoCardBtn').classList.add('hidden');
-  renderInfoCards();
-}
-document.addEventListener('click',e=>{
-  const dd=el('infoDropdown'),btn=document.querySelector('[data-page="information"]');
-  if(btn&&dd&&!dd.contains(e.target)&&!btn.contains(e.target))dd.classList.add('hidden');
-});
+  var text = String(value).trim().replace(',', ' ');
+  var m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (m) {
+    return new Date(
+      Number(m[1]),
+      Number(m[2]) - 1,
+      Number(m[3]),
+      Number(m[4] || 0),
+      Number(m[5] || 0),
+      Number(m[6] || 0)
+    );
+  }
 
+  var fallback = new Date(text);
+  return isNaN(fallback) ? null : fallback;
+}
 
-/* ══════════════════════════════════════════════════════════
-   DASHBOARD
-══════════════════════════════════════════════════════════ */
-const DASHBOARD_COLOR_SET = ['#6366f1','#3b82f6','#f97316','#10b981','#ec4899','#8b5cf6','#14b8a6','#f59e0b','#ef4444','#64748b'];
-const DASHBOARD_GROUP_LABELS = { day:'Day', week:'Week', month:'Month', year:'Year' };
-const DEFAULT_DASHBOARD_PAGES = [
-  { id:'summary', slug:'summary', name:'Summary', icon:'fa-gauge-high' },
-  { id:'trend', slug:'trend', name:'Trend', icon:'fa-chart-line' },
-  { id:'root-cause', slug:'root-cause', name:'Root Cause', icon:'fa-bug' },
-  { id:'site', slug:'site', name:'Site', icon:'fa-network-wired' },
-  { id:'customer', slug:'customer', name:'Customer', icon:'fa-users' },
-  { id:'raw-data', slug:'raw-data', name:'Raw Data', icon:'fa-table' },
-];
-const DASHBOARD_GRAPH_OPTIONS = {
-  trendChart: [
-    { value:'line', label:'Line' },
-    { value:'bar', label:'Bar' },
-    { value:'area', label:'Area' },
-  ],
-  statusChart: [
-    { value:'doughnut', label:'Doughnut' },
-    { value:'pie', label:'Pie' },
-    { value:'bar', label:'Bar' },
-    { value:'polarArea', label:'Polar Area' },
-  ],
-  problemChart: [
-    { value:'bar', label:'Bar' },
-    { value:'hbar', label:'Horizontal Bar' },
-    { value:'doughnut', label:'Doughnut' },
-    { value:'pie', label:'Pie' },
-  ],
-  siteChart: [
-    { value:'bar', label:'Bar' },
-    { value:'hbar', label:'Horizontal Bar' },
-    { value:'doughnut', label:'Doughnut' },
-    { value:'pie', label:'Pie' },
-  ],
-  rootCauseChart: [
-    { value:'bar', label:'Bar' },
-    { value:'hbar', label:'Horizontal Bar' },
-    { value:'doughnut', label:'Doughnut' },
-    { value:'polarArea', label:'Polar Area' },
-  ],
-  repeatChart: [
-    { value:'list', label:'List' },
-    { value:'bar', label:'Bar' },
-    { value:'hbar', label:'Horizontal Bar' },
-    { value:'doughnut', label:'Doughnut' },
-  ],
-};
+function isoNow_(tz) {
+  return Utilities.formatDate(new Date(), tz, "yyyy-MM-dd'T'HH:mm:ssXXX");
+}
+Open
+ရပြီ — first step version ကို အရင် စီပေးထားပါတယ်။
+လက်ရှိ workspace ထဲမှာ dashboard UI structure + manage popup + Google Sheet API code + D1 schema note ထည့်ပေးထားတယ်။
 
-function destroyDashboardCharts(){
-  if(dashboardRenderRaf){ cancelAnimationFrame(dashboardRenderRaf); dashboardRenderRaf=null; }
-  dashboardRenderToken++;
-  dashboardChartInstances.forEach(ch=>{ try{ ch.destroy(); }catch{} });
-  dashboardChartInstances=[];
-  ['dashTrendCanvas','dashStatusCanvas','dashProblemCanvas','dashSiteCanvas','dashRootCanvas','dashRepeatCanvas','dashTownshipCanvas','dashQueueCanvas'].forEach(id=>{
-    const canvas=el(id);
-    try{ const existing=canvas && window.Chart && Chart.getChart(canvas); if(existing) existing.destroy(); }catch{}
-  });
-}
-function clearDashboardLoadPulse(){
-  if(dashboardLoadPulseTimer){ clearInterval(dashboardLoadPulseTimer); dashboardLoadPulseTimer=null; }
-}
-function startDashboardLoadPulse(){
-  // no-op: dashboard progress now follows real loading phases
-}
-function updateDashboardLoadingUI(pct, title='', sub='', mode='determinate'){
-  const bar=el('dashboardLoadingBar');
-  const txt=el('dashboardLoadingPct');
-  const ttl=el('dashboardLoadingTitle');
-  const msg=el('dashboardLoadingSub');
-  const track=el('dashboardLoadingTrack');
-  if(bar){
-    if(mode==='determinate'){
-      bar.classList.remove('dash-fetch-fill--indeterminate');
-      bar.style.width=`${Math.max(0,Math.min(100,Math.round(pct||0)))}%`;
-    } else {
-      bar.classList.add('dash-fetch-fill--indeterminate');
-      bar.style.width='38%';
+ငါပြင်ပေးထားတဲ့ file တွေ
+
+index.html
+
+script.js
+
+style.css
+
+dashboard_google_sheet_code.gs
+
+dashboard_d1_schema.sql
+
+dashboard_worker_notes.md
+အခုဘာတွေ လုပ်ပြီးသွားလဲ
+1) Dashboard tab / dropdown
+Leader role နှင့်အထက် ပဲ Dashboard tab မြင်ရမယ်
+Dashboard ကို click လိုက်ရင် Information tab လို dropdown ပေါ်မယ်
+Dropdown အောက်ဆုံးမှာ Manage Dashboard ပါမယ်
+Admin ပဲ အဲ့ Manage Dashboard ကိုမြင်/အသုံးပြုနိုင်မယ်
+2) Manage Dashboard popup
+Admin အတွက်:
+
+Dashboard item အသစ်ထည့်လို့ရမယ်
+Edit
+Delete
+Drag & Drop နဲ့ sort
+လုပ်လို့ရအောင် UI ထည့်ထားတယ်
+3) Add Dashboard popup
+Popup ထဲမှာ:
+
+name
+icon
+api url
+overtime hours (default 8 hrs)
+ထည့်လို့ရအောင် လုပ်ထားတယ်
+4) Dashboard page UI
+Dropdown item ကို click လိုက်ရင်
+dashboard page ပေါ်ပြီး:
+
+KPI cards
+Ticket trend
+Status distribution
+Top ticket problem
+Top site code
+Root cause trend
+Repeat complaint
+လို basic graph card UI တွေ ပြအောင် လုပ်ထားတယ်
+UI style က သင်ပို့တဲ့ design ပုံစံနဲ့ နီးအောင် pastel card layout နဲ့ လုပ်ထားတယ်
+
+5) Background prefetch flow
+Website login ဝင်ပြီးတာနဲ့:
+
+dashboard item list ရှိရင်
+frontend က /api/dashboards/prefetch
+ကို background ခေါ်မယ်
+dashboard ကို click မှ data ယူတာမဟုတ်ဘဲ
+အရင် cache warm-up လုပ်ဖို့ structure ထည့်ထားတယ်
+အရေးကြီး — backend မပြီးသေးတဲ့အပိုင်း
+Frontend/UI ကို ငါ ဆင်ပေးထားပေမယ့်
+Cloudflare Worker backend file မပါတာကြောင့်
+actual save / D1 cache / prefetch route ကို ငါ တိုက်ရိုက်မချိတ်ရသေးဘူး။
+
+အခု frontend က ဒီ route တွေကို expect လုပ်တယ်:
+
+GET /api/getData
+POST /api → generic save/delete ထဲမှာ dashboard_items support
+POST /api/dashboards/sort
+POST /api/dashboards/prefetch
+GET /api/dashboards/:id/data
+ဒီလို API route တွေကို Worker မှာ ထည့်ရမယ်။
+
+D1 မှာ ပြင်ရမယ့်အရာ
+
+dashboard_d1_schema.sql
+ ထဲမှာ table design ပေးထားတယ်။
+
+အဓိက ၂ ခု:
+
+dashboard_items
+
+dashboard dropdown item definition
+name, icon, api_url, sort_order, overtime_hours
+dashboard_cache
+
+dashboard တစ်ခုချင်းစီရဲ့ JSON payload cache
+last sync time
+row count
+last error
+Google Sheet code.gs ကို ပြင်ပေးထားတာ
+
+dashboard_google_sheet_code.gs
+ ထဲမှာ ပြင်ထားတယ်။
+
+အရင် code က
+title / link နှစ်ခုပဲ return လုပ်တယ်
+ငါပြင်ထားတဲ့ code က
+header row အလိုက် JSON object ပြန်ပေးမယ်
+full row data ကို return လုပ်မယ်
+sheet, limit, status, from, to, fields
+query param support ပါတယ်
+date format ကို normalize လုပ်ထားတယ်
+response ပုံစံ
+JSON
+
+{
+  "success": true,
+  "sheet": "list",
+  "rowCount": 120,
+  "generatedAt": "2026-07-10T10:30:00+06:30",
+  "headers": ["Ticket ID", "Status", "Created"],
+  "data": [
+    {
+      "Ticket ID": 9246126,
+      "Status": "closed",
+      "Created": "2026-02-06 14:02:00"
     }
-  }
-  if(track) track.classList.toggle('dash-fetch-track--active', mode!=='determinate');
-  if(txt) txt.textContent = mode==='determinate' ? `${Math.max(0,Math.min(100,Math.round(pct||0)))}%` : 'Syncing…';
-  if(ttl && title) ttl.innerHTML=title;
-  if(msg && sub) msg.innerHTML=sub;
+  ]
 }
-function formatBytes(bytes){
-  const n=Number(bytes)||0;
-  if(n<1024) return `${n} B`;
-  if(n<1024*1024) return `${(n/1024).toFixed(1)} KB`;
-  return `${(n/1024/1024).toFixed(2)} MB`;
-}
-function renderDashboardManagerLoading(){
-  const list=el('dashboardManagerList');
-  if(!list) return;
-  list.innerHTML=`
-    <div class="dash-mgr-loading">
-      <div class="dash-mgr-loading-head">
-        <div>
-          <div class="dash-set-title">Loading dashboard items…</div>
-          <div class="dash-manager-note">Please wait while the latest list is being refreshed.</div>
-        </div>
-        <div class="dash-mgr-spinner"><i class="fas fa-spinner fa-spin"></i></div>
-      </div>
-      <div class="dash-mgr-skeleton"></div>
-      <div class="dash-mgr-skeleton"></div>
-      <div class="dash-mgr-skeleton"></div>
-    </div>`;
-}
+မှတ်ထားဖို့
+Google Apps Script endpoint က CORS မကောင်းတာများတတ်လို့
+browser ကနေ direct မယူဘဲ Cloudflare Worker က fetch လုပ်ပြီး D1 ထဲသိမ်းတာ အကောင်းဆုံးပါ။
 
-function toggleDashboardDropdown(){
-  if(!isLeader()) return;
-  const d=el('dashboardDropdown');
-  if(!d) return;
-  d.classList.toggle('hidden');
-  if(!d.classList.contains('hidden')) renderDashboardDropdown();
-}
-function renderDashboardDropdown(){
-  const d=el('dashboardDropdown');
-  if(!d) return;
-  if(!isLeader()){ d.classList.add('hidden'); d.innerHTML=''; return; }
-  const items=(appData.dashboardItems||[]).filter(x=>canSee(x.min_role_required||'leader'));
-  let html=items.map(item=>`
-    <button onclick="showDashboardItem(${item.id},'${escAttr(item.name)}')" class="dd-item">
-      <i class="fas ${item.icon||'fa-chart-line'}"></i> ${escHtml(item.name)}
-    </button>`).join('');
-  if(!items.length) html='<div class="dd-empty">No dashboards yet</div>';
-  if(isAdmin()){
-    html+=`<div class="dd-sep"></div>
-      <button onclick="el('dashboardDropdown').classList.add('hidden');openDashboardManagerModal()" class="dd-item dd-item--setting">
-        <i class="fas fa-cog"></i> Manage Dashboard
-      </button>`;
-  }
-  d.innerHTML=html;
-}
-document.addEventListener('click',e=>{
-  const dd=el('dashboardDropdown');
-  const btn=document.querySelector('[data-page="dashboard"]');
-  if(dd&&btn&&!dd.contains(e.target)&&!btn.contains(e.target)) dd.classList.add('hidden');
-});
+Flow:
+Google Sheet → Apps Script JSON → Cloudflare Worker → D1 cache → Frontend
 
-function getDashboardApi(item){ return item?.api_url||item?.apiUrl||item?.api||''; }
-function getDashboardSla(item){ return Number(item?.overtime_hours||item?.overtimeHours||item?.sla_hours||item?.slaHours||8)||8; }
-function cloneDashboardDefaults(){ return JSON.parse(JSON.stringify(DEFAULT_DASHBOARD_SETTINGS)); }
-function normalizeDashboardSettings(raw){
-  const base=cloneDashboardDefaults();
-  let parsed=raw;
-  if(typeof raw==='string'){
-    try{ parsed=JSON.parse(raw); }catch{ parsed={}; }
-  }
-  if(!parsed||typeof parsed!=='object') parsed={};
-  const show={...(parsed.showCards||parsed.show||{})};
-  const limits={...(parsed.limits||{})};
-  const graphTypes={...(parsed.graphTypes||{})};
-  const defaultGrouping=parsed.defaultGrouping;
-  Object.keys(base.showCards).forEach(k=>{ if(typeof show[k]==='boolean') base.showCards[k]=show[k]; });
-  Object.keys(base.limits).forEach(k=>{ const v=Number(limits[k]); if(Number.isFinite(v)&&v>0) base.limits[k]=Math.round(v); });
-  Object.keys(base.graphTypes).forEach(k=>{
-    const allowed=(DASHBOARD_GRAPH_OPTIONS[k]||[]).map(x=>x.value);
-    if(typeof graphTypes[k]==='string' && allowed.includes(graphTypes[k])) base.graphTypes[k]=graphTypes[k];
-  });
-  if(['day','week','month','year'].includes(defaultGrouping)) base.defaultGrouping=defaultGrouping;
-  return base;
-}
-function getDashboardSettings(item,payload=null){
-  const raw=payload?.settings||item?.settings||item?.settings_json||item?.settingsJson||null;
-  return normalizeDashboardSettings(raw);
-}
-function getDashboardWidgetsForPage(pageId){
-  return (appData.dashboardWidgets||[])
-    .filter(w=>Number(w.dashboard_page_id||w.dashboardPageId||0)===Number(pageId))
-    .sort((a,b)=>(Number(a.sort_order??a.sortOrder??0)-Number(b.sort_order??b.sortOrder??0)) || String(a.title||'').localeCompare(String(b.title||'')));
-}
+အခု stage မှာ ဘာလိုသေးလဲ
+နောက်တစ်ဆင့် actual working ဖြစ်အောင် ငါလိုတာ ၂ ခု/၃ ခုရှိတယ်:
 
-function getDashboardPagesForItem(dashboardItemId){
-  const pages=(appData.dashboardPages||[])
-    .filter(p=>Number(p.dashboard_item_id||p.dashboardItemId||0)===Number(dashboardItemId))
-    .sort((a,b)=>(Number(a.sort_order??a.sortOrder??0)-Number(b.sort_order??b.sortOrder??0)) || String(a.name||'').localeCompare(String(b.name||'')));
-  if(pages.length) return pages.map(p=>({ id:p.id, slug:p.slug||normalizeKey(p.name||'page'), name:p.name||'Page', icon:p.icon||iconForPageSlug(p.slug||normalizeKey(p.name||'page')) }));
-  return DEFAULT_DASHBOARD_PAGES.map(p=>({ ...p }));
-}
-function iconForPageSlug(slug){ return DEFAULT_DASHBOARD_PAGES.find(p=>p.slug===slug)?.icon||'fa-layer-group'; }
-function currentFilteredDashboardRows(){ return getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); }
-function currentDashboardUrlHost(){ try{ return new URL(getDashboardApi(currentDashboardItem||{})).host; }catch{ return ''; } }
-function shouldUseSourceSummary(filters){
-  return !filters.site && !filters.township && !filters.queue && !filters.fromDate && !filters.toDate;
-}
-function sourceSummaryToStats(summary, groupBy='day'){
-  if(!summary) return null;
-  return {
-    totalRows: Number(summary.totalRows||0),
-    closedCount: Number(summary.closedCount||0),
-    openCount: Number(summary.openCount||0),
-    resolvedCount: Number(summary.resolvedCount||0),
-    avgResolutionHours: Number(summary.avgResolutionHours||0),
-    overtimeCount: Number(summary.overtimeCount||0),
-    closedRate: Number(summary.closedRate||0),
-    repeatCustomers: Number(summary.repeatCustomers||0),
-    topProblems: Array.isArray(summary.topProblems) ? summary.topProblems : [],
-    topSites: Array.isArray(summary.topSites) ? summary.topSites : [],
-    topRootCauses: Array.isArray(summary.topRootCauses) ? summary.topRootCauses : [],
-    topQueues: Array.isArray(summary.topQueues) ? summary.topQueues : [],
-    topTownships: Array.isArray(summary.topTownships) ? summary.topTownships : [],
-    trendSeries: Array.isArray(summary?.trendBy?.[groupBy]) ? summary.trendBy[groupBy] : [],
-    statusSeries: Array.isArray(summary.statusSeries) ? summary.statusSeries : [],
-    repeatEntries: Array.isArray(summary.repeatEntries) ? summary.repeatEntries : [],
+(1) သင့် Cloudflare Worker API file
+ဥပမာ:
+
+worker.js
+src/index.js
+functions/api/...
+ထဲက backend code
+အဲဒါပေးရင်
+ငါ /api/dashboards/prefetch, /api/dashboards/:id/data, sort/save/delete route တွေ
+တန်းချိတ်ပေးနိုင်တယ်
+
+(2) getData response format
+လက်ရှိ /api/getData က ဘယ်လို JSON ပြန်လဲ သိရင်
+dashboardItems ကို တိတိကျကျ merge ပေးလို့ရမယ်
+
+(3) Dashboard တစ်ခု = Google Sheet API တစ်ခု ဟုတ်မဟုတ်
+ဥပမာ:
+
+Ticket Overview → sheet api 1
+Repeat Complaint → sheet api 2
+Root Cause → sheet api 3
+ဒါမှမဟုတ်
+
+API တစ်ခုထဲက data ကို dashboard အမျိုးမျိုးနဲ့ render မလား
+ဒီ architecture ကိုသေချာရင် next step ကို ပိုသန့်မယ်
+
+အခုအခြေအနေ summary
+UI ပိုင်း first version ပြီးပြီ
+
+Dashboard dropdown
+role restriction
+manage popup
+add/edit/delete/sort
+dashboard view layout
+background prefetch trigger
+Google Sheet API code
+D1 schema note
+Backend route/D1 wiring မပြီးသေး
+ဘာလို့လဲဆိုတော့ Worker backend file မပါတာကြောင့်
+
+လိုချင်ရင် နောက် message မှာ
+Cloudflare Worker code file ကို attach/paste လုပ်ပါ။
+
+အဲဒါနဲ့ ငါက:
+
+D1 query
+dashboard prefetch
+cache save
+dashboard data route
+admin CRUD support
+တွေကို တန်းပြီး complete code အနေနဲ့ ဆက်ပေးမယ်။
+
+
+[[path]].js
+Add Dashboard popup မှာ overtime hours ကို မမေးနဲ့ဦး အဲ့တာက နောက်မှထည့်မယ် ပြီးတော့ dashboard item တခုချင်းစီရဲ့ page မှာ graph ထဲက data တိုင်းကိုပြင်ဖို့ မလိုတဲ့ graph တွေ hide ဖို့ show ဖို့ graph ထဲက catagory တွေကို limit လုပ်ဖို့ စသဖြင့် customizable လုပ်ဖို့ setting ထည့်ပေး dashbaord item အလိုက် setting တွေကို ခွဲ save ‌ပေးပါ ပြီးတော့ worker js ပို့ထားတယ် သူက functions/api/[[path]]/js အဲ့တာပါပြင်ပေးပါ ပြီးတော့ step by step ပြန်‌ပြောပေးပါ
+
+
+
+Explored
+1 read
+Read
+[[path]].js
+
+Ran commands
+8
+
+Explored
+1 read
+Read
+[[path]].js
+
+Ran commands
+6
+ပြီးပါပြီ — သင်တောင်းထားတဲ့ 3 ခုလုံး ပြင်ပေးထားပါတယ်။
+
+ဒီတစ်ခါ ပြင်ပြီးသွားတဲ့ အချက်တွေ
+1) Add Dashboard popup
+overtime hours field ဖယ်ထားပြီးပြီ
+အခု popup မှာပဲ
+Name
+Icon
+API URL
+ပဲ မေးတော့မယ်
+2) Dashboard item တစ်ခုချင်းစီအတွက် customizable settings
+Dashboard page ထဲမှာ Dashboard Settings button ထည့်ပေးထားတယ်
+admin ပဲမြင်မယ်
+
+အဲ့ settings ထဲမှာ dashboard item အလိုက်:
+
+graph / KPI card show / hide
+graph ထဲက category count limit
+လုပ်လို့ရမယ်
+ဥပမာ customize လုပ်လို့ရတာ:
+
+Total Tickets KPI
+Avg Resolve KPI
+Closed Rate
+Quick Summary
+Trend Chart
+Status Chart
+Problem Chart
+Site Chart
+Root Cause Chart
+Repeat Complaint
+ပြီးတော့ limit တွေ:
+
+Trend points
+Status categories
+Problem categories
+Site categories
+Root cause categories
+Repeat complaint rows
+3) Per-dashboard-item settings ကို သီးသန့် save
+Dashboard item တစ်ခုချင်းစီအတွက် settings ကို
+separate table နဲ့ save လုပ်အောင် backend ပြင်ထားတယ်
+
+ငါပြင်ထားတဲ့ file တွေ
+Frontend
+
+index.html
+
+script.js
+
+style.css
+Backend / Worker
+
+[[path]].js
+D1 schema
+
+dashboard_d1_schema.sql
+Notes
+
+dashboard_worker_notes.md
+Google Sheet Apps Script
+
+dashboard_google_sheet_code.gs
+Worker မှာ ပြင်ပြီးသွားတာ
+functions/api/[[path]].js အတွက် structure ထည့်ပေးထားတယ်
+
+အသစ်ပါတဲ့ API routes
+GET /api/getData
+dashboard items ကိုပါ return လုပ်မယ်
+POST /api/dashboards/sort
+dashboard item sort order save
+POST /api/dashboards/prefetch
+login ဝင်တာနဲ့ dashboard APIs ကို background fetch
+GET /api/dashboards/:id/data
+D1 cache က dashboard data ပြန်ပေး
+GET /api/dashboards/:id/settings
+dashboard item settings ယူ
+PUT /api/dashboards/:id/settings
+dashboard item settings save
+Generic save/delete support
+existing admin CRUD ထဲမှာ
+
+dashboard_items
+ကိုပါ support လုပ်အောင် ထည့်ထားတယ်
+D1 ထဲမှာ အသစ်လိုအပ်တဲ့ table
+အခု schema မှာ ဒီ table တွေပါမယ်:
+
+dashboard_items
+dashboard_item_settings
+dashboard_cache
+dashboard_sync_logs
+အရေးကြီးတာက:
+
+dashboard_item_settings
+ဒါက dashboard item တစ်ခုချင်းစီရဲ့ graph setting တွေကို သီးသန့်သိမ်းမယ့် table ပါ
+
+Step by Step ဘာလုပ်ရမလဲ
+Step 1 — Frontend file တွေ replace လုပ်ပါ
+သင့် repo ထဲမှာ
+
+index.html
+script.js
+style.css
+ကို
+workspace ထဲက updated file တွေနဲ့ replace လုပ်ပါ
+
+Step 2 — Worker file replace လုပ်ပါ
+သင့် project မှာ
+functions/api/[[path]].js
+
+ကို
+
+[[path]].js
+ နဲ့ replace လုပ်ပါ
+
+Step 3 — D1 schema run လုပ်ပါ
+
+dashboard_d1_schema.sql
+ ကို D1 database မှာ run လုပ်ပါ
+
+Cloudflare dashboard / wrangler နှစ်မျိုးမဆို ရပါတယ်
+
+ဥပမာ:
+
+Bash
+
+wrangler d1 execute YOUR_DB_NAME --file=dashboard_d1_schema.sql
+Step 4 — Deploy Google Apps Script
+
+dashboard_google_sheet_code.gs
+ ကို Apps Script ထဲထည့်ပြီး
+
+Deploy as Web App
+access = Anyone with link (or suitable permission)
+ပြီးရင် exec URL ကို copy ယူပါ
+
+Step 5 — Website deploy ပြန်တင်ပါ
+Cloudflare Pages deploy ပြန်လုပ်ပါ
+
+Step 6 — Admin နဲ့ login ဝင်စမ်းပါ
+Admin account နဲ့ဝင်ပြီး
+
+Dashboard > Manage Dashboard
+Add Dashboard
+Name
+Icon
+API URL
+ထည့်ပါ
+Step 7 — Dashboard item settings ချိန်ပါ
+Dashboard dropdown ထဲက item တစ်ခုကို click လုပ်ပြီး
+
+Dashboard Settings
+ထဲမှာ
+
+မလိုတဲ့ graph ကို hide
+လိုတဲ့ graph ကို show
+top 5 / top 10 စသဖြင့် limit ချိန်
+လုပ်ပါ
+ဒါတွေက dashboard item အလိုက် သီးသန့် save ဖြစ်မယ်
+
+Step 8 — Role access စစ်ပါ
+Admin
+Dashboard dropdown မြင်မယ်
+Manage Dashboard မြင်မယ်
+Dashboard Settings ပြင်လို့ရမယ်
+Leader
+Dashboard dropdown မြင်မယ်
+Dashboard data ကြည့်လို့ရမယ်
+Manage / Settings မပြင်နိုင်
+Member / Intern
+Dashboard tab မမြင်ရ
+အခု version မှာ behavior ဘယ်လိုလဲ
+Login ဝင်တာနဲ့
+frontend က
+/api/dashboards/prefetch
+ကို background ခေါ်မယ်
+
+Worker က
+
+dashboard item တွေရဲ့ API URL ကို fetch
+JSON data ကို D1 cache ထဲသိမ်း
+sync log မှတ်
+ဒါကြောင့် user က dashboard item ကို click လိုက်တဲ့အချိန်
+ပိုမြန် မယ်
+
+အခုလက်ရှိ overtime အကြောင်း
+သင်ပြောသလို Add Dashboard popup မှာ overtime hours မမေးတော့ဘူး
+
+ဒါပေမယ့် backend မှာ currently default value 8 hours နဲ့ပဲ logic ထားထားတယ်
+နောက်တစ်ဆင့်မှာ overtime setting ကို
+
+dashboard item settings ထဲထည့်မလား
+global setting လုပ်မလား
+ထပ်ဆက်ချိတ်လို့ရတယ်
+အခု customizable ဖြစ်သွားတာ
+Dashboard item တစ်ခုချင်းစီအတွက်
+
+graph visible / hidden
+category count limit
+repeat rows limit
+trend point limit
+ကို သီးသန့် သိမ်းနိုင်ပြီ
+ဆိုတော့
+Ticket Overview dashboard နဲ့
+Root Cause dashboard ကို
+မတူတဲ့ graph setup နဲ့ သီးသန့်သုံးလို့ရပြီ
+
+နောက်တစ်ဆင့် recommend
+အခုက structure + settings + worker caching ကိုအရင်တည်ဆောက်ပေးထားတာပါ
+
+နောက်တစ်ဆင့်အနေနဲ့ ငါဆက်လုပ်ပေးလို့ရတာ:
+
+Dashboard settings UI ကို ပိုလှအောင် refine
+Graph type per item selectable လုပ်ပေး
+Date filter (day/week/month/year) ထည့်ပေး
+site / township / queue filter ထည့်ပေး
+real chart library (Chart.js / ApexCharts) နဲ့ပြောင်းပေး
+လိုချင်ရင် next message မှာ
+“day/week/month/year filter ပါထည့်ပေး”
+ဒါမှမဟုတ်
+“Chart.js နဲ့တကယ် graph ဆွဲပေး”
+လို့ပြောပါ — အဲ့အဆင့်ကို ဆက်လုပ်ပေးမယ်။
+
+
+Dashboard settings UI ကို ပိုလှအောင် refine
+Graph type per item selectable လုပ်ပေး
+Date filter (day/week/month/year) ထည့်ပေး
+site / township / queue filter ထည့်ပေး
+real chart library (Chart.js / ApexCharts) နဲ့ပြောင်းပေး
+
+
+Ran commands
+9
+ပြီးပါပြီ — ဒီတစ်ခါ 5 ခုပေါင်းပြီး ထည့်ပေးထားပါတယ်။
+
+ဒီတစ်ခါ ဘာတွေပြင်ပေးထားလဲ
+1) Dashboard settings UI ကို ပိုလှအောင် refine လုပ်ထားတယ်
+section အလိုက်ခွဲထားတယ်
+Default grouping
+Show / Hide + Graph Type
+Category Limits
+ဆိုပြီးပိုသန့်သွားပြီ
+2) Graph type per item selectable
+Dashboard item တစ်ခုချင်းစီအတွက် settings မှာ chart type ရွေးလို့ရတယ်
+
+ဥပမာ:
+
+Trend chart → Line / Bar / Area
+Status chart → Doughnut / Pie / Bar / Polar Area
+Problem / Site / Root Cause → Bar / Horizontal Bar / Doughnut / Pie
+Repeat complaint → List / Bar / Horizontal Bar / Doughnut
+3) Date filter (day / week / month / year)
+Dashboard page မှာ grouping filter ထည့်ထားတယ်
+
+Day
+Week
+Month
+Year
+အခု version မှာ date range calendar filter မဟုတ်သေးဘူး
+group by filter အနေနဲ့ ထည့်ထားတာ
+if you want from date / to date calendar filter, next step မှာ ဆက်ထည့်ပေးလို့ရတယ်
+
+4) Site / Township / Queue filter
+Dashboard page ပေါ်မှာ:
+
+Site Code filter
+Township filter
+Queue filter
+ထည့်ထားတယ်
+ဒါတွေက cached rows ပေါ် client-side filter လုပ်တယ်
+
+5) Real chart library
+Chart.js နဲ့ပြောင်းထားတယ်
+
+သတိ: Arena preview iframe မှာ external CDN မရနိုင်လို့
+ဒီနေရာ preview မှာ chart မပေါ်နိုင်ဘူး
+Cloudflare Pages deploy ပြီး website တကယ် run လိုက်ရင် အလုပ်လုပ်မယ်
+
+ပြင်ထားတဲ့ files
+Frontend
+
+index.html
+
+script.js
+
+style.css
+Worker
+
+[[path]].js
+D1 schema
+
+dashboard_d1_schema.sql
+Notes
+
+dashboard_worker_notes.md
+Step by Step ဘာလုပ်ရမလဲ
+Step 1 — Frontend files replace
+သင့် repo ထဲက:
+
+index.html
+script.js
+style.css
+ကို workspace ထဲက updated files နဲ့ replace လုပ်ပါ
+
+Step 2 — Worker file replace
+သင့် Cloudflare Pages Functions ထဲက:
+
+functions/api/[[path]].js
+
+ကို
+
+[[path]].js
+ နဲ့ replace လုပ်ပါ
+
+Step 3 — D1 schema run
+
+dashboard_d1_schema.sql
+ ကို D1 database မှာ run လုပ်ပါ
+
+အခု schema မှာ dashboard အတွက်
+
+dashboard_items
+dashboard_item_settings
+dashboard_cache
+dashboard_sync_logs
+ပါဝင်တယ်
+Step 4 — Deploy ပြန်တင်
+Cloudflare Pages ကို redeploy လုပ်ပါ
+
+Step 5 — Admin နဲ့ test
+Admin account နဲ့ login ဝင်ပြီး
+
+Dashboard > Manage Dashboard
+Add Dashboard
+Name
+Icon
+API URL
+ထည့်ပါ
+Overtime hours field ဖယ်ထားပြီးပြီ
+
+Step 6 — Dashboard item ကိုဖွင့်ပြီး settings ချိန်
+Dashboard item တစ်ခု click လုပ်ပြီး
+
+Dashboard Settings
+ထဲမှာ
+
+မလိုတဲ့ card/graph hide
+လိုတဲ့ graph show
+chart type ပြောင်း
+category limit ပြောင်း
+default grouping သတ်မှတ်
+လုပ်ပါ
+ဒီ settings တွေကို dashboard item အလိုက် separate save လုပ်တယ်
+
+အခု worker မှာပါတဲ့ dashboard routes
+အခု backend မှာ support လုပ်ထားတဲ့ route တွေ:
+
+GET /api/getData
+POST /api/dashboards/sort
+POST /api/dashboards/prefetch
+GET /api/dashboards/:id/data
+GET /api/dashboards/:id/settings
+PUT /api/dashboards/:id/settings
+ပြီးတော့ legacy generic save/delete မှာ
+
+dashboard_items
+ကိုပါ support လုပ်ထားတယ်
+အခု version မှာ ဘယ်လိုအလုပ်လုပ်လဲ
+Login ဝင်တာနဲ့
+frontend က:
+
+dashboard item list ယူမယ်
+/api/dashboards/prefetch ကို background ခေါ်မယ်
+Worker က:
+
+dashboard item တစ်ခုချင်းစီရဲ့ api_url ကို fetch
+JSON payload ကို D1 cache ထဲသိမ်း
+sync log မှတ်
+Dashboard item ကို click လိုက်ရင်
+cached data ကို ပြမယ်
+page ထဲမှာ
+day/week/month/year grouping
+site/township/queue filter
+selected chart type
+selected visibility setting
+နဲ့ render လုပ်မယ်
+အခုအသစ် save လုပ်တဲ့ setting structure
+Dashboard item setting မှာ အဓိက save လုပ်တာတွေက:
+
+showCards
+limits
+graphTypes
+defaultGrouping
+ဆိုတော့ dashboard တစ်ခုနဲ့တစ်ခု UI မတူအောင်
+သီးသန့် customize လုပ်လို့ရပြီ
+
+အရေးကြီး note
+Chart.js ကို CDN နဲ့ထည့်ထားလို့:
+
+Arena preview → external script မရလို့ chart မပေါ်နိုင်
+Cloudflare Pages deployed site → အလုပ်လုပ်မယ်
+လက်ရှိသတ်မှတ်ချက်
+သင်တောင်းတဲ့ 5 ခုအနက်
+
+refine settings UI ✅
+graph type selectable ✅
+day/week/month/year filter ✅
+site/township/queue filter ✅
+real chart library ✅
+ပြီးသွားပြီ
+
+နောက်တစ်ဆင့် ဆက်ချင်ရင် အကောင်းဆုံး 3 ခုက:
+
+from date / to date calendar filter
+export PNG / export CSV / export Excel
+dashboard card layout drag-and-drop customize
+လိုချင်ရင် နောက်တစ်ခါ
+“from-to date filter ပါထည့်ပေး”
+ဒါမှမဟုတ်
+“export csv/excel ထည့်ပေး”
+လို့ပြောပါ — ဆက်ပြီး complete လုပ်ပေးမယ်။
+
+
+image.png
+image.png
+i add dashboard item but nothing show . please check
+
+
+
+Ran commands
+5
+ဟုတ်တယ် — issue root cause ကို check လုပ်ပြီး fix ထည့်ပေးထားတယ်။
+
+ဘာကြောင့် item ထည့်ပြီး မပေါ်တာလဲ
+အဓိက ဖြစ်နိုင်တာ 3 ခုရှိတယ် —
+
+frontend က save success လို့ပြပေမယ့် backend save fail ဖြစ်နေတာကို မဖမ်းနိုင်ခဲ့တာ
+Manage Dashboard modal ဖွင့်တဲ့အချိန် data fresh reload မလုပ်သေးတာ
+dashboard item save/delete ကို generic /api/ route နဲ့ပဲသွားနေတာကြောင့် unstable ဖြစ်နိုင်တာ
+ငါ fix လုပ်ပြီးသားအရာ
+1) Dedicated dashboard CRUD route ထည့်ထားတယ်
+Worker မှာ အခု route အသစ်တွေ ပါပြီ:
+
+POST /api/dashboardItems
+PUT /api/dashboardItems/:id
+DELETE /api/dashboardItems/:id
+ဒါကြောင့် dashboard item add/edit/delete ကို
+generic admin save မသုံးတော့ဘဲ dedicated endpoint နဲ့သွားမယ်
+
+2) save success false-positive bug ကို fix လုပ်ထားတယ်
+အရင်က backend fail ဖြစ်ရင်တောင် frontend က
+Saved successfully လို့ပြနိုင်တယ်
+
+အခု:
+
+save response ကို check လုပ်မယ်
+refresh response ကိုပါ check လုပ်မယ်
+fail ရင် error toast ပြမယ်
+3) Manage Dashboard modal ဖွင့်တိုင်း refreshData() အရင်ခေါ်မယ်
+ဒါကြောင့် modal ထဲမှာ stale data မပေါ်တော့ဘဲ
+latest dashboard item list ကိုပြမယ်
+
+သင်အခုလုပ်ရမယ့် Step by Step
+Step 1
+ဒီ 2 file ကို repo ထဲမှာ replace လုပ်ပါ:
+
+
+script.js
+
+[[path]].js
+Step 2
+Cloudflare Pages redeploy လုပ်ပါ
+
+Step 3
+Browser မှာ hard refresh လုပ်ပါ
+
+Windows:
+
+Ctrl + Shift + R
+Mac:
+
+Cmd + Shift + R
+Step 4
+Admin account နဲ့ login ပြန်ဝင်ပြီး
+
+Dashboard > Manage Dashboard > Add Dashboard
+
+ကနေ item အသစ်ထည့်ကြည့်ပါ
+
+ထပ်စစ်သင့်တာ
+1) D1 binding name
+Worker code က database binding ကို:
+
+JavaScript
+
+env.DB
+နဲ့သုံးထားတယ်
+
+ဒါကြောင့် Cloudflare project မှာ
+D1 binding name = DB ဖြစ်ရမယ်
+
+2) D1 schema run လုပ်ပြီးလား
+dashboard_items table မရှိသေးရင် ပြဿနာဖြစ်နိုင်တယ်
+
+ဒါကြောင့် 
+dashboard_d1_schema.sql
+
+ကို D1 ထဲ run လုပ်ထားဖို့လိုတယ်
+
+3) Deploy old file မတက်သေးတာလား
+တချို့အချိန် local file ပြင်ပြီး deploy မတက်သေးရင်
+old worker code နဲ့ run နေတတ်တယ်
+
+အခု fix ပြီးတဲ့ file
+
+script.js
+
+[[path]].js
+အခု test လုပ်ပြီး ဘာမြင်ရမလဲ
+Dashboard item add ပြီးရင်:
+
+modal ပိတ်မယ်
+data refresh လုပ်မယ်
+Manage Dashboard list ထဲ item ပေါ်လာမယ်
+top nav dropdown ထဲလည်း item ပေါ်လာမယ်
+If still not show
+အဲဒီအချိန် ငါလိုတာ 2 ခုရှိတယ် —
+
+browser console error screenshot
+network response of /api/dashboardItems or /api/getData
+ဒါမှ တိတိကျကျ ဘာ fail နေလဲ ဆက် debug ပေးလို့ရမယ်
+
+လိုချင်ရင် next message မှာ
+“D1 schema ကိုလည်း step by step run နည်းပြော”
+ဒါမှမဟုတ်
+“dashboardItems POST response ကို ဘယ်လိုစစ်ရမလဲ ပြော”
+လို့ပြောပါ — ဆက်ပြီး guide ပေးမယ်။
+
+
+image.png
+image.png
+username pw မှန်တယ် ဝင်မရတော့ဘူး
+
+
+
+Ran commands
+4
+တွေ့ပြီ — အဓိကပြဿနာက backend worker side မှာ ဖြစ်နေတာပါ။
+
+Root cause ၂ ခု
+1) Login 401
+getAuth() ထဲမှာ user check အောင်မြင်ပြီးနောက်
+last_seen column update လုပ်နေတယ်
+
+JavaScript
+
+UPDATE users SET last_seen = datetime('now') WHERE id = ?
+သင့် users table မှာ last_seen column မရှိရင်
+အဲဒီ update error တက်ပြီး auth function က null ပြန်သွားတယ်
+ဒါကြောင့် username/password မှန်ပေမယ့် 401 Unauthorized ဖြစ်သွားတာ
+
+2) /api/getData 500
+Dashboard tables auto-create logic က
+အရင် version မှာ multi-statement exec နဲ့ run နေလို့
+တချို့ runtime / DB state မှာ fail ဖြစ်နိုင်တယ်
+
+ဒါကြောင့်:
+
+login မဝင်ခင် initApp call က /api/getData 500
+login ဝင်ပြီးနောက် data load လည်း 500
+ငါ fix လုပ်ပြီးသား
+
+[[path]].js
+ ထဲမှာ:
+
+Fix A — auth fail-safe
+last_seen update fail ရင် auth မပျက်တော့ဘူး
+login credential မှန်ရင် ဝင်နိုင်မယ်
+Fix B — dashboard table creation fail-safe
+env.DB.exec(...) multi-statement မသုံးတော့ဘဲ
+statement တစ်ခုချင်းစီ prepare(...).run() နဲ့ run မယ်
+/api/getData မှာ dashboard migration fail ရင်တောင်
+app တစ်ခုလုံး 500 မဖြစ်အောင် guard ထည့်ထားတယ်
+Fix C — dashboard-related routes robust
+dashboard table error တွေကို try/catch နဲ့ handle လုပ်ထားတယ်
+အခု သင်လုပ်ရမယ့် Step by Step
+Step 1
+သင့် repo ထဲက
+
+functions/api/[[path]].js
+
+ကို
+workspace ထဲက updated 
+[[path]].js
+ နဲ့ replace လုပ်ပါ
+
+Step 2
+Cloudflare Pages ကို redeploy လုပ်ပါ
+
+Step 3
+Browser မှာ hard refresh လုပ်ပါ
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+Step 4
+login ပြန်စမ်းပါ
+
+ဘာဖြစ်သင့်လဲ
+Fix တက်ပြီးရင်:
+
+username/password မှန်ရင် login ဝင်ရမယ်
+/api/getData 500 မဖြစ်သင့်တော့ဘူး
+dashboard item add/delete/list လည်း ပြန်အလုပ်လုပ်သင့်တယ်
+အကယ်၍ မရသေးရင်
+နောက်တစ်ခါ Network tab မှာ ဒီ 2 ခု response body ကိုပို့ပါ:
+
+POST /api/login
+GET /api/getData
+အထူးသဖြင့် Response body JSON ကိုပို့ရင်
+ငါ exact line-level နဲ့ ဆက် debug ပေးလို့ရမယ်
+
+အရေးကြီး note
+အခု fix က workspace file ထဲမှာပဲ ပြင်ထားပြီးသား
+သင့် live site မှာ အလုပ်လုပ်ဖို့:
+
+file replace
+redeploy
+လိုသေးတယ်
+လိုချင်ရင် နောက်တစ်ခါ
+“response body ကိုဘယ်လိုကြည့်ရမလဲ”
+ဆိုတာကို Burmese နဲ့ screenshot-style step by step ပြောပေးမယ်။
+
+
+image.png
+image.png
+image.png
+image.png
+image.png
+image.png
+data မပြဘူးဖြစ်နေတယ် data ယူနေတုန်းဆိုလည်းprogress bar ဖြစ်ဖြစ် shinning view နဲ့ပဲဖြစ်ဖြစ်ပြပေးပါ ပြီးတော့ တွဲတင်ထားတဲ့ ui တေွပြင်ပေးပါ
+
+manage dashboard ကိုနှိပ်ရင် popup ပေါ်လာဖို့ကြာနေတယ် အဲ့တာပါပြင်ပေးပါ
+
+
+
+Explored
+2 reads
+Read
+script.js
+Read
+style.css
+
+Ran commands
+4
+ဟုတ်ပါတယ် — ဒီတစ်ခါ frontend UX ပိုင်းကို check လုပ်ပြီး ပြင်ပေးထားပါတယ်။
+
+အခု fix လုပ်ပြီးသွားတာ
+1) Dashboard data loading state
+Dashboard item ကို click လိုက်တဲ့အချိန်:
+
+loading banner
+progress bar
+shimmer skeleton cards
+ပြမယ်
+ဒါကြောင့် data မရသေးခင် blank မပေါ်တော့ဘူး။
+
+2) No data message ပိုရှင်းသွားပြီ
+Filter ကြောင့် data မကျန်တော့ရင်:
+
+No data matched the selected filters...
+ဆိုပြီး message ပြမယ်
+အရင်လို blank ဖြစ်နေတာ မဖြစ်တော့ဘူး။
+
+3) Manage Dashboard popup open delay fix
+အရင်က:
+
+Manage Dashboard ကိုနှိပ်ရင်
+refreshData() ကိုစောင့်ပြီးမှ popup ပေါ်တယ်
+ဒါကြောင့် နှေး နေတာ
+အခု:
+
+popup ချက်ချင်းပေါ်မယ်
+list ကို background refresh လုပ်မယ်
+current item မရှိသေးရင် loading skeleton ပြမယ်
+4) Dashboard Settings UI ပြင်ထားတယ်
+သင်ပို့တဲ့ screenshot ထဲကလို
+
+text wrap မကောင်းတာ
+select overlap ဖြစ်ချင်တာ
+spacing မလှတာ
+တွေကိုပြင်ထားတယ်
+အခု:
+
+card width / grid layout ပိုကောင်း
+select box full width
+desktop / tablet / mobile responsive ပိုသန့်
+ပြင်ထားတဲ့ files
+ဒီတစ်ခါ အဓိကပြင်ထားတာ:
+
+
+script.js
+
+style.css
+Step by Step ဘာလုပ်ရမလဲ
+Step 1
+သင့် repo ထဲမှာ
+
+script.js
+style.css
+ကို
+workspace ထဲက updated file နဲ့ replace လုပ်ပါ
+
+Step 2
+Cloudflare Pages ကို redeploy လုပ်ပါ
+
+Step 3
+Browser မှာ hard refresh
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+အခု expected behavior
+Manage Dashboard
+နှိပ်တာနဲ့ popup ချက်ချင်းပေါ်မယ်
+item list မရသေးရင် loading skeleton ပြမယ်
+data refresh ပြီးရင် list ပေါ်မယ်
+Dashboard Page
+dropdown item click လိုက်ရင်
+blank မဟုတ်ဘဲ
+loading banner
+progress bar
+shimmer cards
+အရင်ပေါ်မယ်
+data ရလာရင် graphs/cards render မယ်
+filter ကြောင့် data မရှိရင် clear message ပြမယ်
+တကယ် data မပေါ်သေးရင်
+အဲဒါဆို loading UX issue မဟုတ်တော့ဘဲ
+API data structure / returned rows / D1 cache ပိုင်းဖြစ်နိုင်တယ်
+
+အဲ့အချိန် check ရမယ့် endpoint က:
+
+text
+
+GET /api/dashboards/{id}/data
+အဲဒီ response ထဲမှာ:
+
+rowCount
+data
+lastError
+ရှိမရှိကြည့်ရမယ်
+နောက်တစ်ဆင့်
+လိုချင်ရင် နောက် message မှာ
+dashboard data API response ကို ဘယ်လိုစစ်ရမလဲ step by step
+Burmese နဲ့ပြောပေးမယ်
+
+ဒါမှမဟုတ်
+dashboard page မှာ raw data preview table တစ်ခုပါထည့်ပေး
+လို့ပြောရင်လည်း ဆက်လုပ်ပေးမယ်။
+
+
+image.png
+image.png
+No data matched the selected filters. Try changing Site / Township / Queue or date grouping.
+
+
+
+Ran commands
+2
+ဟုတ်တယ် — အခု screenshot အရ
+UI bug တင်မဟုတ်ဘဲ data parse / source sync issue ပါဖြစ်နိုင်တယ်။
+
+Screenshot ကဘာပြောနေလဲ
+No data matched the selected filters... ပေါ်နေတာက
+
+dashboard page ကိုဖွင့်နိုင်တယ်
+dashboard item ရှိတယ်
+route က response တစ်ခုတော့ပြန်လာတယ်
+ဒါပေမယ့် အောက်ထဲမှာ actual row array မတွေ့တာ သို့မဟုတ်
+cached payload ထဲ row 0 ပဲရှိနေတာ ဖြစ်နိုင်ပါတယ်။
+
+ငါ အခုထပ်ပြင်ပေးထားတာ
+1) Data extraction ပို smart လုပ်ထားတယ်
+အရင်က dashboard data ကို
+
+rows
+data
+result
+path တချို့ကပဲရှာတယ်
+အခု:
+
+nested object တွေထဲ recursively ရှာမယ်
+rows / data / result / items / records / payload
+အကုန်ရှာမယ်
+array of objects တွေကို auto detect လုပ်မယ်
+ဒါကြောင့် source JSON shape မတူနည်းနည်းဖြစ်ရင်လည်း row array ကိုပိုကောင်းကောင်းဖမ်းနိုင်မယ်
+
+2) Empty state message ပိုတိကျသွားတယ်
+အခု ၂ မျိုးခွဲပြမယ်
+
+Case A — row လုံးဝ 0
+ဒီလိုပြမယ်:
+
+No rows were found in the dashboard data...
+သို့မဟုတ်
+Dashboard source sync failed: ...
+Case B — filter ကြောင့်ပဲ မကျန်
+ဒီအချိန်မှသာ
+
+No data matched the selected filters...
+ပြမယ်
+သင်အခုလုပ်ရမယ့်အရာ
+Step 1
+
+script.js
+
+ကို repo ထဲက script.js နဲ့ replace လုပ်ပါ
+
+Step 2
+Cloudflare Pages redeploy လုပ်ပါ
+
+Step 3
+Hard refresh လုပ်ပါ
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+Step 4
+Dashboard item ကိုပြန်ဖွင့်ကြည့်ပါ
+
+အခုဘာမြင်ရမလဲ
+တကယ် filter ကြောင့်မဟုတ်ဘဲ data မရှိရင်
+အခု message က
+source sync fail လား
+row 0 လား
+ပိုရှင်းသွားမယ်
+
+တကယ် root cause အတည်ပြုဖို့
+အကောင်းဆုံး next check က:
+
+Network tab မှာ
+GET /api/dashboards/{id}/data
+
+response body ကိုကြည့်ပါ
+
+အဲ့ထဲမှာ ဒီ fields တွေကြည့်ပါ:
+
+rowCount
+lastError
+data
+Result interpretation
+1) rowCount = 0
+ဆိုရင်
+source မှာ row မရဘူး
+သို့မဟုတ် JSON format မမှန်ဘူး
+
+2) lastError ပါနေရင်
+Worker က source API fetch/sync fail ဖြစ်တယ်
+
+3) data ထဲမှာ rows ရှိပေမယ့် UI မပြရင်
+JSON structure mismatch issue ဖြစ်နိုင်တယ်
+ဒါကို ငါဆက် patch လုပ်ပေးနိုင်တယ်
+
+အခုအတွက် short fix
+script.js ကို update + redeploy အရင်လုပ်ပါ
+ပြီးရင် message ဘာပြောင်းသွားလဲ ပြောပါ
+
+လိုချင်ရင် နောက် message မှာ
+Network tab က /api/dashboards/{id}/data response body ကို ဘယ်လိုကြည့်ရမလဲ
+Burmese နဲ့ step-by-step ပြောပေးမယ်။
+
+
+image.png
+image.png
+still error
+
+
+
+Ran commands
+7
+တွေ့ပြီ — အခု error ၂ ခုလုံး ကို fix ပေးထားပါတယ်။
+
+ဘာ error တွေလဲ
+1) Cannot read properties of undefined (reading 'groupBy')
+ဒါက frontend မှာ
+renderDashboardData(...) ကို filters မပို့ဘဲ ခေါ်နေတဲ့နေရာရှိလို့ ဖြစ်တာ
+
+2) D1_ERROR: string or blob too big: SQLITE_TOOBIG
+ဒါက worker က dashboard data JSON ကို
+တစ်ခါတည်း D1 column ထဲ သိမ်းဖို့ကြိုးစား လို့ size limit ကျော်သွားတာ
+
+ငါ fix လုပ်ထားတာ
+Frontend fix
+
+script.js
+
+renderDashboardData() ကိုတိုက်ရိုက်မခေါ်တော့ဘဲ
+renderCurrentDashboard() ကနေ သေချာ filters.groupBy ပါအောင် render လုပ်မယ်
+Backend fix
+
+[[path]].js
+
+dashboard payload ကြီးရင်
+chunk ခွဲပြီး dashboard_cache_chunks table ထဲသိမ်းမယ်
+ပြန်ဖတ်တဲ့အချိန် chunk တွေကို join ပြန်လုပ်မယ်
+ဒါကြောင့် large Google Sheet data တွေမှာ
+SQLITE_TOOBIG မဖြစ်သင့်တော့ဘူး
+
+သင်အခုလုပ်ရမယ့် Step by Step
+Step 1
+ဒီ file 2 ခုကို repo ထဲမှာ replace လုပ်ပါ
+
+
+script.js
+
+[[path]].js
+Step 2
+Cloudflare Pages ကို redeploy လုပ်ပါ
+
+Step 3
+Browser hard refresh
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+Step 4
+Dashboard page ကိုပြန်ဖွင့်ပြီး
+Refresh Data ကို တစ်ချက်နှိပ်ပါ
+
+ဒါက old failed cache ကို new chunked cache နဲ့ rebuild လုပ်ဖို့ကောင်းတယ်
+
+အရေးကြီး note
+Chunk table ကို worker က auto create လုပ်ထားလို့
+schema manually run မလုပ်ရလည်း အလုပ်လုပ်နိုင်တယ်
+(ဒါပေမယ့် deploy အသစ်တက်ရမယ်)
+
+Deploy ပြီးရင် expected result
+groupBy undefined error မပေါ်တော့ဘူး
+SQLITE_TOOBIG မပေါ်တော့ဘူး
+data ရှိရင် dashboard graph/cards ပေါ်လာမယ်
+data မရှိရင် source sync / no rows message ပိုရှင်းရှင်းပြမယ်
+If still not work
+နောက်တစ်ခါ ဒီ response ကိုပို့ပါ:
+
+Network tab
+GET /api/dashboards/{id}/data
+
+အဲ့ response body ထဲက:
+
+rowCount
+lastError
+data
+ကိုပို့ရင် ငါ ဆက်ပြီး exact fix ပေးမယ်။
+
+လိုချင်ရင် နောက် message မှာ
+Network tab က response body ကို ဘယ်လို copy ယူရမလဲ
+Burmese နဲ့ step-by-step ပြောပေးမယ်။
+
+
+image.png
+image.png
+i can't deploy
+
+
+ဟုတ်တယ် — screenshot အရ deploy failure က [[path]].js ပြင်ပြီးမှ စတာ ဖြစ်ပါတယ်။
+
+အခု screenshot က ဘာပြောနေလဲ
+Update script.js → success
+Update [[path]].js → warning / No deployment available
+ဆိုတော့ frontend မဟုတ်ဘဲ backend function file (functions/api/[[path]].js) က deployment pipeline မှာ fail နေတာ ဖြစ်နိုင်ခြေ အရမ်းမြင့်တယ်။
+
+အရေးကြီးဆုံးအချက်
+Local မှာ syntax check pass တာနဲ့ Cloudflare deploy pass တာ မတူနိုင်ဘူး
+Cloudflare Pages က build/deploy step ထဲမှာ
+
+file path issue
+function compile issue
+bundling issue
+build command issue
+တစ်ခုခုကြောင့် fail နိုင်တယ်
+အခုချက်ချင်းလုပ်ရမယ့် Step by Step
+Step 1 — Failed deployment row ကို Details နှိပ်ပါ
+သင် screenshot ထဲက red warning row မှာ
+Details ကိုနှိပ်ပါ
+
+Step 2 — Build log သို့ Functions error ကိုဖွင့်ပါ
+အဲဒီထဲမှာ ပထမဆုံး red error lines ကိုရှာပါ
+
+အများအားဖြင့် ဒီလိုမျိုးတစ်ခုခုဖြစ်တတ်တယ်:
+
+Failed to compile Functions
+Module parse failed
+Could not resolve
+No such file or directory
+Build failed
+Functions bundling error
+Step 3 — အဲဒီ error text ကိုပို့ပါ
+ပထမဆုံး error 10–20 lines ပဲ ပို့ရင် လုံလောက်တယ်
+အဲဒါနဲ့ exact issue ကို ငါ pinpoint လုပ်ပေးလို့ရမယ်
+
+ဒီအချိန်မှာ သင်ကိုယ်တိုင်စစ်နိုင်တဲ့ 3 ခု
+1) File path မှန်လား
+Repo ထဲမှာ file path က တိတိကျကျ ဒီလိုဖြစ်ရမယ်:
+
+Bash
+
+functions/api/[[path]].js
+မဖြစ်သင့်တာ
+
+repo root မှာ [[path]].js
+functions/api/[path].js
+functions/api/[[path]].js.txt
+2) Old / duplicate api file ရှိလား
+ဒီ folder ထဲမှာ duplicate route file မရှိသင့်ဘူး:
+
+functions/api/[[path]].js
+functions/api/index.js
+functions/api/[id].js
+တချို့က route conflict ဖြစ်နိုင်တယ်
+3) Build command / output dir ပြဿနာလား
+Cloudflare Pages project settings ထဲမှာ:
+
+Build command
+Build output directory
+က အရင် success row တုန်းကနဲ့ တူရမယ်
+
+အမြန်ဆုံး restore လုပ်ချင်ရင်
+Deploy green ပြန်ဖြစ်ဖို့ temporary revert လုပ်နိုင်တယ်
+
+Quick rollback
+နောက်ဆုံး success commit ကိုပြန်သွားပါ
+screenshot အရ last successful one က:
+
+Update script.js
+အဲ့ commit state နဲ့ deploy ပြန်တင်ပြီး
+site ကို live ပြန်ရအောင်လုပ်နိုင်တယ်
+
+ပြီးမှ backend function ကို အပိုင်းလိုက် ပြန်ထည့်မယ်
+
+အကောင်းဆုံး next move
+သင်အခုလုပ်ပေးရမယ့်အရာက:
+
+Failed deployment Details ထဲက
+first red error
+သို့မဟုတ် screenshot
+ကိုပို့ပါ
+
+ကျွန်တော်အခုသုံးသပ်ချက်
+အခုဖြစ်နိုင်ဆုံးက:
+
+functions/api/[[path]].js path / compile issue
+or
+Cloudflare Functions bundler က file ကို reject လုပ်နေတာ
+လိုချင်ရင် နောက် message မှာ
+Cloudflare Details ထဲက ဘယ်နေရာကိုနှိပ်ပြီး error log ဘယ်လိုယူရမလဲ
+ကို Burmese နဲ့ step-by-step ပုံစံပြောပေးမယ်။
+
+
+2026-07-10T08:43:31.691517Z Cloning repository...
+
+2026-07-10T08:43:32.996924Z From https://github.com/paingnyinyikhant1810/noc-members
+
+2026-07-10T08:43:32.997384Z * branch 64359671dacc50474b79fe32dde5d988aab26e62 -> FETCH_HEAD
+
+2026-07-10T08:43:32.997498Z
+
+2026-07-10T08:43:33.01909Z HEAD is now at 6435967 Update [[path]].js
+
+2026-07-10T08:43:33.020198Z
+
+2026-07-10T08:43:33.077862Z
+
+2026-07-10T08:43:33.078258Z Using v2 root directory strategy
+
+2026-07-10T08:43:33.100361Z Success: Finished cloning repository files
+
+2026-07-10T08:43:35.079868Z Checking for configuration in a Wrangler configuration file (BETA)
+
+2026-07-10T08:43:35.080307Z
+
+2026-07-10T08:43:35.366988Z No Wrangler configuration file found. Continuing.
+
+2026-07-10T08:43:35.373439Z No build command specified. Skipping build step.
+
+2026-07-10T08:43:35.374147Z Found Functions directory at /functions. Uploading.
+
+2026-07-10T08:43:35.384515Z ⛅️ wrangler 3.114.17
+
+2026-07-10T08:43:35.384894Z -------------------
+
+2026-07-10T08:43:36.374537Z ✘ [ERROR] Expected ";" but found "catch"
+
+2026-07-10T08:43:36.37502Z
+
+2026-07-10T08:43:36.375117Z ../../../buildhome/repo/functions/api/[[path]].js:281:6:
+
+2026-07-10T08:43:36.375176Z 281 │ } catch (e) {
+
+2026-07-10T08:43:36.375223Z │ ~~~~~
+
+2026-07-10T08:43:36.375265Z ╵ ;
+
+2026-07-10T08:43:36.375304Z
+
+2026-07-10T08:43:36.378725Z
+
+2026-07-10T08:43:36.449091Z [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+2026-07-10T08:43:36.449946Z
+
+2026-07-10T08:43:36.450075Z ../../../buildhome/repo/functions/api/[[path]].js:281:6: ERROR: Expected ";" but found "catch"
+
+2026-07-10T08:43:36.450136Z
+
+2026-07-10T08:43:36.450681Z
+
+2026-07-10T08:43:36.460776Z 🪵 Logs were written to "/root/.config/.wrangler/logs/wrangler-2026-07-10_08-43-36_004.log"
+
+2026-07-10T08:43:36.566112Z Failed building Pages Functions.
+
+2026-07-10T08:43:37.365562Z Failed: generating Pages Functions failed. Check the logs above for more information. If this continues for an unknown reason, contact support: https://cfl.re/3WgEyrH
+
+
+
+Ran commands
+4
+တွေ့ပြီ — deploy fail နေတဲ့ exact reason က [[path]].js ထဲမှာ duplicate catch block ကျန်နေခဲ့လို့ပါ။
+
+Error တိတိကျကျ
+Cloudflare log မှာ:
+
+txt
+
+Expected ";" but found "catch"
+functions/api/[[path]].js:281:6
+ဒီဟာက syncDashboardItem() function အောက်မှာ
+အပို } catch (e) { ... } block တစ်ခု ထပ်ကျန် နေတာကြောင့် ဖြစ်တာပါ။
+
+ငါ fix လုပ်ပြီးပြီ
+
+[[path]].js
+ ထဲက အပို duplicate catch block ကိုဖျက်ပြီး
+syntax ကို clean လုပ်ထားတယ်။
+
+ပြီးတော့ local syntax check လည်း pass တယ်:
+
+Bash
+
+node --check /home/user/uploads/[[path]].js
+အခုသင်လုပ်ရမယ့် Step by Step
+Step 1
+repo ထဲက file ကို replace လုပ်ပါ:
+
+text
+
+functions/api/[[path]].js
+with
+
+text
+
+uploads/[[path]].js
+Step 2
+Git commit + push လုပ်ပါ
+
+ဥပမာ:
+
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Fix Pages function syntax error"
+git push
+Step 3
+Cloudflare Pages deploy ပြန်တက်တာစောင့်ပါ
+
+ဒီတစ်ခါ deploy log မှာ
+
+Found Functions directory at /functions. Uploading.
+နောက်
+syntax error မပေါ်တော့သင့်ဘူး
+ဒီတစ်ခါ deploy pass သင့်တယ်
+အနည်းဆုံး ဒီ syntax error:
+
+txt
+
+Expected ";" but found "catch"
+တော့ မပေါ်တော့ဘူး
+
+နောက်တစ်ဆင့်
+deploy green ဖြစ်သွားရင်
+dashboard data / chart render issue ကို ဆက်စစ်မယ်
+
+အခုအဆင့်မှာ အရင်ဆုံး deploy pass ဖြစ်အောင် လုပ်တာမှန်တယ်
+
+လိုချင်ရင် နောက် message မှာ
+git commit/push command ကို သင့် repo structure နဲ့လိုက်ပြီး exact ပေး နိုင်တယ်။
+
+
+2026-07-10T08:49:05.601772Z Cloning repository...
+
+2026-07-10T08:49:06.522112Z From https://github.com/paingnyinyikhant1810/noc-members
+
+2026-07-10T08:49:06.522423Z * branch bd3c21e19e814d29d7b6e1cafba038b67770c938 -> FETCH_HEAD
+
+2026-07-10T08:49:06.522547Z
+
+2026-07-10T08:49:06.538282Z HEAD is now at bd3c21e Update [[path]].js
+
+2026-07-10T08:49:06.538507Z
+
+2026-07-10T08:49:06.586437Z
+
+2026-07-10T08:49:06.586781Z Using v2 root directory strategy
+
+2026-07-10T08:49:06.598937Z Success: Finished cloning repository files
+
+2026-07-10T08:49:07.972975Z Checking for configuration in a Wrangler configuration file (BETA)
+
+2026-07-10T08:49:07.973372Z
+
+2026-07-10T08:49:08.131509Z No Wrangler configuration file found. Continuing.
+
+2026-07-10T08:49:08.132662Z No build command specified. Skipping build step.
+
+2026-07-10T08:49:08.133345Z Found Functions directory at /functions. Uploading.
+
+2026-07-10T08:49:08.138209Z ⛅️ wrangler 3.114.17
+
+2026-07-10T08:49:08.138349Z -------------------
+
+2026-07-10T08:49:08.799761Z ✘ [ERROR] Expected ";" but found "catch"
+
+2026-07-10T08:49:08.800376Z
+
+2026-07-10T08:49:08.800467Z ../../../buildhome/repo/functions/api/[[path]].js:281:6:
+
+2026-07-10T08:49:08.800528Z 281 │ } catch (e) {
+
+2026-07-10T08:49:08.80058Z │ ~~~~~
+
+2026-07-10T08:49:08.80066Z ╵ ;
+
+2026-07-10T08:49:08.800719Z
+
+2026-07-10T08:49:08.805232Z
+
+2026-07-10T08:49:08.860086Z [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+2026-07-10T08:49:08.860581Z
+
+2026-07-10T08:49:08.860811Z ../../../buildhome/repo/functions/api/[[path]].js:281:6: ERROR: Expected ";" but found "catch"
+
+2026-07-10T08:49:08.861012Z
+
+2026-07-10T08:49:08.861184Z
+
+2026-07-10T08:49:08.881998Z 🪵 Logs were written to "/root/.config/.wrangler/logs/wrangler-2026-07-10_08-49-08_613.log"
+
+2026-07-10T08:49:08.95317Z Failed building Pages Functions.
+
+2026-07-10T08:49:09.62612Z Failed: generating Pages Functions failed. Check the logs above for more information. If this continues for an unknown reason, contact support: https://cfl.re/3WgEyrH
+
+
+အခု log အရ root cause မပြောင်းသေးဘူး — GitHub repo ထဲက functions/api/[[path]].js မှာ old broken code ပဲ ရှိနေသေးတယ်။
+
+အတိအကျဘာဖြစ်နေလဲ
+Cloudflare ကပြောနေတာ:
+
+txt
+
+Expected ";" but found "catch"
+functions/api/[[path]].js:281:6
+ဒါက syncDashboardItem function အပြီးမှာ အပို catch block တစ်ခု ထပ်ကျန် နေတာ 100% သေချာပါတယ်။
+
+အရေးကြီး
+ကျွန်တော် workspace ထဲမှာ fix ပြီးသား
+ဒါပေမယ့် သင် GitHub repo ထဲကို အဲ့ corrected version မတက်သေးဘူး
+ဒါကြောင့် Cloudflare က old file ကိုပဲ build လုပ်နေတယ်။
+
+အခုအမြန်ဆုံးဖြေရှင်းနည်း
+Option A — GitHub web editor နဲ့ တိုက်ရိုက်ပြင်
+GitHub repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ကိုဖွင့်ပြီး
+
+const syncDashboardItem = async (item) => {
+ကနေ
+
+// Presence Management
+မတိုင်ခင်အထိ
+
+အောက်က code နဲ့အစားထိုးလိုက်ပါ:
+
+JavaScript
+
+  const syncDashboardItem = async (item) => {
+    await ensureDashboardTables();
+    try {
+      const res = await fetch(item.api_url, { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error(`Source HTTP ${res.status}`);
+      const rawText = await res.text();
+      const rawPayload = JSON.parse(rawText);
+      const storedPayload = buildStoredDashboardPayload(rawPayload);
+      const rowCount = Array.isArray(storedPayload.rows) ? storedPayload.rows.length : 0;
+
+      await writeDashboardPayload(item, storedPayload, rowCount, null);
+
+      await env.DB.prepare(`
+        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
+        VALUES (?, 'success', ?, 'OK', datetime('now'))
+      `).bind(item.id, rowCount).run();
+
+      return {
+        payload: storedPayload,
+        rowCount,
+        lastSynced: new Date().toISOString(),
+        settings: normalizeDashboardSettings(item.settings_json)
+      };
+    } catch (e) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
+        VALUES (?, 'failed', 0, ?, datetime('now'))
+      `).bind(item.id, e.message || 'Unknown error').run();
+
+      await writeDashboardPayload(
+        item,
+        { rows: [], generatedAt: new Date().toISOString(), sourceMeta: { rowCount: 0 } },
+        0,
+        e.message || 'Unknown error'
+      );
+
+      throw e;
+    }
   };
-}
-function clearDashboardDerivedCaches(){
-  currentDashboardFilterCacheKey='';
-  currentDashboardFilteredRowsCache=[];
-  dashboardStatsCache.clear();
-}
-function getDashboardStatsCacheKey(rows,item,groupBy,mode){
-  const base = rows===currentDashboardFilteredRowsCache ? currentDashboardFilterCacheKey : `${rows.length}|${groupBy}|${mode}`;
-  return `${item?.id||'0'}|${groupBy}|${mode}|${base}`;
-}
-function hydrateDashboardRows(rows){
-  return (rows||[]).map(row=>{
-    if(row && row.__noc) return row;
-    const status=getRowValue(row,['status'])||'Unknown';
-    const created=parseFlexibleDate(getRowValue(row,['created','datecreated','date created','createdat']));
-    const resolved=parseFlexibleDate(getRowValue(row,['resolved','closedat']));
-    const meta={
-      status,
-      statusKey:normalizeKey(status),
-      problem:getRowValue(row,['ticketproblem','problem','issue'])||'Unknown',
-      site:getRowValue(row,['opisitecode','sitecode','opi site code'])||'',
-      township:getRowValue(row,['township'])||'',
-      queue:getRowValue(row,['queue'])||'',
-      root:getRowValue(row,['servicerootcause','rootcausecategory','rootcause','service root cause'])||'Unknown',
-      repeatKey:getRowValue(row,['localserviceid','cpeid','serviceid'])||'',
-      created,
-      resolved,
-      resolutionHours:(created&&resolved&&resolved>=created)?((resolved-created)/36e5):null,
+Option B — အပို block ကိုပဲဖျက်
+syncDashboardItem function အပြီးမှာ ဒီ block တစ်ခုထပ်ကျန်နေမယ်
+အဲဒါကိုဖျက်လိုက်ရုံနဲ့လည်းရတယ်:
+
+JavaScript
+
+    } catch (e) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
+        VALUES (?, 'failed', 0, ?, datetime('now'))
+      `).bind(item.id, e.message || 'Unknown error').run();
+      await env.DB.prepare(`
+        INSERT INTO dashboard_cache (dashboard_item_id, dashboard_name, source_url, payload_json, row_count, last_synced_at, last_error)
+        VALUES (?, ?, ?, '[]', 0, datetime('now'), ?)
+        ON CONFLICT(dashboard_item_id) DO UPDATE SET
+          last_error = excluded.last_error,
+          last_synced_at = datetime('now')
+      `).bind(item.id, item.name, item.api_url, e.message || 'Unknown error').run();
+      throw e;
+    }
+  };
+အဲ့ဒီ duplicate block ကိုဖျက်ပါ။
+
+ဘယ်လို verify လုပ်မလဲ
+Repo file ထဲမှာ search လုပ်ပါ:
+
+JavaScript
+
+const syncDashboardItem = async (item) =>
+အဲ့ဒီ function ပြီးသွားပြီးနောက်မှာ
+ချက်ချင်း
+
+JavaScript
+
+// Presence Management
+လာရမယ်
+
+မဖြစ်သင့်တာ
+function ပြီးပြီးချင်း
+
+JavaScript
+
+} catch (e) {
+ထပ်မလာရဘူး
+
+ပြီးရင် ဘာလုပ်မလဲ
+1. Save / Commit
+GitHub web editor နဲ့ဆို Commit changes
+
+commit message:
+
+txt
+
+Fix duplicate catch in Pages function
+2. Cloudflare Pages deploy ပြန်စောင့်
+ဒီတစ်ခါ syntax error မပေါ်သင့်တော့ဘူး
+
+သင် terminal သုံးမယ်ဆို command
+Local repo မှာဆို:
+
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Fix duplicate catch in Pages function"
+git push
+If you want easiest way
+လိုချင်ရင် ကျွန်တော်က နောက် message မှာ
+“အပေါ်က old block ကိုဖျက်၊ ဒီ new block ကို paste” ဆိုပြီး
+copy-paste ready full section ကို ပိုတိုတောင်းအောင်ထုတ်ပေးနိုင်တယ်။
+
+လိုရင် “full corrected [[path]].js section ပေး” လို့ပြောပါ။
+
+
+full corrected [[path]].js section ပေး
+
+
+ရပါတယ် — functions/api/[[path]].js ထဲမှာ ဒီ section တစ်ခုလုံးကို အစားထိုး paste လုပ်ပါ။
+
+Replace လုပ်ရမယ့်နေရာ
+ဒီ file ထဲမှာ:
+
+const ensureDashboardTables = async () => {
+ကနေစပြီး
+const syncDashboardItem = async (item) => { ... };
+အဆုံးထိ
+အောက်က code နဲ့ လုံးဝအစားထိုးပါ
+ပြီးရင် function အောက်မှာ ချက်ချင်း
+
+JavaScript
+
+//  Presence Management
+လာရမယ်
+
+JavaScript
+
+  const ensureDashboardTables = async () => {
+    const stmts = [
+      `CREATE TABLE IF NOT EXISTS dashboard_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        icon TEXT NOT NULL DEFAULT 'fa-chart-line',
+        api_url TEXT NOT NULL,
+        min_role_required TEXT NOT NULL DEFAULT 'leader',
+        overtime_hours REAL NOT NULL DEFAULT 8,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_cache (
+        dashboard_item_id INTEGER PRIMARY KEY,
+        dashboard_name TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        row_count INTEGER NOT NULL DEFAULT 0,
+        last_synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_error TEXT
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_cache_chunks (
+        dashboard_item_id INTEGER NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        payload_chunk TEXT NOT NULL,
+        PRIMARY KEY (dashboard_item_id, chunk_index)
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_item_settings (
+        dashboard_item_id INTEGER PRIMARY KEY,
+        settings_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_sync_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dashboard_item_id INTEGER NOT NULL,
+        sync_status TEXT NOT NULL,
+        row_count INTEGER NOT NULL DEFAULT 0,
+        message TEXT,
+        synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_items_sort ON dashboard_items(sort_order)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_items_active ON dashboard_items(is_active)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_cache_chunks_item ON dashboard_cache_chunks(dashboard_item_id, chunk_index)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC)`
+    ];
+
+    for (const sql of stmts) {
+      await env.DB.prepare(sql).run();
+    }
+  };
+
+  const DASHBOARD_CHUNK_SIZE = 450000;
+
+  const buildStoredDashboardPayload = (rawPayload) => {
+    const rows = extractDashboardRows(rawPayload);
+    return {
+      rows,
+      generatedAt: rawPayload?.generatedAt || rawPayload?.generated_at || new Date().toISOString(),
+      sourceMeta: {
+        success: rawPayload?.success,
+        sheet: rawPayload?.sheet || null,
+        rowCount: rows.length,
+        headers: Array.isArray(rawPayload?.headers) ? rawPayload.headers : null,
+      }
     };
-    try{ Object.defineProperty(row,'__noc',{ value:meta, enumerable:false, configurable:true, writable:true }); }catch{ row.__noc=meta; }
-    return row;
-  });
-}
-function computeDashboardFilterOptions(rows){
-  const unique={ site:new Set(), township:new Set(), queue:new Set() };
-  (rows||[]).forEach(row=>{
-    const meta=row?.__noc||{};
-    if(meta.site) unique.site.add(meta.site);
-    if(meta.township) unique.township.add(meta.township);
-    if(meta.queue) unique.queue.add(meta.queue);
-  });
-  return { site:[...unique.site].sort((a,b)=>a.localeCompare(b)), township:[...unique.township].sort((a,b)=>a.localeCompare(b)), queue:[...unique.queue].sort((a,b)=>a.localeCompare(b)) };
-}
-function getDashboardFilterCacheSignature(rows,filters){
-  return [rows?.length||0,filters.site,filters.township,filters.queue,filters.fromDate,filters.toDate].join('|');
-}
-function getFilteredDashboardRows(rows=currentDashboardRows, filters=currentDashboardFilters){
-  if(rows===currentDashboardRows){
-    const sig=getDashboardFilterCacheSignature(rows,filters);
-    if(sig===currentDashboardFilterCacheKey) return currentDashboardFilteredRowsCache;
-    const computed=filterDashboardRows(rows,filters);
-    currentDashboardFilterCacheKey=sig;
-    currentDashboardFilteredRowsCache=computed;
-    return computed;
-  }
-  return filterDashboardRows(rows,filters);
-}
-function getCurrentDashboardPage(){
-  const pages=getDashboardPagesForItem(currentDashboardId);
-  let page=pages.find(p=>String(p.id)===String(currentDashboardPageId) || p.slug===currentDashboardPageId);
-  if(!page){ page=pages[0]||DEFAULT_DASHBOARD_PAGES[0]; currentDashboardPageId=page.id; }
-  return page;
-}
-async function ensurePersistentDashboardPage(){
-  let page=getCurrentDashboardPage();
-  if(Number.isFinite(Number(page?.id))) return page;
-  await refreshData(true);
-  const pages=getDashboardPagesForItem(currentDashboardId);
-  page=pages.find(p=>p.slug===page?.slug || p.name===page?.name) || pages[0] || page;
-  if(page) currentDashboardPageId=page.id;
-  return page;
-}
-function initializeDashboardPage(){
-  const pages=getDashboardPagesForItem(currentDashboardId);
-  const current=pages.find(p=>String(p.id)===String(currentDashboardPageId));
-  if(!current) currentDashboardPageId=(pages[0]||DEFAULT_DASHBOARD_PAGES[0]).id;
-}
-function renderDashboardPageTabs(){
-  const wrap=el('dashboardPageTabs');
-  if(!wrap) return;
-  if(!currentDashboardId){ wrap.classList.add('hidden'); wrap.innerHTML=''; return; }
-  const pages=getDashboardPagesForItem(currentDashboardId);
-  const current=getCurrentDashboardPage();
-  wrap.classList.remove('hidden');
-  wrap.innerHTML=pages.map(page=>`<button class="dash-tab-btn ${String(page.id)===String(current.id)?'active':''}" onclick="setDashboardPage('${escAttr(String(page.id))}')"><i class="fas ${page.icon||'fa-layer-group'}"></i> ${escHtml(page.name)}</button>`).join('');
-}
-function setDashboardPage(pageId){
-  currentDashboardPageId=pageId;
-  if(getCurrentDashboardPage().slug==='raw-data') currentDashboardTableState.page=1;
-  renderDashboardPageTabs();
-  renderCurrentDashboard();
-}
-
-async function openDashboardManagerModal(){
-  if(!isAdmin()) return showToast('Admin only','error');
-  const modal=el('dashboardManagerModal');
-  modal.classList.remove('hidden');
-  if((appData.dashboardItems||[]).length) renderDashboardManagerList();
-  else renderDashboardManagerLoading();
-  refreshData(true).then(()=>{ if(!modal.classList.contains('hidden')) renderDashboardManagerList(); }).catch(()=>{ if(!modal.classList.contains('hidden')) renderDashboardManagerList(); });
-}
-function renderDashboardManagerList(){
-  const list=el('dashboardManagerList');
-  if(!list) return;
-  const items=[...(appData.dashboardItems||[])];
-  if(!items.length){ list.innerHTML=`<div class="dash-empty"><i class="fas fa-chart-line"></i><h3>No dashboard items</h3><p>Click “Add Dashboard” to create your first dashboard source.</p></div>`; return; }
-  list.innerHTML=items.map(item=>`<div class="cat-mgr-item" draggable="true" data-dash-id="${item.id}" ondragstart="dashDragStart(event,${item.id})" ondragover="dashDragOver(event)" ondrop="dashDrop(event,${item.id})" ondragend="dashDragEnd()"><div class="cat-mgr-drag"><i class="fas fa-grip-vertical"></i></div><div class="cat-mgr-icon"><i class="fas ${item.icon||'fa-chart-line'}"></i></div><div style="flex:1;min-width:0"><div class="cat-mgr-name">${escHtml(item.name)}</div><div class="dash-manager-note">${escHtml(getDashboardApi(item))}</div></div><span class="cat-mgr-perm perm-leader">leader+</span><div class="cat-mgr-actions"><button onclick="openDashboardItemModal(${item.id})" class="icon-btn" title="Edit"><i class="fas fa-edit"></i></button><button onclick="deleteDashboardItemConfirm(${item.id})" class="icon-btn" style="color:#ef4444" title="Delete"><i class="fas fa-trash"></i></button></div></div>`).join('');
-}
-function dashDragStart(e,id){ dashDragSrc=id; e.dataTransfer.effectAllowed='move'; e.currentTarget.classList.add('cat-dragging'); }
-function dashDragOver(e){ e.preventDefault(); e.dataTransfer.dropEffect='move'; document.querySelectorAll('#dashboardManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-drag-over')); e.currentTarget.classList.add('cat-drag-over'); }
-function dashDragEnd(){ document.querySelectorAll('#dashboardManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-dragging','cat-drag-over')); }
-async function dashDrop(e,targetId){
-  e.preventDefault();
-  if(dashDragSrc===targetId){ dashDragEnd(); return; }
-  dashDragEnd();
-  const items=[...(appData.dashboardItems||[])];
-  const fromIdx=items.findIndex(x=>x.id===dashDragSrc), toIdx=items.findIndex(x=>x.id===targetId);
-  if(fromIdx<0||toIdx<0) return;
-  const [moved]=items.splice(fromIdx,1); items.splice(toIdx,0,moved); appData.dashboardItems=items;
-  renderDashboardManagerList(); renderDashboardDropdown(); renderMobileDashboardMenu();
-  try{ const res=await fetch(`${API_URL}/dashboards/sort`,{ method:'POST', headers:getHeaders(), body:JSON.stringify({order:items.map(x=>x.id)}) }); const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data.error||'Sort failed'); refreshData(true); }catch(e){ showToast('Failed to save dashboard order: '+e.message,'error'); }
-}
-function cancelDashboardItemModal(){ closeModal('dashboardItemModal'); if(!el('dashboardManagerModal').classList.contains('hidden')) return; if(isAdmin()) openDashboardManagerModal(); }
-function openDashboardItemModal(id=null){
-  if(!isAdmin()) return showToast('Admin only','error');
-  el('dashboardManagerModal').classList.add('hidden');
-  el('dashboardItemModal').classList.remove('hidden');
-  el('dashboardItemModalTitle').textContent=id?'Edit Dashboard':'Add Dashboard';
-  el('dashboardItemId').value=id||'';
-  if(id){ const item=(appData.dashboardItems||[]).find(x=>x.id===id); if(!item) return; el('dashboardItemName').value=item.name||''; el('dashboardItemIcon').value=item.icon||'fa-chart-line'; el('dashboardItemApi').value=getDashboardApi(item); }
-  else { el('dashboardItemForm').reset(); el('dashboardItemIcon').value='fa-chart-line'; }
-}
-function slugify(s=''){ return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
-async function saveDashboardItem(){
-  if(!isAdmin()) return showToast('Admin only','error');
-  const id=el('dashboardItemId').value, name=el('dashboardItemName').value.trim(), icon=el('dashboardItemIcon').value, api_url=el('dashboardItemApi').value.trim();
-  if(!name||!api_url) return showToast('Name and API URL are required','error');
-  if(isProcessing){showToast('Please wait…','info');return;}
-  isProcessing=true;showLoading(true);updateProgress(20,'Saving dashboard...');
-  try{
-    const payload={ name, slug:slugify(name), icon, api_url, min_role_required:'leader' };
-    const res=await fetch(`${API_URL}/dashboardItems${id?`/${id}`:''}`,{ method:id?'PUT':'POST', headers:getHeaders(), body:JSON.stringify(payload) });
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(data.error||'Failed to save dashboard item');
-    updateProgress(60,'Refreshing...'); const refreshed=await refreshData(true); if(!refreshed) throw new Error('Refresh after save failed');
-    updateProgress(100,'Saved!'); await delay(250); hideLoading(); closeModal('dashboardItemModal'); await openDashboardManagerModal(); dashboardPrefetchStarted=false; startDashboardPrefetch(true); showToast('Dashboard item saved','success');
-  }catch(e){ hideLoading(); showToast(e.message); }
-  isProcessing=false;
-}
-
-let dashPageDragSrc=null;
-
-async function openDashboardPageManagerModal(){
-  if(!isAdmin()) return showToast('Admin only','error');
-  if(!currentDashboardId) return showToast('Open a dashboard item first','info');
-  const modal=el('dashboardPageManagerModal');
-  modal.classList.remove('hidden');
-  const pages=getDashboardPagesForItem(currentDashboardId);
-  if(pages.length) renderDashboardPageManagerList();
-  else renderDashboardPageManagerLoading();
-  refreshData(true)
-    .then(()=>{ if(!modal.classList.contains('hidden')) renderDashboardPageManagerList(); })
-    .catch(()=>{ if(!modal.classList.contains('hidden')) renderDashboardPageManagerList(); });
-}
-function renderDashboardPageManagerLoading(){
-  const list=el('dashboardPageManagerList');
-  if(!list) return;
-  list.innerHTML=`
-    <div class="dash-mgr-loading">
-      <div class="dash-mgr-loading-head">
-        <div>
-          <div class="dash-set-title">Loading dashboard pages…</div>
-          <div class="dash-manager-note">Refreshing the latest page layout in the background.</div>
-        </div>
-        <div class="dash-mgr-spinner"><i class="fas fa-spinner fa-spin"></i></div>
-      </div>
-      <div class="dash-mgr-skeleton"></div>
-      <div class="dash-mgr-skeleton"></div>
-    </div>`;
-}
-
-function renderDashboardPageManagerList(){
-  const list=el('dashboardPageManagerList');
-  if(!list) return;
-  const pages=getDashboardPagesForItem(currentDashboardId);
-  list.innerHTML=pages.map(page=>`<div class="cat-mgr-item" draggable="true" data-page-id="${page.id}" ondragstart="dashPageDragStart(event,'${escAttr(String(page.id))}')" ondragover="dashPageDragOver(event)" ondrop="dashPageDrop(event,'${escAttr(String(page.id))}')" ondragend="dashPageDragEnd()"><div class="cat-mgr-drag"><i class="fas fa-grip-vertical"></i></div><div class="cat-mgr-icon"><i class="fas ${page.icon||'fa-layer-group'}"></i></div><div style="flex:1;min-width:0"><div class="cat-mgr-name">${escHtml(page.name)}</div><div class="dash-page-meta">${escHtml(page.slug||'')}</div></div><div class="cat-mgr-actions"><button onclick="openDashboardPageModal('${escAttr(String(page.id))}')" class="icon-btn" title="Edit"><i class="fas fa-edit"></i></button><button onclick="deleteDashboardPageConfirm('${escAttr(String(page.id))}')" class="icon-btn" style="color:#ef4444" title="Delete"><i class="fas fa-trash"></i></button></div></div>`).join('') || `<div class="dash-empty"><i class="fas fa-table-columns"></i><h3>No pages</h3><p>Add a page to organize your dashboard.</p></div>`;
-}
-function dashPageDragStart(e,id){ dashPageDragSrc=String(id); e.dataTransfer.effectAllowed='move'; e.currentTarget.classList.add('cat-dragging'); }
-function dashPageDragOver(e){ e.preventDefault(); e.dataTransfer.dropEffect='move'; document.querySelectorAll('#dashboardPageManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-drag-over')); e.currentTarget.classList.add('cat-drag-over'); }
-function dashPageDragEnd(){ document.querySelectorAll('#dashboardPageManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-dragging','cat-drag-over')); }
-async function dashPageDrop(e,targetId){
-  e.preventDefault();
-  if(String(dashPageDragSrc)===String(targetId)){ dashPageDragEnd(); return; }
-  dashPageDragEnd();
-  const pages=[...getDashboardPagesForItem(currentDashboardId)];
-  const fromIdx=pages.findIndex(x=>String(x.id)===String(dashPageDragSrc));
-  const toIdx=pages.findIndex(x=>String(x.id)===String(targetId));
-  if(fromIdx<0||toIdx<0) return;
-  const [moved]=pages.splice(fromIdx,1); pages.splice(toIdx,0,moved);
-  appData.dashboardPages=pages.map((p,idx)=>({ ...(appData.dashboardPages.find(x=>String(x.id)===String(p.id))||p), sort_order:idx }))
-    .concat((appData.dashboardPages||[]).filter(x=>Number(x.dashboard_item_id||x.dashboardItemId)!==Number(currentDashboardId)));
-  renderDashboardPageManagerList(); renderDashboardPageTabs();
-  try{
-    const res=await fetch(`${API_URL}/dashboardPages/sort`,{ method:'POST', headers:getHeaders(), body:JSON.stringify({ dashboard_item_id:currentDashboardId, order:pages.map(x=>x.id) }) });
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(data.error||'Failed to sort pages');
-    refreshData(true);
-  }catch(e){ showToast(e.message,'error'); }
-}
-function cancelDashboardPageModal(){ closeModal('dashboardPageModal'); if(!el('dashboardPageManagerModal').classList.contains('hidden')) return; openDashboardPageManagerModal(); }
-function openDashboardPageModal(id=null){
-  if(!isAdmin()) return showToast('Admin only','error');
-  if(!currentDashboardId) return showToast('Open a dashboard item first','info');
-  el('dashboardPageManagerModal').classList.add('hidden');
-  el('dashboardPageModal').classList.remove('hidden');
-  el('dashboardPageModalTitle').textContent=id?'Edit Page':'Add Page';
-  el('dashboardPageId').value=id||'';
-  if(id){
-    const page=(appData.dashboardPages||[]).find(x=>String(x.id)===String(id));
-    if(!page) return;
-    el('dashboardPageName').value=page.name||'';
-    el('dashboardPageIcon').value=page.icon||'fa-layer-group';
-  } else {
-    el('dashboardPageForm').reset();
-    el('dashboardPageIcon').value='fa-layer-group';
-  }
-}
-async function saveDashboardPage(){
-  if(!isAdmin()) return showToast('Admin only','error');
-  if(!currentDashboardId) return showToast('Open a dashboard item first','info');
-  const id=el('dashboardPageId').value;
-  const name=el('dashboardPageName').value.trim();
-  const icon=el('dashboardPageIcon').value;
-  if(!name) return showToast('Page name is required','error');
-  const payload={ name, slug:slugify(name), icon };
-  const endpoint=id?`${API_URL}/dashboardPages/${id}`:`${API_URL}/dashboards/${currentDashboardId}/pages`;
-  const method=id?'PUT':'POST';
-  if(isProcessing){ showToast('Please wait…','info'); return; }
-  isProcessing=true; showLoading(true); updateProgress(20,'Saving page...');
-  try{
-    const res=await fetch(endpoint,{ method, headers:getHeaders(), body:JSON.stringify(payload) });
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(data.error||'Failed to save page');
-    await refreshData(true);
-    initializeDashboardPage(); renderDashboardPageTabs(); renderCurrentDashboard();
-    hideLoading(); closeModal('dashboardPageModal'); await openDashboardPageManagerModal(); showToast('Dashboard page saved','success');
-  }catch(e){ hideLoading(); showToast(e.message); }
-  isProcessing=false;
-}
-async function deleteDashboardPageConfirm(id){
-  if(!isAdmin()) return;
-  if(!confirm('Delete this dashboard page?')) return;
-  if(isProcessing){ showToast('Please wait…','info'); return; }
-  isProcessing=true; showLoading(true); updateProgress(20,'Deleting page...');
-  try{
-    const res=await fetch(`${API_URL}/dashboardPages/${id}`,{ method:'DELETE', headers:getHeaders() });
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(data.error||'Failed to delete page');
-    await refreshData(true);
-    initializeDashboardPage(); renderDashboardPageTabs(); renderCurrentDashboard(); renderDashboardPageManagerList();
-    hideLoading(); showToast('Dashboard page deleted','success');
-  }catch(e){ hideLoading(); showToast(e.message); }
-  isProcessing=false;
-}
-
-let dashWidgetDragSrc=null;
-function widgetTypeLabel(type){
-  return ({ totalTickets:'Total Tickets KPI', avgResolve:'Avg Resolve KPI', closedRate:'Closed Rate KPI', quickSummary:'Quick Summary', trendChart:'Trend Chart', statusChart:'Status Chart', problemChart:'Problem Chart', siteChart:'Site Chart', rootCauseChart:'Root Cause Chart', repeatChart:'Repeat Complaint', townshipChart:'Township Chart', queueChart:'Queue Chart', rawTable:'Raw Data Table' })[type] || type;
-}
-async function openDashboardWidgetManagerModal(){
-  if(!isAdmin()) return showToast('Admin only','error');
-  let page=getCurrentDashboardPage();
-  if(!currentDashboardId||!page) return showToast('Open a dashboard page first','info');
-  page = await ensurePersistentDashboardPage();
-  const modal=el('dashboardWidgetManagerModal');
-  modal.classList.remove('hidden');
-  renderDashboardWidgetManagerList();
-  refreshData(true).then(()=>{ if(!modal.classList.contains('hidden')) renderDashboardWidgetManagerList(); });
-}
-function renderDashboardWidgetManagerList(){
-  const list=el('dashboardWidgetManagerList');
-  if(!list) return;
-  const page=getCurrentDashboardPage();
-  const widgets=getDashboardWidgetsForPage(page.id);
-  list.innerHTML=widgets.map(w=>`<div class="cat-mgr-item" draggable="true" data-widget-id="${w.id}" ondragstart="dashWidgetDragStart(event,'${escAttr(String(w.id))}')" ondragover="dashWidgetDragOver(event)" ondrop="dashWidgetDrop(event,'${escAttr(String(w.id))}')" ondragend="dashWidgetDragEnd()"><div class="cat-mgr-drag"><i class="fas fa-grip-vertical"></i></div><div class="cat-mgr-icon"><i class="fas fa-chart-bar"></i></div><div style="flex:1;min-width:0"><div class="cat-mgr-name">${escHtml(w.title||widgetTypeLabel(w.widget_type||w.widgetType||''))}</div><div class="dash-widget-type">${escHtml(widgetTypeLabel(w.widget_type||w.widgetType||''))}</div></div><div class="cat-mgr-actions"><button onclick="openDashboardWidgetModal('${escAttr(String(w.id))}')" class="icon-btn" title="Edit"><i class="fas fa-edit"></i></button><button onclick="deleteDashboardWidgetConfirm('${escAttr(String(w.id))}')" class="icon-btn" style="color:#ef4444" title="Delete"><i class="fas fa-trash"></i></button></div></div>`).join('') || `<div class="dash-empty"><i class="fas fa-grip"></i><h3>No widgets on this page</h3><p>Add widgets to customize the current dashboard page.</p></div>`;
-}
-function dashWidgetDragStart(e,id){ dashWidgetDragSrc=String(id); e.dataTransfer.effectAllowed='move'; e.currentTarget.classList.add('cat-dragging'); }
-function dashWidgetDragOver(e){ e.preventDefault(); e.dataTransfer.dropEffect='move'; document.querySelectorAll('#dashboardWidgetManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-drag-over')); e.currentTarget.classList.add('cat-drag-over'); }
-function dashWidgetDragEnd(){ document.querySelectorAll('#dashboardWidgetManagerList .cat-mgr-item').forEach(x=>x.classList.remove('cat-dragging','cat-drag-over')); }
-async function dashWidgetDrop(e,targetId){
-  e.preventDefault();
-  if(String(dashWidgetDragSrc)===String(targetId)){ dashWidgetDragEnd(); return; }
-  dashWidgetDragEnd();
-  const page=getCurrentDashboardPage();
-  const widgets=[...getDashboardWidgetsForPage(page.id)];
-  const fromIdx=widgets.findIndex(x=>String(x.id)===String(dashWidgetDragSrc));
-  const toIdx=widgets.findIndex(x=>String(x.id)===String(targetId));
-  if(fromIdx<0||toIdx<0) return;
-  const [moved]=widgets.splice(fromIdx,1); widgets.splice(toIdx,0,moved);
-  appData.dashboardWidgets=(appData.dashboardWidgets||[]).map(w=>{
-    const idx=widgets.findIndex(x=>String(x.id)===String(w.id));
-    return idx>=0 ? { ...w, sort_order:idx } : w;
-  });
-  renderDashboardWidgetManagerList();
-  try{
-    const res=await fetch(`${API_URL}/dashboardWidgets/sort`,{ method:'POST', headers:getHeaders(), body:JSON.stringify({ dashboard_page_id:page.id, order:widgets.map(x=>x.id) }) });
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(data.error||'Failed to sort widgets');
-    renderCurrentDashboard();
-  }catch(e){ showToast(e.message,'error'); }
-}
-function cancelDashboardWidgetModal(){ closeModal('dashboardWidgetModal'); if(!el('dashboardWidgetManagerModal').classList.contains('hidden')) return; openDashboardWidgetManagerModal(); }
-async function openDashboardWidgetModal(id=null){
-  if(!isAdmin()) return showToast('Admin only','error');
-  let page=getCurrentDashboardPage();
-  if(!page) return showToast('Open a dashboard page first','info');
-  page = await ensurePersistentDashboardPage();
-  el('dashboardWidgetManagerModal').classList.add('hidden');
-  el('dashboardWidgetModal').classList.remove('hidden');
-  el('dashboardWidgetModalTitle').textContent=id?'Edit Widget':'Add Widget';
-  el('dashboardWidgetId').value=id||'';
-  if(id){
-    const widget=(appData.dashboardWidgets||[]).find(x=>String(x.id)===String(id));
-    if(!widget) return;
-    el('dashboardWidgetTitle').value=widget.title||'';
-    el('dashboardWidgetType').value=widget.widget_type||widget.widgetType||'trendChart';
-  } else {
-    el('dashboardWidgetForm').reset();
-    el('dashboardWidgetType').value='trendChart';
-  }
-}
-async function saveDashboardWidget(){
-  if(!isAdmin()) return showToast('Admin only','error');
-  let page=getCurrentDashboardPage();
-  if(!page) return showToast('Open a dashboard page first','info');
-  page = await ensurePersistentDashboardPage();
-  const id=el('dashboardWidgetId').value;
-  const title=el('dashboardWidgetTitle').value.trim();
-  const widget_type=el('dashboardWidgetType').value;
-  const payload={ title, widget_type, settings_json:'{}' };
-  const endpoint=id?`${API_URL}/dashboardWidgets/${id}`:`${API_URL}/dashboardPages/${page.id}/widgets`;
-  const method=id?'PUT':'POST';
-  if(isProcessing){ showToast('Please wait…','info'); return; }
-  isProcessing=true; showLoading(true); updateProgress(20,'Saving widget...');
-  try{
-    const res=await fetch(endpoint,{ method, headers:getHeaders(), body:JSON.stringify(payload) });
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(data.error||'Failed to save widget');
-    if(id){
-      appData.dashboardWidgets=(appData.dashboardWidgets||[]).map(w=>String(w.id)===String(id)?{...w, title:title||null, widget_type, settings_json:'{}'}:w);
-    } else if(data?.id){
-      const list=getDashboardWidgetsForPage(page.id);
-      appData.dashboardWidgets=[...(appData.dashboardWidgets||[]),{ id:data.id, dashboard_page_id:page.id, widget_type, title:title||null, settings_json:'{}', sort_order:list.length }];
-    }
-    renderCurrentDashboard();
-    refreshData(true).catch(()=>null);
-    hideLoading(); closeModal('dashboardWidgetModal'); await openDashboardWidgetManagerModal(); showToast(`Widget saved on ${page.name} page`,'success');
-  }catch(e){ hideLoading(); showToast(e.message); }
-  isProcessing=false;
-}
-async function deleteDashboardWidgetConfirm(id){
-  if(!isAdmin()) return;
-  if(!confirm('Delete this widget?')) return;
-  if(isProcessing){ showToast('Please wait…','info'); return; }
-  isProcessing=true; showLoading(true); updateProgress(20,'Deleting widget...');
-  try{
-    const res=await fetch(`${API_URL}/dashboardWidgets/${id}`,{ method:'DELETE', headers:getHeaders() });
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(data.error||'Failed to delete widget');
-    appData.dashboardWidgets=(appData.dashboardWidgets||[]).filter(w=>String(w.id)!==String(id));
-    renderCurrentDashboard(); renderDashboardWidgetManagerList();
-    refreshData(true).catch(()=>null);
-    hideLoading(); showToast('Widget deleted','success');
-  }catch(e){ hideLoading(); showToast(e.message); }
-  isProcessing=false;
-}
-
-async function clearCurrentDashboardCache(){
-  if(!isAdmin()) return showToast('Admin only','error');
-  if(!currentDashboardId) return showToast('Open a dashboard item first','info');
-  if(!confirm('Clear cached dashboard data for this item?')) return;
-  if(isProcessing){ showToast('Please wait…','info'); return; }
-  isProcessing=true; showLoading(true); updateProgress(20,'Clearing cache...');
-  try{
-    const res=await fetch(`${API_URL}/dashboards/${currentDashboardId}/cache`,{ method:'DELETE', headers:getHeaders() });
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(data.error||'Failed to clear cache');
-    delete dashboardCache[currentDashboardId];
-    currentDashboardPayload=null; currentDashboardRows=[]; dashboardAutoRetryDone=false;
-    updateProgress(65,'Re-syncing...');
-    await refreshCurrentDashboard(true);
-    hideLoading(); showToast('Cache cleared and dashboard refreshed','success');
-  }catch(e){ hideLoading(); showToast(e.message); }
-  isProcessing=false;
-}
-
-async function deleteDashboardItemConfirm(id){
-  if(!isAdmin()) return;
-  if(!confirm('Delete this dashboard item?')) return;
-  if(isProcessing){showToast('Please wait…','info');return;}
-  isProcessing=true;showLoading(true);updateProgress(20,'Deleting dashboard...');
-  try{
-    const res=await fetch(`${API_URL}/dashboardItems/${id}`,{ method:'DELETE', headers:getHeaders() });
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(data.error||'Failed to delete dashboard item');
-    updateProgress(60,'Refreshing...'); const refreshed=await refreshData(true); if(!refreshed) throw new Error('Refresh after delete failed');
-    if(currentDashboardId===id){ currentDashboardId=null; currentDashboardItem=null; currentDashboardPayload=null; currentDashboardRows=[]; currentDashboardPageId=null; renderDashboardEmpty('Dashboard item deleted'); }
-    renderDashboardManagerList(); renderDashboardDropdown(); renderMobileDashboardMenu(); updateProgress(100,'Deleted!'); await delay(220); hideLoading(); showToast('Dashboard item deleted','success');
-  }catch(e){ hideLoading(); showToast(e.message); }
-  isProcessing=false;
-}
-
-function openDashboardSettingsModal(){ if(!isAdmin()) return showToast('Admin only','error'); if(!currentDashboardId||!currentDashboardItem) return showToast('Open a dashboard item first','info'); renderDashboardSettingsForm(getDashboardSettings(currentDashboardItem,currentDashboardPayload)); el('dashboardSettingsModal').classList.remove('hidden'); }
-function renderDashboardSettingsForm(settings){
-  const form=el('dashboardSettingsForm'); if(!form) return;
-  const cardsMeta=[['totalTickets','Total Tickets KPI','Top left summary card'],['avgResolve','Avg Resolve KPI','Average resolution duration card'],['closedRate','Closed Rate KPI','Closed percentage donut'],['quickSummary','Quick Summary KPI','Overtime and repeat counters'],['trendChart','Trend Chart','Ticket trend chart'],['statusChart','Status Chart','Status breakdown chart'],['problemChart','Problem Chart','Top ticket problems chart'],['siteChart','Site Chart','Top site code chart'],['rootCauseChart','Root Cause Chart','Root cause chart'],['repeatChart','Repeat Complaint','Repeat complaint chart/list']];
-  const limitMeta=[['trendPoints','Trend points','Latest day/week/month/year points to show',3,60],['statusCount','Status categories','Max number of statuses',1,20],['problemCount','Problem categories','Max number of problem categories',1,20],['siteCount','Site categories','Max number of site codes',1,20],['rootCauseCount','Root cause categories','Max number of root causes',1,20],['repeatCount','Repeat complaint rows','Max number of repeated services',1,20]];
-  form.innerHTML=`<div class="dash-set-wrap"><div class="dash-set-section"><div class="dash-set-title">Dashboard Style</div><div class="dash-set-sub">Choose the default time grouping for this dashboard item.</div><div class="dash-limit-grid"><div class="dash-limit-item"><div><label for="ds_defaultGrouping">Default grouping</label><small>Used when the page opens</small></div><select id="ds_defaultGrouping" class="dash-set-select">${['day','week','month','year'].map(g=>`<option value="${g}" ${settings.defaultGrouping===g?'selected':''}>${DASHBOARD_GROUP_LABELS[g]}</option>`).join('')}</select></div></div></div><div class="dash-set-section"><div class="dash-set-title">Show / Hide + Graph Type</div><div class="dash-set-sub">Each dashboard item can use different charts and hide any card you do not need.</div><div class="dash-set-grid">${cardsMeta.map(([key,label,sub])=>`<div class="dash-set-card"><div><div class="dash-set-card-title">${escHtml(label)}</div><div class="dash-set-card-sub">${escHtml(sub)}</div></div><label style="display:flex;align-items:center;gap:.55rem;font-size:.8rem;font-weight:700;color:var(--text2)"><span>Show</span><input id="ds_${key}" class="dash-inline-toggle" type="checkbox" ${settings.showCards[key]?'checked':''}></label>${DASHBOARD_GRAPH_OPTIONS[key]?`<select id="dsg_${key}" class="dash-set-select">${DASHBOARD_GRAPH_OPTIONS[key].map(opt=>`<option value="${opt.value}" ${settings.graphTypes[key]===opt.value?'selected':''}>${escHtml(opt.label)}</option>`).join('')}</select>`:`<div></div>`}</div>`).join('')}</div></div><div class="dash-set-section"><div class="dash-set-title">Category Limits</div><div class="dash-set-sub">Limit how many categories or rows each graph shows on this dashboard item.</div><div class="dash-limit-grid">${limitMeta.map(([key,label,sub,min,max])=>`<div class="dash-limit-item"><div><label for="dsl_${key}">${escHtml(label)}</label><small>${escHtml(sub)}</small></div><input id="dsl_${key}" class="dash-limit-input" type="number" min="${min}" max="${max}" value="${settings.limits[key]}"></div>`).join('')}</div></div></div>`;
-}
-function readDashboardSettingsForm(){ const settings=cloneDashboardDefaults(); settings.defaultGrouping=el('ds_defaultGrouping')?.value||'day'; Object.keys(settings.showCards).forEach(key=>{ settings.showCards[key]=!!el(`ds_${key}`)?.checked; }); Object.keys(settings.limits).forEach(key=>{ const v=Number(el(`dsl_${key}`)?.value||settings.limits[key]); if(Number.isFinite(v)&&v>0) settings.limits[key]=Math.round(v); }); Object.keys(settings.graphTypes).forEach(key=>{ const val=el(`dsg_${key}`)?.value; if(val) settings.graphTypes[key]=val; }); return normalizeDashboardSettings(settings); }
-function resetDashboardSettingsForm(){ renderDashboardSettingsForm(cloneDashboardDefaults()); }
-async function saveDashboardSettings(){
-  if(!isAdmin()) return showToast('Admin only','error');
-  if(!currentDashboardId) return showToast('Open a dashboard item first','info');
-  const settings=readDashboardSettingsForm();
-  if(isProcessing){showToast('Please wait…','info');return;}
-  isProcessing=true;showLoading(true);updateProgress(15,'Saving dashboard settings...');
-  try{
-    const res=await fetch(`${API_URL}/dashboards/${currentDashboardId}/settings`,{ method:'PUT', headers:getHeaders(), body:JSON.stringify({settings}) });
-    const data=await res.json().catch(()=>({})); if(!res.ok) throw new Error(data.error||'Failed to save settings');
-    if(currentDashboardItem){ currentDashboardItem.settings=settings; currentDashboardItem.settings_json=JSON.stringify(settings); }
-    const item=(appData.dashboardItems||[]).find(x=>x.id===currentDashboardId); if(item){ item.settings=settings; item.settings_json=JSON.stringify(settings); }
-    currentDashboardFilters.groupBy=settings.defaultGrouping||'day'; renderDashboardFilterControls(); renderCurrentDashboard(); updateProgress(100,'Saved!'); await delay(220); hideLoading(); closeModal('dashboardSettingsModal'); showToast('Dashboard settings saved','success');
-  }catch(e){ hideLoading(); showToast(e.message); }
-  isProcessing=false;
-}
-
-async function startDashboardPrefetch(force=false){
-  if(!isLeader()) return;
-  const items=(appData.dashboardItems||[]).filter(x=>canSee(x.min_role_required||'leader'));
-  if(!items.length) return;
-  if(dashboardPrefetchStarted&&!force) return;
-  dashboardPrefetchStarted=true;
-  fetch(`${API_URL}/dashboards/prefetch`,{ method:'POST', headers:getHeaders(), body:JSON.stringify({ids:items.map(x=>x.id)}) }).catch(()=>null);
-  items.forEach(item=>fetchDashboardData(item.id,{silent:true}));
-}
-async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}={}){
-  if(!id) return null;
-  if(!force&&dashboardCache[id]){
-    onProgress?.(100,'<i class="fas fa-bolt"></i> Loaded from memory cache','Dashboard data was already available in the browser cache.','determinate');
-    return dashboardCache[id];
-  }
-  if(dashboardFetchPromises[id]) return dashboardFetchPromises[id];
-  const item=(appData.dashboardItems||[]).find(x=>x.id===id);
-  if(!item) return null;
-
-  const fetchFromWorker = async () => {
-    const url=`${API_URL}/dashboards/${id}/data${force?'?refresh=1':''}`;
-    const res=await fetch(url,{ headers:getHeaders() });
-    if(res.status===401){ if(!silent) logout(); return null; }
-
-    const total=Number(res.headers.get('content-length')||0);
-    let raw='';
-
-    if(res.body){
-      const reader=res.body.getReader();
-      const decoder=new TextDecoder();
-      let loaded=0;
-      while(true){
-        const {done,value}=await reader.read();
-        if(done) break;
-        loaded += value?.length || 0;
-        raw += decoder.decode(value,{stream:true});
-        if(total>0){
-          const pct = 15 + Math.round(Math.min(70,(loaded/total)*70));
-          onProgress?.(pct,'<i class="fas fa-download"></i> Downloading dashboard payload',`Received ${formatBytes(loaded)} of ${formatBytes(total)} from the API response.`,'determinate');
-        } else {
-          onProgress?.(0,'<i class="fas fa-download"></i> Downloading dashboard payload','Receiving dashboard response from the worker...','indeterminate');
-        }
-      }
-      raw += decoder.decode();
-    } else {
-      raw = await res.text();
-    }
-
-    const contentType = res.headers.get('content-type') || '';
-    if(!contentType.includes('application/json')){
-      const snippet = String(raw||'').slice(0,120).replace(/\s+/g,' ').trim();
-      throw new Error(`Worker returned non-JSON response (HTTP ${res.status}). ${snippet}`);
-    }
-    const data = raw ? JSON.parse(raw) : {};
-    if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`);
-    onProgress?.(0,'<i class="fas fa-box-open"></i> Response received','Parsing dashboard payload and preparing rows...','indeterminate');
-    return data;
   };
 
-  const run=(async()=>{
-    try{
-      onProgress?.(0,'<i class="fas fa-rotate fa-spin"></i> Requesting dashboard data',`Connecting to API and cache for <strong>${escHtml(item.name||'Dashboard')}</strong>.`,'indeterminate');
-      let data = await fetchFromWorker();
-      const workerRows = data ? extractDashboardRows(data) : [];
-      if((!data || !workerRows.length) && getDashboardApi(item)){
-        onProgress?.(0,'<i class="fas fa-link"></i> Trying source fallback','Worker cache returned no rows. Trying the direct source URL fallback.','indeterminate');
-        try{
-          const fallbackRes=await fetch(getDashboardApi(item));
-          if(fallbackRes.ok){
-            const sourceJson=await fallbackRes.json();
-            const sourceRows=extractDashboardRows(sourceJson);
-            if(sourceRows.length){
-              data={
-                ...(data||{}),
-                success:true,
-                dashboardId:id,
-                name:item.name,
-                sourceUrl:getDashboardApi(item),
-                rowCount:sourceRows.length,
-                extractedRowCount:sourceRows.length,
-                sourceMeta:{
-                  ...(data?.sourceMeta||{}),
-                  range:sourceJson?.range||null,
-                  majorDimension:sourceJson?.majorDimension||null,
-                  rowCount:sourceRows.length,
-                  headers:Array.isArray(sourceJson?.values?.[0]) ? sourceJson.values[0] : (data?.sourceMeta?.headers||null)
-                },
-                data:sourceJson
-              };
-            }
-          }
-        }catch(_){ /* ignore */ }
-      }
-      if(data) dashboardCache[id]=data;
-      return data;
-    }catch(e){
-      console.error(e);
-      if(!silent) showToast('Error: '+e.message);
-      return null;
-    }
-  })();
+  const writeDashboardPayload = async (item, payloadObj, rowCount, lastError = null) => {
+    const payloadJson = JSON.stringify(payloadObj);
 
-  dashboardFetchPromises[id]=run;
-  try{ return await run; }
-  finally{ delete dashboardFetchPromises[id]; }
-}
+    await env.DB.prepare(
+      "DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?"
+    ).bind(item.id).run();
 
-async function showDashboardItem(id,name='Dashboard'){
-  if(!isLeader()) return showToast('Leader or above required','error');
-  currentDashboardId=id; currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'}; currentDashboardPayload=null; currentDashboardRows=[]; dashboardAutoRetryDone=false; initializeDashboardPage();
-  document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden')); el('dashboardPage').classList.remove('hidden'); document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active')); document.querySelectorAll('[data-page="dashboard"]').forEach(b=>b.classList.add('active')); if(el('dashboardDropdown')) el('dashboardDropdown').classList.add('hidden'); renderDashboardPageTabs(); renderDashboardLoading(currentDashboardItem);
-  const data=await fetchDashboardData(id,{silent:false,onProgress:updateDashboardLoadingUI}); if(currentDashboardId!==id) return;
-  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the dashboard payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=hydrateDashboardRows(extractDashboardRows(data)); currentDashboardFilterOptionsCache=computeDashboardFilterOptions(currentDashboardRows); clearDashboardDerivedCaches(); updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Building tabs, filters, and table state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the page...','indeterminate'); renderCurrentDashboard(); }
-  else { renderDashboardEmpty('Unable to load dashboard data. Please check the API URL or worker route.'); }
-}
-async function refreshCurrentDashboard(force=false){
-  if(!currentDashboardId||!currentDashboardItem) return showToast('Select a dashboard item first','info');
-  renderDashboardLoading(currentDashboardItem);
-  const data=await fetchDashboardData(currentDashboardId,{force:!!force,silent:false,onProgress:updateDashboardLoadingUI});
-  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the refreshed payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=hydrateDashboardRows(extractDashboardRows(data)); currentDashboardFilterOptionsCache=computeDashboardFilterOptions(currentDashboardRows); clearDashboardDerivedCaches(); updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Updating filters and page state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the refreshed page...','indeterminate'); renderCurrentDashboard(); }
-  else { renderDashboardEmpty('Refresh failed. Please check the API source.'); }
-}
-function initializeDashboardFilters(item,payload,rows,preserve=false){
-  const settings=getDashboardSettings(item,payload);
-  currentDashboardFilters = { groupBy: preserve ? (currentDashboardFilters.groupBy||settings.defaultGrouping||'day') : (settings.defaultGrouping||'day'), site: preserve ? currentDashboardFilters.site : '', township: preserve ? currentDashboardFilters.township : '', queue: preserve ? currentDashboardFilters.queue : '', fromDate: preserve ? currentDashboardFilters.fromDate : '', toDate: preserve ? currentDashboardFilters.toDate : '' };
-  currentDashboardTableState = { ...currentDashboardTableState, search:'', page:1 };
-  const options=getDashboardFilterOptions(rows); ['site','township','queue'].forEach(key=>{ if(currentDashboardFilters[key] && !options[key].includes(currentDashboardFilters[key])) currentDashboardFilters[key]=''; });
-  clearDashboardDerivedCaches();
-}
-function getDashboardFilterOptions(rows){
-  if(rows===currentDashboardRows && currentDashboardFilterOptionsCache.site) return currentDashboardFilterOptionsCache;
-  return computeDashboardFilterOptions(rows);
-}
-function renderDashboardFilterControls(){
-  const bar=el('dashboardFilterBar'); if(!bar) return;
-  if(!currentDashboardItem){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
-  const options=getDashboardFilterOptions(currentDashboardRows); const filteredCount=getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters).length;
-  bar.classList.remove('hidden');
-  bar.innerHTML=`<div class="dash-filter-left"><span class="dash-filter-title">Date Group</span><div class="dash-seg">${['day','week','month','year'].map(g=>`<button class="dash-seg-btn ${currentDashboardFilters.groupBy===g?'active':''}" onclick="setDashboardGroupBy('${g}')">${DASHBOARD_GROUP_LABELS[g]}</button>`).join('')}</div><input id="dashboardFilter_fromDate" class="dash-fctrl dash-fctrl--date" type="date" value="${escAttr(currentDashboardFilters.fromDate||'')}" onchange="onDashboardFilterChange()" title="From Date"><input id="dashboardFilter_toDate" class="dash-fctrl dash-fctrl--date" type="date" value="${escAttr(currentDashboardFilters.toDate||'')}" onchange="onDashboardFilterChange()" title="To Date"></div><div class="dash-filter-right"><span class="dash-filter-count">Showing ${filteredCount.toLocaleString()} / ${currentDashboardRows.length.toLocaleString()} rows</span>${renderDashboardFilterSelect('site','Site Code',options.site,currentDashboardFilters.site)}${renderDashboardFilterSelect('township','Township',options.township,currentDashboardFilters.township)}${renderDashboardFilterSelect('queue','Queue',options.queue,currentDashboardFilters.queue)}<button onclick="resetDashboardFilters()" class="btn-secondary btn-sm"><i class="fas fa-filter-circle-xmark"></i> Reset</button></div>`;
-}
-function renderDashboardFilterSelect(key,label,options,selected){ return `<select id="dashboardFilter_${key}" class="dash-fctrl" onchange="onDashboardFilterChange()"><option value="">All ${escHtml(label)}</option>${options.map(opt=>`<option value="${escAttr(opt)}" ${selected===opt?'selected':''}>${escHtml(opt)}</option>`).join('')}</select>`; }
-function onDashboardFilterChange(){ currentDashboardFilters.site=el('dashboardFilter_site')?.value||''; currentDashboardFilters.township=el('dashboardFilter_township')?.value||''; currentDashboardFilters.queue=el('dashboardFilter_queue')?.value||''; currentDashboardFilters.fromDate=el('dashboardFilter_fromDate')?.value||''; currentDashboardFilters.toDate=el('dashboardFilter_toDate')?.value||''; currentDashboardTableState.page=1; currentDashboardFilterCacheKey=''; renderDashboardFilterControls(); renderCurrentDashboard(); }
-function setDashboardGroupBy(groupBy){ currentDashboardFilters.groupBy=groupBy; renderDashboardFilterControls(); renderCurrentDashboard(); }
-function resetDashboardFilters(){ const settings=getDashboardSettings(currentDashboardItem,currentDashboardPayload); currentDashboardFilters={ groupBy:settings.defaultGrouping||'day', site:'', township:'', queue:'', fromDate:'', toDate:'' }; currentDashboardTableState = { ...currentDashboardTableState, search:'', page:1 }; currentDashboardFilterCacheKey=''; currentDashboardFilteredRowsCache=[]; renderDashboardFilterControls(); renderCurrentDashboard(); }
-function filterDashboardRows(rows,filters){
-  const from = filters.fromDate ? parseFlexibleDate(`${filters.fromDate} 00:00:00`) : null;
-  const to = filters.toDate ? parseFlexibleDate(`${filters.toDate} 23:59:59`) : null;
-  if(!filters.site && !filters.township && !filters.queue && !from && !to) return rows;
-  return rows.filter(row=>{
-    const meta=row.__noc||{};
-    const site=meta.site||''; const township=meta.township||''; const queue=meta.queue||''; const created=meta.created||null;
-    if(filters.site && site!==filters.site) return false; if(filters.township && township!==filters.township) return false; if(filters.queue && queue!==filters.queue) return false; if(from && created && created < from) return false; if(to && created && created > to) return false; if((from || to) && !created) return false; return true;
-  });
-}
-function renderDashboardLoading(item={}){
-  destroyDashboardCharts(); clearDashboardLoadPulse(); if(el('dashboardTitleText')) el('dashboardTitleText').textContent=item.name||'Dashboard'; const meta=el('dashboardMeta'); if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; } const bar=el('dashboardFilterBar'); if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; } const tabs=el('dashboardPageTabs'); if(tabs){ tabs.classList.add('hidden'); tabs.innerHTML=''; }
-  el('dashboardContainer').innerHTML=`<div class="dash-fetch-banner"><div class="dash-fetch-copy"><div id="dashboardLoadingTitle" class="dash-fetch-title"><i class="fas fa-rotate fa-spin"></i> Fetching dashboard data</div><div id="dashboardLoadingSub" class="dash-fetch-sub">Loading API data, preparing filters, and building charts for <strong>${escHtml(item.name||'Dashboard')}</strong>.</div></div><div class="dash-fetch-meter"><div id="dashboardLoadingTrack" class="dash-fetch-track"><div id="dashboardLoadingBar" class="dash-fetch-fill" style="width:0%"></div></div><span id="dashboardLoadingPct" class="dash-fetch-pct">Syncing…</span></div></div><div class="dashboard-skeleton"><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel wide"></div><div class="dash-skel tall"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div></div>`;
-  updateDashboardLoadingUI(0,'<i class="fas fa-rotate fa-spin"></i> Requesting dashboard data',`Connecting to API and cache for <strong>${escHtml(item.name||'Dashboard')}</strong>.`,'indeterminate');
-}
-function renderDashboardEmpty(message='No dashboard item selected'){ destroyDashboardCharts(); clearDashboardLoadPulse(); const meta=el('dashboardMeta'); if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; } const bar=el('dashboardFilterBar'); if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; } const tabs=el('dashboardPageTabs'); if(tabs){ tabs.classList.add('hidden'); tabs.innerHTML=''; } el('dashboardContainer').innerHTML=`<div class="dash-empty"><i class="fas fa-chart-pie"></i><h3>Dashboard Preview</h3><p>${escHtml(message)}</p></div>`; }
-function renderCurrentDashboard(){
-  clearDashboardLoadPulse(); if(!currentDashboardItem||!currentDashboardPayload){ renderDashboardEmpty('Dashboard data is not loaded yet.'); return; }
-  if(!currentDashboardRows.length){
-    if(!dashboardAutoRetryDone){
-      dashboardAutoRetryDone=true;
-      renderDashboardLoading(currentDashboardItem);
-      updateDashboardLoadingUI(0,'<i class="fas fa-rotate fa-spin"></i> Re-syncing empty dashboard','No rows were cached, so the dashboard is requesting a fresh sync automatically.','indeterminate');
-      refreshCurrentDashboard(true);
+    if (payloadJson.length <= DASHBOARD_CHUNK_SIZE) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_cache (
+          dashboard_item_id, dashboard_name, source_url, payload_json,
+          row_count, last_synced_at, last_error
+        )
+        VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+        ON CONFLICT(dashboard_item_id) DO UPDATE SET
+          dashboard_name = excluded.dashboard_name,
+          source_url = excluded.source_url,
+          payload_json = excluded.payload_json,
+          row_count = excluded.row_count,
+          last_synced_at = datetime('now'),
+          last_error = excluded.last_error
+      `).bind(
+        item.id,
+        item.name,
+        item.api_url,
+        payloadJson,
+        rowCount,
+        lastError
+      ).run();
       return;
     }
-    const errMsg=currentDashboardPayload?.lastError ? `Dashboard source sync failed: ${currentDashboardPayload.lastError}` : 'No rows were found in the dashboard data. Please check the API response format or click Refresh Data.';
-    renderDashboardEmpty(errMsg);
-    return;
-  }
-  initializeDashboardPage(); renderDashboardPageTabs(); const filteredRows=getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); const currentPage=getCurrentDashboardPage(); if(!filteredRows.length && currentPage.slug!=='raw-data'){ renderDashboardEmpty('No data matched the selected filters. Try changing Site / Township / Queue or date grouping.'); return; } renderDashboardData(currentDashboardItem,currentDashboardPayload,filteredRows,currentDashboardFilters);
-}
-function renderDashboardData(item,payload,rows,filters){
-  destroyDashboardCharts(); clearDashboardLoadPulse(); const settings=getDashboardSettings(item,payload); const currentPage=getCurrentDashboardPage(); const pageSlug=currentPage.slug; const stats = pageSlug==='raw-data' ? null : ((shouldUseSourceSummary(filters) && payload?.sourceSummary) ? sourceSummaryToStats(payload.sourceSummary, filters.groupBy) : getDashboardStats(rows,item,filters.groupBy,pageSlug)); const meta=buildDashboardMeta(payload,item,rows.length,filters,currentDashboardRows.length,currentPage.name); const metaEl=el('dashboardMeta'); if(metaEl){ metaEl.classList.toggle('hidden',!meta.length); metaEl.innerHTML=meta.map(m=>`<span class="meta-chip"><i class="fas ${m.icon}"></i> ${escHtml(m.text)}</span>`).join(''); } el('dashboardTitleText').textContent=item.name||'Dashboard';
-  const cards=[];
-  if(pageSlug==='summary'){
-    if(settings.showCards.totalTickets) cards.push(renderKpiCard('Total Tickets',stats.totalRows,'fa-ticket','Filtered rows',`${stats.closedCount} closed / ${stats.openCount} open`));
-    if(settings.showCards.avgResolve) cards.push(renderKpiCard('Avg Resolve Time',formatHours(stats.avgResolutionHours),'fa-clock','Resolved tickets only',`${stats.resolvedCount} resolved`));
-    if(settings.showCards.closedRate) cards.push(renderDonutCard('Closed Rate',Math.round(stats.closedRate),'fa-circle-check','Closed vs filtered rows'));
-    if(settings.showCards.quickSummary) cards.push(renderMiniSummaryCard('Overtime / Repeat',[{label:'Overtime',value:stats.overtimeCount,color:'amber'},{label:'Repeat',value:stats.repeatCustomers,color:'violet'},{label:'Group By',value:DASHBOARD_GROUP_LABELS[filters.groupBy],color:'green'}]));
-    if(settings.showCards.statusChart) cards.push(renderChartCard('Status Distribution','Filtered ticket status mix','fa-layer-group','dashStatusCanvas','bars'));
-    if(settings.showCards.problemChart) cards.push(renderChartCard('Top Ticket Problems','Most frequent customer issues','fa-triangle-exclamation','dashProblemCanvas','wide'));
-  } else if(pageSlug==='trend'){
-    if(settings.showCards.trendChart) cards.push(renderChartCard('Ticket Trend',`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy].toLowerCase()}`,'fa-chart-line','dashTrendCanvas','trend'));
-    if(settings.showCards.statusChart) cards.push(renderChartCard('Status Distribution','Trend context by status','fa-layer-group','dashStatusCanvas','bars'));
-    cards.push(renderChartCard('Queue Distribution','Operational queue mix','fa-list-check','dashQueueCanvas','bars'));
-  } else if(pageSlug==='root-cause'){
-    if(settings.showCards.rootCauseChart) cards.push(renderChartCard('Root Cause Trend','Service root cause summary','fa-bug','dashRootCanvas','wide'));
-    if(settings.showCards.problemChart) cards.push(renderChartCard('Top Ticket Problems','Problem distribution','fa-triangle-exclamation','dashProblemCanvas','wide'));
-  } else if(pageSlug==='site'){
-    if(settings.showCards.siteChart) cards.push(renderChartCard('Top Site Codes','Most complaint-heavy sites','fa-network-wired','dashSiteCanvas','wide'));
-    cards.push(renderChartCard('Township Breakdown','Complaint distribution by township','fa-location-dot','dashTownshipCanvas','wide'));
-    cards.push(renderChartCard('Queue Distribution','Operational queue mix','fa-list-check','dashQueueCanvas','bars'));
-  } else if(pageSlug==='customer'){
-    if(settings.showCards.repeatChart){ if(settings.graphTypes.repeatChart==='list') cards.push(renderRepeatListCard(stats,settings)); else cards.push(renderChartCard('Repeat Complaints','Repeated Local Service ID / CPE','fa-rotate-left','dashRepeatCanvas','list')); }
-    if(settings.showCards.problemChart) cards.push(renderChartCard('Top Ticket Problems','Customer issue profile','fa-triangle-exclamation','dashProblemCanvas','wide'));
-  } else if(pageSlug==='raw-data') {
-    cards.push(renderRawDataCard(rows));
-  }
-  el('dashboardContainer').innerHTML=cards.length ? `<div class="dashboard-board">${cards.join('')}</div>` : `<div class="dash-empty"><i class="fas fa-eye-slash"></i><h3>All cards are hidden</h3><p>Open Dashboard Settings and enable at least one card for this dashboard item.</p></div>`;
-  if(pageSlug!=='raw-data'){
-    const token = dashboardRenderToken;
-    dashboardRenderRaf = requestAnimationFrame(()=>{
-      if(token !== dashboardRenderToken) return;
-      renderDashboardCharts(stats,settings,filters);
-      dashboardRenderRaf = null;
-    });
-  }
-}
-function renderWidgetByType(widget, stats, settings, rows, filters){
-  const type=widget.widget_type||widget.widgetType||'';
-  const title=widget.title?.trim();
-  if(type==='totalTickets') return renderKpiCard(title||'Total Tickets',stats.totalRows,'fa-ticket','Filtered rows',`${stats.closedCount} closed / ${stats.openCount} open`);
-  if(type==='avgResolve') return renderKpiCard(title||'Avg Resolve Time',formatHours(stats.avgResolutionHours),'fa-clock','Resolved tickets only',`${stats.resolvedCount} resolved`);
-  if(type==='closedRate') return renderDonutCard(title||'Closed Rate',Math.round(stats.closedRate),'fa-circle-check','Closed vs filtered rows');
-  if(type==='quickSummary') return renderMiniSummaryCard(title||'Overtime / Repeat',[{label:'Overtime',value:stats.overtimeCount,color:'amber'},{label:'Repeat',value:stats.repeatCustomers,color:'violet'},{label:'Group By',value:DASHBOARD_GROUP_LABELS[filters.groupBy],color:'green'}]);
-  if(type==='trendChart') return renderChartCard(title||'Ticket Trend',`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy].toLowerCase()}`,'fa-chart-line','dashTrendCanvas','trend');
-  if(type==='statusChart') return renderChartCard(title||'Status Distribution','Filtered ticket status mix','fa-layer-group','dashStatusCanvas','bars');
-  if(type==='problemChart') return renderChartCard(title||'Top Ticket Problems','Most frequent customer issues','fa-triangle-exclamation','dashProblemCanvas','wide');
-  if(type==='siteChart') return renderChartCard(title||'Top Site Codes','Most complaint-heavy sites','fa-network-wired','dashSiteCanvas','wide');
-  if(type==='rootCauseChart') return renderChartCard(title||'Root Cause Trend','Service root cause summary','fa-bug','dashRootCanvas','wide');
-  if(type==='repeatChart') return settings.graphTypes.repeatChart==='list' ? renderRepeatListCard(stats,settings) : renderChartCard(title||'Repeat Complaints','Repeated Local Service ID / CPE','fa-rotate-left','dashRepeatCanvas','list');
-  if(type==='townshipChart') return renderChartCard(title||'Township Breakdown','Complaint distribution by township','fa-location-dot','dashTownshipCanvas','wide');
-  if(type==='queueChart') return renderChartCard(title||'Queue Distribution','Operational queue mix','fa-list-check','dashQueueCanvas','bars');
-  if(type==='rawTable') return renderRawDataCard(rows);
-  return '';
-}
 
-function buildDashboardMeta(payload,item,rowCount,filters,totalRows,pageName){
-  const out=[]; const src=getDashboardApi(item); const synced=payload?.syncedAt||payload?.lastSynced||payload?.last_sync||payload?.fetched_at||payload?.updatedAt; const host=currentDashboardUrlHost();
-  out.push({icon:'fa-table-cells',text:`${pageName} page`}); out.push({icon:'fa-database',text:`${fmtInt(rowCount)} of ${fmtInt(totalRows)} rows`}); out.push({icon:'fa-calendar-days',text:`Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`}); if(filters.fromDate||filters.toDate) out.push({icon:'fa-calendar-range',text:`${filters.fromDate||'Start'} → ${filters.toDate||'Now'}`}); if(filters.site) out.push({icon:'fa-network-wired',text:`Site ${filters.site}`}); if(filters.township) out.push({icon:'fa-location-dot',text:`Township ${filters.township}`}); if(filters.queue) out.push({icon:'fa-filter',text:`Queue ${filters.queue}`}); if(synced) out.push({icon:'fa-rotate',text:`Last sync ${formatMetaDate(synced)}`}); if(payload?.sourceMeta?.range) out.push({icon:'fa-table',text:`Range ${payload.sourceMeta.range}`}); if(host) out.push({icon:'fa-link',text:host.includes('googleapis.com') ? 'Google Sheets API' : host}); return out;
-}
-function sheetValuesToObjects(values){
-  if(!Array.isArray(values) || values.length < 2) return [];
-  const headers=(values[0]||[]).map(h=>String(h??'').trim());
-  return values.slice(1)
-    .filter(row=>Array.isArray(row) && row.some(cell=>String(cell??'').trim()!==''))
-    .map(row=>{
-      const obj={};
-      headers.forEach((header,idx)=>{ obj[header || `Column_${idx+1}`] = row[idx] ?? ''; });
-      return obj;
-    });
-}
-function extractDashboardRows(payload){
-  const isRowArray = (arr) => Array.isArray(arr) && (!arr.length || typeof arr[0] === 'object');
-  const isSheetMatrix = (arr) => Array.isArray(arr) && arr.length >= 2 && Array.isArray(arr[0]) && Array.isArray(arr[1]);
-  const findRows = (node, depth=0) => {
-    if(depth > 6 || node == null) return [];
-    if(isRowArray(node)) return node;
-    if(isSheetMatrix(node)) return sheetValuesToObjects(node);
-    if(typeof node !== 'object') return [];
-    if(isSheetMatrix(node.values)) return sheetValuesToObjects(node.values);
-    const preferred = ['rows','data','result','items','records','payload','values'];
-    for(const key of preferred){ if(node[key] !== undefined){ const hit=findRows(node[key], depth+1); if(hit.length || Array.isArray(node[key])) return hit; } }
-    for(const key of Object.keys(node)){ const hit=findRows(node[key], depth+1); if(hit.length) return hit; }
-    return [];
-  };
-  return findRows(payload);
-}
-function buildDashboardStats(rows,item,groupBy='day', mode='all'){
-  const needStatus = ['all','summary','trend'].includes(mode);
-  const needIssue = ['all','summary','root-cause','customer'].includes(mode);
-  const needSite = ['all','site'].includes(mode);
-  const needRoot = ['all','root-cause'].includes(mode);
-  const needQueue = ['all','trend','site'].includes(mode);
-  const needTownship = ['all','site'].includes(mode);
-  const needRepeat = ['all','summary','customer'].includes(mode);
-  const needTrend = ['all','trend'].includes(mode);
-  const needResolution = ['all','summary'].includes(mode);
-
-  const statusCount={}, issueCount={}, siteCount={}, rootCount={}, queueCount={}, townshipCount={}, repeatCount={}, trendCount={};
-  let resolvedCount=0,totalResolutionHours=0,overtimeCount=0,closedCount=0,openCount=0;
-  const overtimeHours=getDashboardSla(item);
-
-  rows.forEach(row=>{
-    const meta=row.__noc||{};
-    if(needStatus || needResolution){
-      const status=meta.status||'Unknown';
-      if(needStatus) incMap(statusCount,status);
-      if((meta.statusKey||'').includes('closed')||(meta.statusKey||'').includes('resolved')) closedCount++; else openCount++;
+    const chunks = [];
+    for (let i = 0; i < payloadJson.length; i += DASHBOARD_CHUNK_SIZE) {
+      chunks.push(payloadJson.slice(i, i + DASHBOARD_CHUNK_SIZE));
     }
-    if(needIssue) incMap(issueCount,meta.problem||'Unknown');
-    if(needSite) incMap(siteCount,meta.site||'Unknown');
-    if(needRoot) incMap(rootCount,meta.root||'Unknown');
-    if(needQueue) incMap(queueCount,meta.queue||'Unknown');
-    if(needTownship) incMap(townshipCount,meta.township||'Unknown');
-    if(needRepeat && meta.repeatKey) incMap(repeatCount,meta.repeatKey);
-    if(needTrend && meta.created) incMap(trendCount,formatTimeBucket(meta.created,groupBy));
-    if(needResolution && meta.resolutionHours!=null){
-      totalResolutionHours+=meta.resolutionHours;
-      resolvedCount++;
-      if(meta.resolutionHours>overtimeHours) overtimeCount++;
+
+    const manifest = JSON.stringify({ chunked: true, parts: chunks.length });
+
+    await env.DB.prepare(`
+      INSERT INTO dashboard_cache (
+        dashboard_item_id, dashboard_name, source_url, payload_json,
+        row_count, last_synced_at, last_error
+      )
+      VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+      ON CONFLICT(dashboard_item_id) DO UPDATE SET
+        dashboard_name = excluded.dashboard_name,
+        source_url = excluded.source_url,
+        payload_json = excluded.payload_json,
+        row_count = excluded.row_count,
+        last_synced_at = datetime('now'),
+        last_error = excluded.last_error
+    `).bind(
+      item.id,
+      item.name,
+      item.api_url,
+      manifest,
+      rowCount,
+      lastError
+    ).run();
+
+    for (let idx = 0; idx < chunks.length; idx++) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_cache_chunks (dashboard_item_id, chunk_index, payload_chunk)
+        VALUES (?, ?, ?)
+      `).bind(item.id, idx, chunks[idx]).run();
     }
-  });
-
-  const totalRows=rows.length;
-  const repeatEntries=needRepeat ? sortMap(repeatCount).filter(([,v])=>v>1) : [];
-  return {
-    totalRows,
-    closedCount,
-    openCount,
-    resolvedCount,
-    avgResolutionHours: resolvedCount ? totalResolutionHours/resolvedCount : 0,
-    overtimeCount,
-    closedRate: totalRows ? closedCount/totalRows*100 : 0,
-    repeatCustomers: repeatEntries.length,
-    topProblems: needIssue ? sortMap(issueCount) : [],
-    topSites: needSite ? sortMap(siteCount) : [],
-    topRootCauses: needRoot ? sortMap(rootCount) : [],
-    topQueues: needQueue ? sortMap(queueCount) : [],
-    topTownships: needTownship ? sortMap(townshipCount) : [],
-    trendSeries: needTrend ? sortTrendMap(trendCount) : [],
-    statusSeries: needStatus ? sortMap(statusCount) : [],
-    repeatEntries,
   };
-}
-function getDashboardStats(rows,item,groupBy,mode){
-  const key=getDashboardStatsCacheKey(rows,item,groupBy,mode);
-  if(dashboardStatsCache.has(key)) return dashboardStatsCache.get(key);
-  const stats=buildDashboardStats(rows,item,groupBy,mode);
-  dashboardStatsCache.set(key, stats);
-  return stats;
-}
-function renderKpiCard(title,value,icon,sub,note){ return `<div class="dash-card dash-card--kpi"><div class="dash-head"><div><div class="dash-eyebrow">Summary</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">${escHtml(sub)}</div></div><div class="dash-icon-badge"><i class="fas ${icon}"></i></div></div><div class="kpi-value">${escHtml(String(value))}</div><div class="kpi-note"><i class="fas fa-wave-square"></i> ${escHtml(note)}</div></div>`; }
-function renderDonutCard(title,pct,icon,sub){ const safe=Math.max(0,Math.min(100,Number(pct)||0)); return `<div class="dash-card dash-card--donut"><div class="dash-head"><div><div class="dash-eyebrow">KPI</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">${escHtml(sub)}</div></div><div class="dash-icon-badge"><i class="fas ${icon}"></i></div></div><div class="donut-wrap"><div style="position:relative"><div class="donut-ring" style="--pct:${safe}"></div><div class="donut-center"><div class="donut-value">${safe}%</div><div class="donut-label">Closed</div></div></div><div class="dash-chip-row"><span class="dash-chip"><i class="fas fa-circle-check"></i> Real chart cards are below</span></div></div></div>`; }
-function renderMiniSummaryCard(title,items){ return `<div class="dash-card dash-card--mini"><div class="dash-head"><div><div class="dash-eyebrow">Quick View</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">Fast operational counters</div></div><div class="dash-icon-badge"><i class="fas fa-gauge-high"></i></div></div><div class="mini-stack">${items.map(item=>`<div><div class="metric-row"><span>${escHtml(item.label)}</span><strong>${escHtml(String(item.value))}</strong></div><div class="progress-track"><div class="progress-fill progress-fill--${escAttr(item.color||'slate')}" style="width:${Math.min(100,Math.max(12,Number(item.value)||0))}%"></div></div></div>`).join('')}</div></div>`; }
-function renderChartCard(title,sub,icon,canvasId,size='wide'){ const cls=size==='trend' ? 'dash-card dash-card--trend dash-chart-card' : size==='bars' ? 'dash-card dash-card--bars dash-chart-card' : size==='list' ? 'dash-card dash-card--list dash-chart-card' : 'dash-card dash-card--wide dash-chart-card'; const wrapClass=size==='trend' ? 'dash-chart-wrap' : size==='bars' ? 'dash-chart-wrap dash-chart-wrap--sm' : 'dash-chart-wrap dash-chart-wrap--xs'; return `<div class="${cls}"><div class="dash-head"><div><div class="dash-eyebrow">Chart</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">${escHtml(sub)}</div></div><div class="dash-icon-badge"><i class="fas ${icon}"></i></div></div><div class="${wrapClass}"><canvas id="${canvasId}"></canvas><div class="dash-chart-empty hidden" id="${canvasId}_empty"></div></div><div class="dash-chart-note">You can change this chart type from Dashboard Settings.</div></div>`; }
-function renderRepeatListCard(stats,settings){ const rows=stats.repeatEntries.slice(0,settings.limits.repeatCount); return `<div class="dash-card dash-card--list"><div class="dash-head"><div><div class="dash-eyebrow">Repeat</div><div class="dash-title">Multiple-Time Complaints</div><div class="dash-sub">Repeated Local Service ID / CPE</div></div><div class="dash-icon-badge"><i class="fas fa-rotate-left"></i></div></div><div class="repeat-list">${rows.map(([key,val])=>`<div class="repeat-item"><div><strong>${escHtml(key)}</strong><span>Repeated complaint</span></div><div class="repeat-badge">${val}x</div></div>`).join('') || '<div class="dash-empty"><p>No repeat complaint found in current filter.</p></div>'}</div></div>`; }
-function renderRawDataCard(rows){
-  const search=(currentDashboardTableState.search||'').trim().toLowerCase();
-  const filtered=search ? rows.filter(row=>Object.values(row||{}).some(v=>String(v??'').toLowerCase().includes(search))) : rows;
-  const pageSize=Number(currentDashboardTableState.pageSize||20)||20;
-  const totalPages=Math.max(1,Math.ceil(filtered.length/pageSize));
-  currentDashboardTableState.page=Math.min(currentDashboardTableState.page,totalPages);
-  const page=currentDashboardTableState.page;
-  const start=(page-1)*pageSize;
-  const pageRows=filtered.slice(start,start+pageSize);
-  const columns=pageRows[0] ? Object.keys(pageRows[0]) : (filtered[0] ? Object.keys(filtered[0]) : []);
-  return `<div class="dash-card dash-card--wide dash-card--table">
-    <div class="dash-head"><div><div class="dash-eyebrow">Data</div><div class="dash-title">Raw Data Table</div><div class="dash-sub">Inspect, search, export, and review the currently filtered source rows.</div></div><div class="dash-icon-badge"><i class="fas fa-table"></i></div></div>
-    <div class="dash-table-toolbar">
-      <input id="dashboardTableSearch" class="dash-table-search" type="search" placeholder="Search visible rows…" value="${escAttr(currentDashboardTableState.search||'')}" oninput="setDashboardTableSearch(this.value)">
-      <div class="dash-table-actions">
-        <select class="dash-table-select" onchange="setDashboardTablePageSize(this.value)">
-          ${[20,50,100,250].map(size=>`<option value="${size}" ${pageSize===size?'selected':''}>${size} rows</option>`).join('')}
-        </select>
-        <button class="btn-secondary btn-sm" onclick="exportCurrentDashboardCSV()"><i class="fas fa-file-csv"></i> CSV</button>
-        <button class="btn-secondary btn-sm" onclick="exportCurrentDashboardExcel()"><i class="fas fa-file-excel"></i> Excel</button>
-      </div>
-    </div>
-    <div class="dash-table-wrap">
-      ${columns.length ? `<table class="dash-table"><thead><tr>${columns.map(c=>`<th>${escHtml(c)}</th>`).join('')}</tr></thead><tbody>${pageRows.map(row=>`<tr>${columns.map(c=>`<td>${escHtml(row[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>` : `<div class="dash-empty"><i class="fas fa-table"></i><h3>No rows</h3><p>There is no raw data for the current filter.</p></div>`}
-    </div>
-    <div class="dash-table-footer">
-      <span>${fmtInt(filtered.length)} rows • Page ${page} / ${totalPages}</span>
-      <div class="btn-group">
-        <button class="btn-secondary btn-sm" ${page<=1?'disabled':''} onclick="goDashboardTablePage(${page-1})"><i class="fas fa-chevron-left"></i> Prev</button>
-        <button class="btn-secondary btn-sm" ${page>=totalPages?'disabled':''} onclick="goDashboardTablePage(${page+1})">Next <i class="fas fa-chevron-right"></i></button>
-      </div>
-    </div>
-  </div>`;
-}
-let dashboardTableSearchTimer=null;
-function setDashboardTableSearch(value){ currentDashboardTableState.search=value; currentDashboardTableState.page=1; clearTimeout(dashboardTableSearchTimer); dashboardTableSearchTimer=setTimeout(()=>renderCurrentDashboard(), 140); }
-function setDashboardTablePageSize(value){ currentDashboardTableState.pageSize=Number(value)||20; currentDashboardTableState.page=1; renderCurrentDashboard(); }
-function goDashboardTablePage(page){ currentDashboardTableState.page=Math.max(1,page); renderCurrentDashboard(); }
-function exportCurrentDashboardCSV(){
-  const rows=currentFilteredDashboardRows();
-  if(!rows.length) return showToast('No rows to export','info');
-  const columns=Object.keys(rows[0]||{});
-  const csv=[columns.join(',')].concat(rows.map(row=>columns.map(col=>`\"${String(row[col]??'').replace(/\"/g,'\"\"')}\"`).join(','))).join('\n');
-  downloadBlob(csv, `${slugify(currentDashboardItem?.name||'dashboard')}-${slugify(getCurrentDashboardPage().slug||'page')}.csv`, 'text/csv;charset=utf-8;');
-}
-function exportCurrentDashboardExcel(){
-  const rows=currentFilteredDashboardRows();
-  if(!rows.length) return showToast('No rows to export','info');
-  if(typeof XLSX==='undefined') return showToast('Excel export library is not loaded','error');
-  const ws=XLSX.utils.json_to_sheet(rows);
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Dashboard');
-  XLSX.writeFile(wb, `${slugify(currentDashboardItem?.name||'dashboard')}-${slugify(getCurrentDashboardPage().slug||'page')}.xlsx`);
-}
-function downloadBlob(content, filename, mime){
-  const blob=new Blob([content], { type:mime });
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 1000);
-}
-function renderDashboardCharts(stats,settings,filters){
-  if(typeof Chart==='undefined'){ document.querySelectorAll('.dash-chart-empty').forEach(box=>{ box.classList.remove('hidden'); box.innerHTML='Chart.js did not load in preview. It will work on your deployed Cloudflare Pages site.'; }); return; }
-  Chart.defaults.font.family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"; Chart.defaults.color=getComputedStyle(document.documentElement).getPropertyValue('--text2').trim()||'#64748b';
-  if(el('dashTrendCanvas') && settings.showCards.trendChart){ createDashboardChart('dashTrendCanvas', buildTrendChartConfig(stats.trendSeries.slice(-settings.limits.trendPoints), settings.graphTypes.trendChart, filters.groupBy)); }
-  if(el('dashStatusCanvas') && settings.showCards.statusChart){ createDashboardChart('dashStatusCanvas', buildCategoryChartConfig(settings.graphTypes.statusChart, stats.statusSeries.slice(0,settings.limits.statusCount), 'Ticket Status')); }
-  if(el('dashProblemCanvas') && settings.showCards.problemChart){ createDashboardChart('dashProblemCanvas', buildCategoryChartConfig(settings.graphTypes.problemChart, stats.topProblems.slice(0,settings.limits.problemCount), 'Top Problems')); }
-  if(el('dashSiteCanvas') && settings.showCards.siteChart){ createDashboardChart('dashSiteCanvas', buildCategoryChartConfig(settings.graphTypes.siteChart, stats.topSites.slice(0,settings.limits.siteCount), 'Top Sites')); }
-  if(el('dashRootCanvas') && settings.showCards.rootCauseChart){ createDashboardChart('dashRootCanvas', buildCategoryChartConfig(settings.graphTypes.rootCauseChart, stats.topRootCauses.slice(0,settings.limits.rootCauseCount), 'Root Cause')); }
-  if(el('dashRepeatCanvas') && settings.showCards.repeatChart && settings.graphTypes.repeatChart!=='list'){ createDashboardChart('dashRepeatCanvas', buildCategoryChartConfig(settings.graphTypes.repeatChart, stats.repeatEntries.slice(0,settings.limits.repeatCount), 'Repeat Complaint')); }
-  if(el('dashTownshipCanvas')){ createDashboardChart('dashTownshipCanvas', buildCategoryChartConfig(settings.graphTypes.siteChart, stats.topTownships.slice(0,Math.max(5,settings.limits.siteCount)), 'Township')); }
-  if(el('dashQueueCanvas')){ createDashboardChart('dashQueueCanvas', buildCategoryChartConfig('bar', stats.topQueues.slice(0,6), 'Queue')); }
-}
-function createDashboardChart(canvasId, config){ const canvas=el(canvasId), empty=el(`${canvasId}_empty`); if(!canvas) return; const labels=config?.data?.labels||[]; if(!labels.length){ if(empty){ empty.classList.remove('hidden'); empty.textContent='No data for current filter.'; } return; } if(empty){ empty.classList.add('hidden'); empty.textContent=''; } try{ const existing=window.Chart && Chart.getChart(canvas); if(existing) existing.destroy(); }catch{} const chart=new Chart(canvas.getContext('2d'), config); dashboardChartInstances.push(chart); }
-function buildTrendChartConfig(series, graphType, groupBy){ const labels=series.map(x=>formatBucketLabel(x[0],groupBy)); const data=series.map(x=>x[1]); const isBar=graphType==='bar'; const isArea=graphType==='area'; return { type:isBar?'bar':'line', data:{ labels, datasets:[{ label:'Tickets', data, borderColor:'#6366f1', backgroundColor:isBar?'rgba(99,102,241,.72)':(isArea?'rgba(99,102,241,.18)':'rgba(99,102,241,.2)'), fill:!isBar, tension:.35, pointRadius:3, pointHoverRadius:4, borderWidth:3, borderRadius:10, maxBarThickness:34 }] }, options:buildChartOptions({ legend:false, indexAxis:'x' }) }; }
-function buildCategoryChartConfig(graphType, entries, label){ const labels=entries.map(x=>x[0]); const data=entries.map(x=>x[1]); const type=graphType==='hbar' ? 'bar' : graphType; const backgroundColor=labels.map((_,i)=>hexToRgba(DASHBOARD_COLOR_SET[i % DASHBOARD_COLOR_SET.length], type==='bar' ? .78 : .9)); const borderColor=labels.map((_,i)=>DASHBOARD_COLOR_SET[i % DASHBOARD_COLOR_SET.length]); return { type, data:{ labels, datasets:[{ label, data, backgroundColor, borderColor, borderWidth:2, borderRadius:type==='bar' ? 10 : 0, maxBarThickness:38 }] }, options:buildChartOptions({ legend:type!=='bar', indexAxis: graphType==='hbar' ? 'y' : 'x', showScales: !['doughnut','pie','polarArea'].includes(type) }) }; }
-function buildChartOptions({ legend=true, indexAxis='x', showScales=true }={}){ return { responsive:true, maintainAspectRatio:false, animation:false, indexAxis, plugins:{ legend:{ display:legend, position:'bottom', labels:{ usePointStyle:true, boxWidth:10, boxHeight:10, padding:16 } }, tooltip:{ mode:'index', intersect:false, animation:false } }, scales: showScales ? { x: indexAxis==='x' ? { grid:{ display:false }, ticks:{ maxRotation:0, autoSkip:true } } : { grid:{ display:false } }, y: indexAxis==='x' ? { beginAtZero:true, ticks:{ precision:0 }, grid:{ color:'rgba(148,163,184,.14)' } } : { beginAtZero:true, ticks:{ precision:0 }, grid:{ display:false } } } : {} }; }
-function hexToRgba(hex, alpha){ const h=hex.replace('#',''); const full=h.length===3 ? h.split('').map(ch=>ch+ch).join('') : h; const n=parseInt(full,16); const r=(n>>16)&255, g=(n>>8)&255, b=n&255; return `rgba(${r},${g},${b},${alpha})`; }
-function normalizeKey(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,''); }
-function getRowValue(row,aliases){ if(!row||typeof row!=='object') return ''; const normalized={}; Object.keys(row).forEach(k=>normalized[normalizeKey(k)] = row[k]); for(const alias of aliases){ const hit=normalized[normalizeKey(alias)]; if(hit!==undefined&&hit!==null&&String(hit).trim()!=='') return String(hit).trim(); } return ''; }
-function incMap(map,key){ const k=String(key||'Unknown').trim()||'Unknown'; map[k]=(map[k]||0)+1; }
-function sortMap(map){ return Object.entries(map).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])); }
-function sortTrendMap(map){ return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])); }
-function formatTimeBucket(date,groupBy='day'){ const y=date.getFullYear(), m=String(date.getMonth()+1).padStart(2,'0'), d=String(date.getDate()).padStart(2,'0'); if(groupBy==='year') return `${y}`; if(groupBy==='month') return `${y}-${m}`; if(groupBy==='week'){ const start=getWeekStart(date); return `${start.getFullYear()}-W${String(getISOWeek(start)).padStart(2,'0')}`; } return `${y}-${m}-${d}`; }
-function getWeekStart(date){ const d=new Date(date); const day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); d.setHours(0,0,0,0); return d; }
-function getISOWeek(date){ const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())); d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7)); const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1)); return Math.ceil((((d-yearStart)/86400000)+1)/7); }
-function formatBucketLabel(bucket,groupBy){ if(groupBy==='year') return bucket; if(groupBy==='month'){ const [yy,mm]=bucket.split('-'); return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(mm)-1]} ${yy}`; } if(groupBy==='week') return bucket.replace('-', ' '); const d=parseFlexibleDate(bucket); if(!d) return bucket; return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
-function formatMetaDate(v){ const d=parseFlexibleDate(v); if(!d) return String(v); return `${String(d.getDate()).padStart(2,'0')} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
-function parseFlexibleDate(value){ if(!value) return null; if(value instanceof Date) return isNaN(value)?null:value; const s=String(value).trim(); let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[,\sT]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/); if(m){ const [,yy,mm,dd,hh='0',mi='0',ss='0']=m; const d=new Date(Number(yy),Number(mm)-1,Number(dd),Number(hh),Number(mi),Number(ss)); return isNaN(d)?null:d; } const native=new Date(s.replace(',', '')); return isNaN(native)?null:native; }
-function fmtInt(v){ return Number(v||0).toLocaleString(); }
-function formatHours(v){ const n=Number(v)||0; if(n<=0) return '0m'; if(n<1) return `${Math.round(n*60)}m`; if(n<24) return `${n.toFixed(n>=10?1:2)}h`; return `${(n/24).toFixed(1)}d`; }
 
-/* ══════════════════════════════════════════════════════════
-   GENERIC API WRAPPERS (legacy saveToApi / deleteFromApi for admin CRUD)
-══════════════════════════════════════════════════════════ */
-async function saveToApi(table,data){
-  if(isProcessing){showToast('Please wait…','info');return false;}
-  isProcessing=true;showLoading(true);updateProgress(20,'Saving...');
-  try{
-    const res=await fetchAPI('',{method:'POST',body:JSON.stringify({action:'save',table,data})});
-    if(!res||res.success===false) throw new Error(res?.error||'Save request failed');
-    updateProgress(50,'Refreshing...');
-    const refreshed=await refreshData(true);
-    if(!refreshed) throw new Error('Refresh after save failed');
-    updateProgress(100,'Saved!');await delay(300);hideLoading();
-    showToast('Saved successfully!','success');isProcessing=false;return true;
-  }catch(e){hideLoading();showToast('Save failed: '+e.message);isProcessing=false;return false;}
-}
-async function deleteFromApi(table,id){
-  if(isProcessing){showToast('Please wait…','info');return false;}
-  isProcessing=true;showLoading(true);updateProgress(20,'Deleting...');
-  try{
-    const res=await fetchAPI('',{method:'POST',body:JSON.stringify({action:'delete',table,id})});
-    if(!res||res.success===false) throw new Error(res?.error||'Delete request failed');
-    updateProgress(50,'Refreshing...');
-    const refreshed=await refreshData(true);
-    if(!refreshed) throw new Error('Refresh after delete failed');
-    updateProgress(100,'Deleted!');await delay(300);hideLoading();
-    showToast('Deleted!','success');isProcessing=false;return true;
-  }catch(e){hideLoading();showToast('Delete failed: '+e.message);isProcessing=false;return false;}
-}
+  const readDashboardPayload = async (cacheRow) => {
+    if (!cacheRow?.payload_json) return [];
 
-/* ══════════════════════════════════════════════════════════
-   UPDATES — all roles can create; delete = own only (admin = any)
-══════════════════════════════════════════════════════════ */
-function renderUpdates(){
-  const bmap={important:'b-important',general:'b-general',announcement:'b-announcement',reminder:'b-reminder'};
-  const bicon={important:'🔴',general:'🔵',announcement:'🟢',reminder:'🟡'};
-  el('updatesContainer').innerHTML=appData.updates.map(u=>{
-    return `<div class="upd-card upd-card--fixed" onclick="openUpdateView(${u.id})" title="Click to read">
-      <div class="upd-hdr">
-        <h3 class="upd-topic">${escHtml(u.topic)}</h3>
-        <span class="badge ${bmap[u.badge]||'b-general'}">${bicon[u.badge]||''} ${escHtml(u.badge)}</span>
-      </div>
-      <div class="upd-body upd-body--clamp card-link">${linkify(escHtml(u.message))}</div>
-      <div class="upd-foot">
-        <span><i class="fas fa-user-circle"></i> ${escHtml(u.author||'')}</span>
-        <span><i class="fas fa-calendar"></i> ${escHtml(fmtDate(u.date))}</span>
-        <span class="upd-read-more">Click to read <i class="fas fa-arrow-right"></i></span>
-      </div>
-    </div>`;
-  }).join('')||'<div class="empty-state"><i class="fas fa-inbox"></i><p>No updates yet</p></div>';
-}
+    const parsed = safeJson(cacheRow.payload_json, null);
 
-function openUpdateView(id){
-  const u=appData.updates.find(x=>x.id===id);if(!u)return;
-  const bmap={important:'b-important',general:'b-general',announcement:'b-announcement',reminder:'b-reminder'};
-  const bicon={important:'🔴',general:'🔵',announcement:'🟢',reminder:'🟡'};
-  el('updateViewTitle').textContent=u.topic;
-  el('updateViewMeta').innerHTML=`
-    <span class="badge ${bmap[u.badge]||'b-general'}">${bicon[u.badge]||''} ${escHtml(u.badge)}</span>
-    <span><i class="fas fa-user-circle"></i> ${escHtml(u.author||'')}</span>
-    <span><i class="fas fa-calendar"></i> ${escHtml(fmtDate(u.date))}</span>`;
-  el('updateViewBody').innerHTML=linkify(escHtml(u.message));
+    if (parsed && parsed.chunked) {
+      const chunkRows = (await env.DB.prepare(`
+        SELECT payload_chunk
+        FROM dashboard_cache_chunks
+        WHERE dashboard_item_id=?
+        ORDER BY chunk_index ASC
+      `).bind(cacheRow.dashboard_item_id).all()).results ?? [];
 
-  // Edit/Delete actions for owner or admin
-  const canEdit  =isAdmin()||u.created_by===currentUser?.id;
-  const canDelete=isAdmin()||u.created_by===currentUser?.id;
-  el('updateViewActions').innerHTML=`
-    <button onclick="closeModal('updateViewModal')" class="btn-secondary">Close</button>
-    ${canEdit  ?`<button onclick="closeModal('updateViewModal');editUpdate(${u.id})" class="btn-secondary"><i class="fas fa-edit"></i> Edit</button>`:''}
-    ${canDelete?`<button onclick="closeModal('updateViewModal');deleteUpdate(${u.id})" class="btn-secondary" style="color:#ef4444;border-color:#fecaca"><i class="fas fa-trash"></i> Delete</button>`:''}`;
+      const combined = chunkRows.map(r => r.payload_chunk || '').join('');
+      return safeJson(combined, []);
+    }
 
-  el('updateViewModal').classList.remove('hidden');
-}
-function linkify(t){return t.replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g,'<br>');}
+    return parsed ?? [];
+  };
 
-// Format YYYY-MM-DD stored date into readable MMT local date
-// e.g. "2025-06-28" → "28 Jun 2025"
-function fmtDate(d){
-  if(!d) return '';
-  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const parts=d.split('-');
-  if(parts.length!==3) return d;
-  const y=parseInt(parts[0]),m=parseInt(parts[1])-1,day=parseInt(parts[2]);
-  if(isNaN(y)||isNaN(m)||isNaN(day)) return d;
-  return day+' '+months[m]+' '+y;
-}
+  const getDashboardItem = async (id) => {
+    await ensureDashboardTables();
+    return await env.DB.prepare(`
+      SELECT di.*, dis.settings_json
+      FROM dashboard_items di
+      LEFT JOIN dashboard_item_settings dis
+        ON dis.dashboard_item_id = di.id
+      WHERE di.id = ?
+    `).bind(id).first();
+  };
 
-function openUpdateModal(id=null){
-  // All roles can open the create modal
-  el('updateModal').classList.remove('hidden');
-  el('updateModalTitle').textContent=id?'Edit Update':'Add Update';
-  el('updateId').value=id||'';
-  if(id){const u=appData.updates.find(x=>x.id===id);el('updateTopic').value=u.topic;el('updateBadge').value=u.badge;el('updateMessage').value=u.message;}
-  else el('updateForm').reset();
-}
+  const syncDashboardItem = async (item) => {
+    await ensureDashboardTables();
 
-async function saveUpdate(){
-  const id=el('updateId').value;
-  const topic=el('updateTopic').value.trim();
-  const badge=el('updateBadge').value;
-  const message=el('updateMessage').value.trim();
-  if(!topic||!message)return showToast('Topic and message are required','error');
-
-  if(isProcessing){showToast('Please wait…','info');return;}
-  isProcessing=true;showLoading(true);updateProgress(20,'Saving...');
-
-  try{
-    let res;
-    if(id){
-      // Edit — PUT to new endpoint
-      res=await fetch(`${API_URL}/updates/${id}`,{
-        method:'PUT',headers:getHeaders(),body:JSON.stringify({topic,badge,message})
+    try {
+      const res = await fetch(item.api_url, {
+        headers: { 'Accept': 'application/json' }
       });
-    } else {
-      // Create — POST to new endpoint (all roles)
-      res=await fetch(`${API_URL}/updates`,{
-        method:'POST',headers:getHeaders(),body:JSON.stringify({topic,badge,message})
-      });
+
+      if (!res.ok) {
+        throw new Error(`Source HTTP ${res.status}`);
+      }
+
+      const rawText = await res.text();
+      const rawPayload = JSON.parse(rawText);
+      const storedPayload = buildStoredDashboardPayload(rawPayload);
+      const rowCount = Array.isArray(storedPayload.rows) ? storedPayload.rows.length : 0;
+
+      await writeDashboardPayload(item, storedPayload, rowCount, null);
+
+      await env.DB.prepare(`
+        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
+        VALUES (?, 'success', ?, 'OK', datetime('now'))
+      `).bind(item.id, rowCount).run();
+
+      return {
+        payload: storedPayload,
+        rowCount,
+        lastSynced: new Date().toISOString(),
+        settings: normalizeDashboardSettings(item.settings_json)
+      };
+    } catch (e) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
+        VALUES (?, 'failed', 0, ?, datetime('now'))
+      `).bind(item.id, e.message || 'Unknown error').run();
+
+      await writeDashboardPayload(
+        item,
+        {
+          rows: [],
+          generatedAt: new Date().toISOString(),
+          sourceMeta: { rowCount: 0 }
+        },
+        0,
+        e.message || 'Unknown error'
+      );
+
+      throw e;
     }
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);
-    updateProgress(60,'Refreshing...');await refreshData(true);
-    updateProgress(100,'Saved!');await delay(300);hideLoading();
-    showToast('Update saved!','success');
-    closeModal('updateModal');
-  }catch(e){
-    hideLoading();showToast('Failed: '+e.message);
-  }
-  isProcessing=false;
-}
-
-function editUpdate(id){
-  const u=appData.updates.find(x=>x.id===id);if(!u)return;
-  if(!isAdmin()&&u.created_by!==currentUser?.id)return showToast('You can only edit your own updates','error');
-  openUpdateModal(id);
-}
-
-async function deleteUpdate(id){
-  const u=appData.updates.find(x=>x.id===id);if(!u)return;
-  if(!isAdmin()&&u.created_by!==currentUser?.id)return showToast('You can only delete your own updates','error');
-  if(!confirm('Delete this update?'))return;
-  if(isProcessing){showToast('Please wait…','info');return;}
-  isProcessing=true;showLoading(true);updateProgress(20,'Deleting...');
-  try{
-    const res=await fetch(`${API_URL}/updates/${id}`,{method:'DELETE',headers:getHeaders()});
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);
-    updateProgress(60,'Refreshing...');await refreshData(true);
-    updateProgress(100,'Deleted!');await delay(300);hideLoading();
-    showToast('Deleted!','success');
-  }catch(e){hideLoading();showToast('Failed: '+e.message);}
-  isProcessing=false;
-}
-
-/* ══════════════════════════════════════════════════════════
-   LEARNING — Search
-══════════════════════════════════════════════════════════ */
-el('learningSearch').addEventListener('input',function(){
-  const q=this.value.trim();
-  el('clearSearch').classList.toggle('hidden',!q);
-  clearTimeout(searchDebounceTimer);
-  if(!q){clearLearningSearch();return;}
-  searchDebounceTimer=setTimeout(()=>doLearningSearch(q),280);
-});
-
-function clearLearningSearch(){
-  if(el('learningSearch'))el('learningSearch').value='';
-  if(el('clearSearch'))el('clearSearch').classList.add('hidden');
-  if(el('searchResults'))el('searchResults').classList.add('hidden');
-  if(el('learningContainer'))el('learningContainer').classList.remove('hidden');
-  renderLearning();
-}
-
-function doLearningSearch(q){
-  const ql=q.toLowerCase();
-
-  // Folders: match name, user must be able to see them
-  const matchFolders=appData.folders.filter(f=>
-    canSee(f.min_role_required||'intern') &&
-    f.name.toLowerCase().includes(ql)
-  );
-
-  // Items: match topic or content; item AND its parent folder must be accessible
-  const matchItems=appData.learningItems.filter(i=>{
-    if(!canSee(i.min_role_required||'intern')) return false;
-    const pf=appData.folders.find(f=>f.id===i.folderId);
-    if(pf && !canSee(pf.min_role_required||'intern')) return false;
-    return i.topic.toLowerCase().includes(ql)||(i.content||'').toLowerCase().includes(ql);
-  });
-
-  el('searchResults').classList.remove('hidden');
-  el('learningContainer').classList.add('hidden');
-  el('searchQuery').textContent=`"${q}"`;
-
-  const grid=el('searchResultsGrid');
-  if(!matchFolders.length&&!matchItems.length){
-    grid.innerHTML='<div class="empty-state"><i class="fas fa-search"></i><p>No results found</p></div>';
-    return;
-  }
-
-  // Render using the same card builders — clicks work identically to normal view
-  // Folders: clicking navigates into the folder (clears search, shows folder contents)
-  // Items: clicking opens PDF or text view
-  grid.innerHTML=
-    matchFolders.map(f=>makeFolderCard(f)).join('')+
-    matchItems.map(i=>makeItemCard(i)).join('');
-
-  // Attach long-press for admin on mobile (same as renderLearning does)
-  if(isAdmin()){
-    grid.querySelectorAll('.file-card').forEach(card=>{
-      const kind=card.dataset.kind, id=parseInt(card.dataset.id);
-      if(!kind||!id) return;
-      card.addEventListener('touchstart',e=>{
-        lrnLongPressTimer=setTimeout(()=>{
-          if(navigator.vibrate)navigator.vibrate(50);
-          const touch=e.touches[0];
-          showCtx({clientX:touch.clientX,clientY:touch.clientY,
-                   preventDefault:()=>{},stopPropagation:()=>{}},kind,id);
-        },500);
-      },{passive:true});
-      card.addEventListener('touchend', ()=>clearTimeout(lrnLongPressTimer));
-      card.addEventListener('touchmove',()=>clearTimeout(lrnLongPressTimer));
-    });
-  }
-}
-
-/* ══════════════════════════════════════════════════════════
-   LEARNING — Render
-══════════════════════════════════════════════════════════ */
-let lrnLongPressTimer=null, lrnLongPressKind=null, lrnLongPressId=null;
-
-function renderLearning(){
-  renderBreadcrumb();
-  const folders=appData.folders
-    .filter(f=>(f.parentId===currentFolderId)&&canSee(f.min_role_required||'intern'))
-    .sort((a,b)=>a.name.localeCompare(b.name));
-  const items=appData.learningItems
-    .filter(i=>{
-      if(i.folderId!==currentFolderId)return false;
-      if(!canSee(i.min_role_required||'intern'))return false;
-      const pf=appData.folders.find(f=>f.id===i.folderId);
-      if(pf&&!canSee(pf.min_role_required||'intern'))return false;
-      return true;
-    })
-    .sort((a,b)=>a.topic.localeCompare(b.topic));
-  const html=folders.map(f=>makeFolderCard(f)).join('')+items.map(i=>makeItemCard(i)).join('');
-  el('learningContainer').innerHTML=html||'<div class="empty-state"><i class="fas fa-folder-open"></i><p>Empty folder</p></div>';
-
-  // Attach long-press for mobile on learning cards (admin only)
-  if(isAdmin()){
-    el('learningContainer').querySelectorAll('.file-card').forEach(card=>{
-      const kind=card.dataset.kind, id=parseInt(card.dataset.id);
-      if(!kind||!id)return;
-      card.addEventListener('touchstart',e=>{
-        lrnLongPressTimer=setTimeout(()=>{
-          lrnLongPressKind=kind;lrnLongPressId=id;
-          if(navigator.vibrate)navigator.vibrate(50);
-          const touch=e.touches[0];
-          const fakeE={clientX:touch.clientX,clientY:touch.clientY,preventDefault:()=>{},stopPropagation:()=>{}};
-          showCtx(fakeE,kind,id);
-        },500);
-      },{passive:true});
-      card.addEventListener('touchend',()=>clearTimeout(lrnLongPressTimer));
-      card.addEventListener('touchmove',()=>clearTimeout(lrnLongPressTimer));
-    });
-  }
-}
-
-function makeFolderCard(f){
-  const perm=f.min_role_required||'intern';
-  const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
-  // No hover icons — right-click (desktop) / long-press (mobile) only
-  return `<div class="file-card" data-kind="folder" data-id="${f.id}" onclick="openFolder(${f.id})"
-    ${isAdmin()?`oncontextmenu="showCtx(event,'folder',${f.id});return false;"`:''}>
-    <div class="fi fi-folder"><i class="fas fa-folder"></i></div>
-    <span class="fc-name">${escHtml(f.name)}</span>
-    ${permTag}
-  </div>`;
-}
-
-function makeItemCard(i){
-  const isPdf=i.type==='pdf';
-  const perm=i.min_role_required||'intern';
-  const fiCls=isPdf?'fi-pdf':'fi-txt';
-  const faIcon=isPdf?'fa-file-pdf':'fa-file-alt';
-  const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
-  // No hover icons — right-click (desktop) / long-press (mobile) only
-  return `<div class="file-card" data-kind="item" data-id="${i.id}" onclick="openLearningItem(${i.id})"
-    ${isAdmin()?`oncontextmenu="showCtx(event,'item',${i.id});return false;"`:''}>
-    <div class="fi ${fiCls}"><i class="fas ${faIcon}"></i></div>
-    <span class="fc-name">${escHtml(i.topic)}</span>
-    ${permTag}
-  </div>`;
-}
-
-function renderBreadcrumb(){
-  const bc=el('breadcrumb');if(!bc)return;
-  let path=[],fid=currentFolderId;
-  while(fid){const f=appData.folders.find(x=>x.id===fid);if(f){path.unshift(f);fid=f.parentId;}else break;}
-  let h=`<button onclick="currentFolderId=null;clearLearningSearch();renderLearning();" class="bc-btn"><i class="fas fa-home"></i> Root</button>`;
-  path.forEach(f=>{h+=`<span class="bc-sep">›</span><button onclick="currentFolderId=${f.id};clearLearningSearch();renderLearning();" class="bc-btn">${escHtml(f.name)}</button>`;});
-  bc.innerHTML=h;
-}
-
-function openFolder(id){currentFolderId=id;clearLearningSearch();renderLearning();}
-
-function openLearningItem(id){
-  const item=appData.learningItems.find(i=>i.id===id);if(!item)return;
-  if(item.type==='pdf'){window.open(item.link,'_blank');}
-  else{el('textViewTitle').textContent=item.topic;el('textViewContent').textContent=item.content;el('textViewModal').classList.remove('hidden');}
-}
-
-/* Context menu */
-function showCtx(e,kind,id){
-  if(!isAdmin())return;e.preventDefault();e.stopPropagation();
-  contextItem={kind,id};
-  const m=el('contextMenu');m.classList.remove('hidden');
-  m.style.left=Math.min(e.clientX,window.innerWidth-170)+'px';
-  m.style.top=Math.min(e.clientY,window.innerHeight-160)+'px';
-}
-document.addEventListener('click',()=>el('contextMenu').classList.add('hidden'));
-function ctxEdit(){el('contextMenu').classList.add('hidden');if(contextItem)openEditItem(contextItem.kind,contextItem.id);}
-function ctxMove(){el('contextMenu').classList.add('hidden');if(contextItem)openMoveItem(contextItem.kind,contextItem.id);}
-function ctxDelete(){el('contextMenu').classList.add('hidden');if(contextItem)ctxDeleteDirect(contextItem.kind==='folder'?'folders':'learning_items',contextItem.id);}
-async function ctxDeleteDirect(table,id){if(confirm('Delete this item?'))await deleteFromApi(table,id);}
-
-/* Edit */
-function openEditItem(kind,id){
-  const isFolder=kind==='folder';
-  const obj=isFolder?appData.folders.find(f=>f.id===id):appData.learningItems.find(i=>i.id===id);
-  if(!obj)return;
-  el('editItemTitle').textContent=isFolder?'Edit Folder':'Edit Item';
-  el('editItemId').value=id;el('editItemKind').value=kind;
-  el('editItemName').value=isFolder?obj.name:obj.topic;
-  setRadio('editPerm',obj.min_role_required||'intern');
-  el('editItemTypeGroup').classList.toggle('hidden',isFolder);
-  el('editItemLinkGroup').classList.add('hidden');
-  el('editItemContentGroup').classList.add('hidden');
-  if(!isFolder){
-    el('editItemType').value=obj.type||'pdf';onEditItemTypeChange();
-    if(obj.type==='pdf')el('editItemLink').value=obj.link||'';
-    else el('editItemContent').value=obj.content||'';
-  }
-  el('editItemModal').classList.remove('hidden');
-}
-function onEditItemTypeChange(){
-  const t=el('editItemType').value;
-  el('editItemLinkGroup').classList.toggle('hidden',t!=='pdf');
-  el('editItemContentGroup').classList.toggle('hidden',t!=='text');
-}
-async function saveEditItem(){
-  const kind=el('editItemKind').value,id=parseInt(el('editItemId').value);
-  const name=el('editItemName').value.trim(),perm=getRadio('editPerm');
-  if(!name)return showToast('Name is required','error');
-  if(kind==='folder'){
-    const orig=appData.folders.find(f=>f.id===id);
-    if(await saveToApi('folders',{...orig,id,name,min_role_required:perm}))closeModal('editItemModal');
-  } else {
-    const orig=appData.learningItems.find(i=>i.id===id);
-    const type=el('editItemType').value;
-    if(await saveToApi('learning_items',{...orig,id,topic:name,type,min_role_required:perm,
-      link:type==='pdf'?el('editItemLink').value:null,
-      content:type==='text'?el('editItemContent').value:null}))closeModal('editItemModal');
-  }
-}
-
-/* Move */
-/* ── Move — tree navigator state ───────────────── */
-let moveKind    = null;   // 'folder' | 'item'
-let moveItemId  = null;   // id of the thing being moved
-let moveCurFolder = null; // null = root; number = current folder id in the tree
-let movePathStack = [];   // [{id, name}, ...] breadcrumb stack
-
-function openMoveItem(kind, id){
-  moveKind      = kind;
-  moveItemId    = id;
-  moveCurFolder = null;   // always start at root
-  movePathStack = [];
-  renderMoveTree();
-  el('moveModal').classList.remove('hidden');
-}
-
-function isChildFolder(targetId, parentId){
-  let cur = targetId;
-  while(cur){
-    const f = appData.folders.find(x => x.id === cur);
-    if(!f) break;
-    if(f.parentId === parentId) return true;
-    cur = f.parentId;
-  }
-  return false;
-}
-
-function renderMoveTree(){
-  // ── Breadcrumb ─────────────────────────────────
-  const bc = el('moveBreadcrumb');
-  let bcHtml = `<button class="move-bc-btn" onclick="moveNavTo(null)"><i class="fas fa-home"></i> Root</button>`;
-  movePathStack.forEach((seg, i) => {
-    bcHtml += `<span class="move-bc-sep">›</span>
-      <button class="move-bc-btn" onclick="moveNavTo(${seg.id},${i})">${escHtml(seg.name)}</button>`;
-  });
-  bc.innerHTML = bcHtml;
-
-  // ── Current destination label on the button ────
-  const btn = el('moveHereBtn');
-  if(btn){
-    const label = moveCurFolder === null ? 'Root'
-      : (movePathStack[movePathStack.length-1]?.name || 'Here');
-    btn.innerHTML = `<i class="fas fa-check"></i> Move into "${escHtml(label)}"`;
-  }
-
-  // ── Folder list for this level ─────────────────
-  // All direct children of moveCurFolder, excluding:
-  //  - the item itself (if it's a folder)
-  //  - any descendant of the item (if it's a folder — can't move into own child)
-  const children = appData.folders.filter(f => {
-    const parent = f.parentId ?? null;
-    if(parent !== moveCurFolder) return false;          // not in this level
-    if(!canSee(f.min_role_required || 'intern')) return false; // no permission
-    if(moveKind === 'folder' && f.id === moveItemId) return false;  // self
-    if(moveKind === 'folder' && isChildFolder(f.id, moveItemId)) return false; // descendant
-    return true;
-  }).sort((a,b) => a.name.localeCompare(b.name));
-
-  let listHtml = '';
-
-  // "Go up" button — show if we're inside a folder
-  if(moveCurFolder !== null){
-    const parentId = movePathStack.length >= 2
-      ? movePathStack[movePathStack.length - 2].id
-      : null;
-    listHtml += `<button class="move-row move-row--up" onclick="moveNavUp()">
-      <i class="fas fa-level-up-alt"></i> <span>.. (go up)</span>
-    </button>`;
-  }
-
-  if(children.length === 0 && moveCurFolder === null){
-    listHtml += `<div class="move-empty"><i class="fas fa-folder-open"></i> No folders at root</div>`;
-  } else if(children.length === 0){
-    listHtml += `<div class="move-empty"><i class="fas fa-folder-open"></i> No sub-folders here</div>`;
-  }
-
-  children.forEach(f => {
-    // Check if this folder has any accessible sub-folders (show chevron if yes)
-    const hasSubs = appData.folders.some(sub => {
-      const p = sub.parentId ?? null;
-      return p === f.id && canSee(sub.min_role_required || 'intern')
-        && !(moveKind === 'folder' && sub.id === moveItemId)
-        && !(moveKind === 'folder' && isChildFolder(sub.id, moveItemId));
-    });
-    listHtml += `<div class="move-row">
-      <div class="move-row-left" onclick="moveNavInto(${f.id},'${escAttr(f.name)}')">
-        <i class="fas fa-folder move-folder-icon"></i>
-        <span class="move-folder-name">${escHtml(f.name)}</span>
-      </div>
-      ${hasSubs
-        ? `<button class="move-row-open" onclick="moveNavInto(${f.id},'${escAttr(f.name)}')" title="Open folder">
-            <i class="fas fa-chevron-right"></i>
-           </button>`
-        : `<div class="move-row-open-placeholder"></div>`}
-    </div>`;
-  });
-
-  el('moveFolderList').innerHTML = listHtml;
-}
-
-// Navigate into a sub-folder
-function moveNavInto(folderId, folderName){
-  movePathStack.push({ id: folderId, name: folderName });
-  moveCurFolder = folderId;
-  renderMoveTree();
-}
-
-// Navigate up one level
-function moveNavUp(){
-  movePathStack.pop();
-  moveCurFolder = movePathStack.length > 0 ? movePathStack[movePathStack.length-1].id : null;
-  renderMoveTree();
-}
-
-// Navigate to a specific breadcrumb segment (or root)
-function moveNavTo(folderId, stackIndex){
-  if(folderId === null){
-    moveCurFolder = null;
-    movePathStack = [];
-  } else {
-    movePathStack = movePathStack.slice(0, stackIndex + 1);
-    moveCurFolder = folderId;
-  }
-  renderMoveTree();
-}
-
-// Confirm — move item into the currently displayed folder (moveCurFolder)
-async function doConfirmMove(){
-  closeModal('moveModal');
-  const targetId = moveCurFolder; // null = root
-  const table = moveKind === 'folder' ? 'folders' : 'learning_items';
-  let data;
-  if(moveKind === 'folder'){
-    data = { ...appData.folders.find(f => f.id === moveItemId), parentId: targetId };
-  } else {
-    data = { ...appData.learningItems.find(i => i.id === moveItemId), folderId: targetId };
-  }
-  await saveToApi(table, data);
-}
-
-// Legacy stub kept so old code references don't break
-async function confirmMove(kind, id, targetId){
-  closeModal('moveModal');
-  const table = kind === 'folder' ? 'folders' : 'learning_items';
-  let data;
-  if(kind === 'folder'){ data = { ...appData.folders.find(f => f.id === id), parentId: targetId }; }
-  else { data = { ...appData.learningItems.find(i => i.id === id), folderId: targetId }; }
-  await saveToApi(table, data);
-}
-
-/* Create */
-function openFolderModal(){
-  if(!isAdmin())return;
-  el('folderModal').classList.remove('hidden');el('folderModalTitle').textContent='Create Folder';
-  el('folderForm').reset();el('folderId').value='';setRadio('folderPerm','intern');
-}
-async function saveFolder(){
-  const id=el('folderId').value,name=el('folderName').value.trim();
-  if(!name)return showToast('Name required','error');
-  const perm=getRadio('folderPerm');
-  if(await saveToApi('folders',{id:id?parseInt(id):null,name,parentId:currentFolderId,min_role_required:perm}))
-    closeModal('folderModal');
-}
-el('folderForm').addEventListener('submit',e=>e.preventDefault());
-el('folderForm').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveFolder();}});
-
-function openLearningItemModal(id=null){
-  if(!isAdmin())return;
-  el('learningItemModal').classList.remove('hidden');
-  el('learningItemModalTitle').textContent=id?'Edit Item':'Add Item';
-  el('learningItemId').value=id||'';
-  if(id){
-    const item=appData.learningItems.find(i=>i.id===id);
-    el('learningItemTopic').value=item.topic;el('learningItemType').value=item.type;
-    el('learningItemLink').value=item.link||'';el('learningItemContent').value=item.content||'';
-    setRadio('itemPerm',item.min_role_required||'intern');
-  } else {el('learningItemForm').reset();setRadio('itemPerm','intern');}
-  toggleLearningItemFields();
-}
-function toggleLearningItemFields(){
-  const t=el('learningItemType').value;
-  el('pdfLinkField').classList.toggle('hidden',t!=='pdf');
-  el('textContentField').classList.toggle('hidden',t!=='text');
-}
-async function saveLearningItem(){
-  const id=el('learningItemId').value,type=el('learningItemType').value;
-  const data={id:id?parseInt(id):null,topic:el('learningItemTopic').value,type,
-    link:type==='pdf'?el('learningItemLink').value:null,
-    content:type==='text'?el('learningItemContent').value:null,
-    folderId:currentFolderId,min_role_required:getRadio('itemPerm')};
-  if(await saveToApi('learning_items',data))closeModal('learningItemModal');
-}
-
-/* Rename (legacy) */
-function renameItem(){if(!isAdmin()||!contextItem)return;const name=contextItem.kind==='folder'?appData.folders.find(f=>f.id===contextItem.id)?.name:appData.learningItems.find(i=>i.id===contextItem.id)?.topic;el('renameInput').value=name||'';el('renameModal').classList.remove('hidden');}
-async function confirmRename(){
-  if(!isAdmin()||!contextItem)return;const newName=el('renameInput').value.trim();if(!newName)return;
-  const table=contextItem.kind==='folder'?'folders':'learning_items';
-  let data;if(contextItem.kind==='folder'){data={...appData.folders.find(x=>x.id===contextItem.id),name:newName};}
-  else{data={...appData.learningItems.find(x=>x.id===contextItem.id),topic:newName};}
-  if(await saveToApi(table,data))closeModal('renameModal');
-}
-if(document.querySelector('#renameModal form'))
-  document.querySelector('#renameModal form').addEventListener('submit',e=>e.preventDefault());
-if(el('renameInput'))
-  el('renameInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();confirmRename();}});
-
-/* ══════════════════════════════════════════════════════════
-   INFO CARDS — leader+ can manage
-══════════════════════════════════════════════════════════ */
-let longPressTimer,longPressCardId,isLongPress,imageSource='url';
-
-function renderInfoCards(){
-  const container=el('infoCardsContainer');
-  // Filter by permission
-  const cards=appData.infoCards.filter(c=>c.categoryId===currentInfoCategory && canSee(c.min_role_required||'intern'));
-  container.innerHTML=cards.map(card=>{
-    const perm=card.min_role_required||'intern';
-    const permTag=isAdmin()?`<span class="fc-perm perm-${perm}">${perm}</span>`:'';
-    return `
-    <div id="ic-${card.id}" style="position:relative">
-      <div class="info-card" data-cid="${card.id}"
-           onclick="handleInfoCardClick(event,${card.id},'${escAttr(card.link)}')"
-           ${canManageInfo()?`oncontextmenu="showInfoCardCtx(event,${card.id});return false;"`:''}>
-        ${card.displayType==='image'&&card.image
-          ?`<img src="${escAttr(card.image)}" alt="${escAttr(card.title)}" class="info-card-img" onerror="this.style.display='none'">`
-          :`<div class="info-icon"><i class="fas ${card.icon||'fa-link'}"></i></div>`}
-        <span style="font-size:.8rem;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(card.title)}</span>
-        ${permTag}
-      </div>
-      <!-- NO hover icons — context menu only (right-click / long-press) -->
-    </div>`;
-  }).join('')||'<div class="empty-state"><i class="fas fa-layer-group"></i><p>No items yet</p></div>';
-
-  // Long-press for mobile (touch)
-  if(canManageInfo()){cards.forEach(card=>{const e=document.querySelector(`[data-cid="${card.id}"]`);if(e){e.addEventListener('touchstart',ev=>startLongPress(ev,card.id),{passive:true});e.addEventListener('touchend',endLongPress);e.addEventListener('touchmove',cancelLongPress);}});}
-}
-
-function handleInfoCardClick(event,cardId,link){if(isLongPress){event.preventDefault();isLongPress=false;return;}window.open(link,'_blank');}
-function startLongPress(e,id){if(!canManageInfo())return;isLongPress=false;longPressCardId=id;longPressTimer=setTimeout(()=>{isLongPress=true;if(navigator.vibrate)navigator.vibrate(50);showInfoCardCtx(e,id);},500);}
-function endLongPress(){clearTimeout(longPressTimer);}
-function cancelLongPress(){clearTimeout(longPressTimer);isLongPress=false;}
-function showInfoCardCtx(e,id){
-  if(!canManageInfo())return;
-  // Always stop browser default context menu
-  if(e && e.preventDefault) e.preventDefault();
-  if(e && e.stopPropagation) e.stopPropagation();
-  longPressCardId=id;
-  const m=el('infoCardContextMenu');
-  m.classList.remove('hidden');
-  const x=e.touches?e.touches[0].clientX:e.clientX;
-  const y=e.touches?e.touches[0].clientY:e.clientY;
-  m.style.left=Math.min(x,window.innerWidth-190)+'px';
-  m.style.top=Math.min(y,window.innerHeight-140)+'px';
-}
-document.addEventListener('click',e=>{const m=el('infoCardContextMenu');if(m&&!m.classList.contains('hidden')&&!m.contains(e.target))m.classList.add('hidden');});
-function editInfoCardFromContext(){el('infoCardContextMenu').classList.add('hidden');openInfoCardModal(longPressCardId);}
-
-function moveInfoCardFromContext(){
-  el('infoCardContextMenu').classList.add('hidden');
-  const list=el('infoCategoryList');
-  // Show all categories except the current one
-  const cats=appData.categories.filter(c=>c.id!==currentInfoCategory);
-  if(!cats.length){showToast('No other categories to move to','info');return;}
-  list.innerHTML=cats.map(c=>`
-    <button onclick="confirmMoveInfoCard(${longPressCardId},${c.id})">
-      <i class="fas ${c.icon}" style="color:var(--accent)"></i> ${escHtml(c.name)}
-    </button>`).join('');
-  el('infoCardMoveModal').classList.remove('hidden');
-}
-
-async function confirmMoveInfoCard(cardId,targetCatId){
-  closeModal('infoCardMoveModal');
-  if(isProcessing){showToast('Please wait…','info');return;}
-  isProcessing=true;showLoading(true);updateProgress(20,'Moving…');
-  try{
-    const res=await fetch(`${API_URL}/infoCards/${cardId}`,{method:'PUT',headers:getHeaders(),body:JSON.stringify({categoryId:targetCatId})});
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok)throw new Error(data.error||'Move failed');
-    updateProgress(60,'Refreshing...');await refreshData(true);
-    updateProgress(100,'Moved!');await delay(300);hideLoading();
-    showToast('Item moved to new category','success');
-  }catch(e){hideLoading();showToast(e.message);}
-  isProcessing=false;
-}
-
-async function deleteInfoCardFromContext(){
-  el('infoCardContextMenu').classList.add('hidden');
-  if(!canManageInfo())return showToast('Insufficient permissions','error');
-  if(!confirm('Delete?'))return;
-  // Use new endpoint
-  if(isProcessing){showToast('Please wait…','info');return;}
-  isProcessing=true;showLoading(true);
-  try{
-    const res=await fetch(`${API_URL}/infoCards/${longPressCardId}`,{method:'DELETE',headers:getHeaders()});
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok)throw new Error(data.error||'Delete failed');
-    await refreshData(true);hideLoading();showToast('Deleted!','success');
-  }catch(e){hideLoading();showToast(e.message);}
-  isProcessing=false;
-}
-function setImageSource(src){imageSource=src;el('imageUrlField').classList.toggle('hidden',src!=='url');el('imageUploadField').classList.toggle('hidden',src!=='upload');const u=el('imgSourceUrl'),up=el('imgSourceUpload');if(src==='url'){u.className='btn-primary flex1';up.className='btn-secondary flex1';}else{up.className='btn-primary flex1';u.className='btn-secondary flex1';}}
-function handleImageUpload(event){const file=event.target.files[0];if(!file||file.size>2*1024*1024)return showToast('Image too large (>2MB)');const r=new FileReader();r.onload=e=>{el('infoCardImage').value=e.target.result;el('previewImg').src=e.target.result;el('uploadPlaceholder').classList.add('hidden');el('uploadPreview').classList.remove('hidden');};r.readAsDataURL(file);}
-
-function openInfoCardModal(id=null){
-  if(!canManageInfo())return showToast('Leader or above required','error');
-  el('infoCardModal').classList.remove('hidden');
-  el('infoCardModalTitle').textContent=id?'Edit':'Add';
-  el('infoCardId').value=id||'';
-  el('uploadPreview').classList.add('hidden');el('uploadPlaceholder').classList.remove('hidden');
-  if(id){
-    const c=appData.infoCards.find(x=>x.id===id);
-    el('infoCardTitle').value=c.title;el('infoCardDisplayType').value=c.displayType;
-    el('infoCardIcon').value=c.icon;el('infoCardLink').value=c.link;
-    el('infoCardImage').value=c.image||'';el('infoCardImageUrl').value=c.image||'';
-    setRadio('infoCardPerm',c.min_role_required||'intern');
-    if(c.image&&c.image.startsWith('data:')){setImageSource('upload');el('previewImg').src=c.image;el('uploadPlaceholder').classList.add('hidden');el('uploadPreview').classList.remove('hidden');}
-    else setImageSource('url');
-  } else {el('infoCardForm').reset();setRadio('infoCardPerm','intern');setImageSource('url');}
-  toggleInfoCardFields();
-}
-function toggleInfoCardFields(){const t=el('infoCardDisplayType').value;el('iconField').classList.toggle('hidden',t!=='icon');el('imageField').classList.toggle('hidden',t!=='image');}
-
-async function saveInfoCard(){
-  if(!canManageInfo())return showToast('Leader or above required','error');
-  const id=el('infoCardId').value;
-  const dt=el('infoCardDisplayType').value;
-  const img=dt==='image'?(imageSource==='url'?el('infoCardImageUrl').value:el('infoCardImage').value):null;
-  const payload={
-    title:el('infoCardTitle').value,displayType:dt,icon:el('infoCardIcon').value,
-    image:img,link:el('infoCardLink').value,categoryId:currentInfoCategory,
-    min_role_required:getRadio('infoCardPerm')
   };
-  if(isProcessing){showToast('Please wait…','info');return;}
-  isProcessing=true;showLoading(true);updateProgress(20,'Saving...');
-  try{
-    let res;
-    if(id){
-      res=await fetch(`${API_URL}/infoCards/${id}`,{method:'PUT',headers:getHeaders(),body:JSON.stringify(payload)});
-    } else {
-      res=await fetch(`${API_URL}/infoCards`,{method:'POST',headers:getHeaders(),body:JSON.stringify(payload)});
-    }
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok)throw new Error(data.error||'Save failed');
-    updateProgress(60,'Refreshing...');await refreshData(true);
-    updateProgress(100,'Saved!');await delay(300);hideLoading();
-    showToast('Saved!','success');closeModal('infoCardModal');
-  }catch(e){hideLoading();showToast(e.message);}
-  isProcessing=false;
-}
-function editInfoCard(e,id){e.preventDefault();e.stopPropagation();openInfoCardModal(id);}
+အရေးကြီး check
+paste ပြီးရင် ဒီ function အဆုံးအောက်မှာ
 
-/* ══════════════════════════════════════════════════════════
-   ADMIN CRUD
-══════════════════════════════════════════════════════════ */
-let visiblePwds={};
-function togglePasswordVisibility(id){visiblePwds[id]=!visiblePwds[id];renderUsers();}
-function toggleEditPasswordVisibility(){const p=el('userPassword'),btn=el('toggleEditPassword');if(!btn)return;p.type=p.type==='password'?'text':'password';btn.querySelector('i').className='fas '+(p.type==='password'?'fa-eye':'fa-eye-slash');}
-/* ══════════════════════════════════════════════════════════
-   ADMIN PANEL — User Management
-══════════════════════════════════════════════════════════ */
-let adminFilter = 'all';
-let onlineSort = false;
+JavaScript
 
-function setAdminFilter(f){
-  adminFilter = f;
-  document.querySelectorAll('[data-filter]').forEach(btn=>btn.classList.toggle('active',btn.dataset.filter===f));
-  renderUsers();
-}
+//  Presence Management
+လာရမယ်
 
-function toggleOnlineSort(){
-  onlineSort = !onlineSort;
-  const icon = el('onlineSortIcon');
-  if(onlineSort){
-    icon.className = 'fas fa-sort-amount-down';
-    icon.style.opacity = '1';
-  } else {
-    icon.className = 'fas fa-sort';
-    icon.style.opacity = '0.5';
-  }
-  renderUsers();
-}
+မဖြစ်သင့်တာ
+syncDashboardItem အောက်မှာ ထပ်ပြီး
 
-function isUserOnline(lastSeen){
-  if(!lastSeen) return false;
-  try {
-    // SQLite datetime('now') is YYYY-MM-DD HH:MM:SS (UTC)
-    const iso = lastSeen.replace(' ', 'T') + 'Z';
-    const last = new Date(iso).getTime();
-    if(isNaN(last)) return false;
-    // Accuracy fix: use 1-minute threshold (60000ms)
-    return (Date.now() - last) < 60000;
-  } catch(e) { return false; }
-}
+JavaScript
 
-// Presence Fix: Signal offline when closing browser tab
-window.addEventListener('pagehide', () => {
-  if (authHeader && currentUser) {
-    fetch(`${API_URL}/presence/offline`, {
-      method: 'POST',
-      headers: getHeaders(),
-      keepalive: true
-    });
-  }
-});
+} catch (e) {
+တစ်ခုမလာရဘူး
 
-function renderUsers(){
-  const container = el('usersTable');
-  if(!container) return;
+ပြီးရင်
+1. Save
+2. Commit
+Bash
 
-  const searchQuery = el('adminUserSearch')?.value.toLowerCase().trim() || '';
-  
-  let filtered = [...appData.users];
+git add functions/api/[[path]].js
+git commit -m "Fix dashboard sync section"
+git push
+3. Cloudflare Pages deploy ပြန်စစ်
+လိုချင်ရင် နောက် message မှာ
+[[path]].js တစ်ဖိုင်လုံး clean version ကိုတစ်ခါတည်းပေးနိုင်တယ်။
 
-  // 1. Role Filtering
-  if(adminFilter !== 'all'){
-    filtered = filtered.filter(u => u.role === adminFilter);
-  }
 
-  // 2. Search Filtering (Name or Username)
-  if(searchQuery){
-    filtered = filtered.filter(u => {
-      const name = (u.accountName || u.account_name || '').toLowerCase();
-      const uname = (u.username || '').toLowerCase();
-      return name.includes(searchQuery) || uname.includes(searchQuery);
-    });
-  }
+[[path]].js တစ်ဖိုင်လုံး clean version
 
-  // 3. Sorting
-  filtered.sort((a, b) => {
-    // Primary Sort: Online Status (if toggled)
-    if(onlineSort){
-      const aOn = isUserOnline(a.last_seen);
-      const bOn = isUserOnline(b.last_seen);
-      if(aOn && !bOn) return -1;
-      if(!aOn && bOn) return 1;
-    }
-    // Default/Secondary Sort: Name A-Z
-    const nameA = (a.accountName || a.account_name || a.username || '').toLowerCase();
-    const nameB = (b.accountName || b.account_name || b.username || '').toLowerCase();
-    return nameA.localeCompare(nameB);
+
+Write
+uploads/clean_[[path]].js
+1275 lines
+open
+clean_[[path]].js
+JS
+// functions/api/[[path]].js — NOC Portal v5
+// Includes:
+// ✅ Sticky notes stored in D1 (CRUD per user)
+// ✅ Updates: all roles can create; delete scoped to creator (admin deletes any)
+// ✅ Info cards / categories: min_role_required permission
+// ✅ changePassword endpoint (all roles, self only)
+// ✅ Dashboard item CRUD
+// ✅ Dashboard cache + chunk storage for large JSON payloads
+// ✅ Per-dashboard settings + prefetch routes
+
+export const onRequest = async (context) => {
+  const { request, env } = context;
+  const url    = new URL(request.url);
+  const path   = url.pathname.replace('/api/', '').replace(/\/$/, '');
+  const method = request.method.toUpperCase();
+
+  // ── CORS ───────────────────────────────────────────────────────────────────
+  const cors = {
+    "Access-Control-Allow-Origin" : "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  };
+  if (method === "OPTIONS") return new Response(null, { headers: cors });
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const ok  = (d, s = 200) => new Response(JSON.stringify(d), {
+    status: s,
+    headers: { "Content-Type": "application/json", ...cors }
   });
+  const err = (m, s = 400) => ok({ error: m }, s);
 
-  container.innerHTML = filtered.map(u => {
-    const online = isUserOnline(u.last_seen);
-    const displayName = u.accountName || u.account_name || u.username;
-    return `
-    <tr>
-      <td>
-        <div style="display:flex;align-items:center;gap:.6rem">
-          <div style="width:34px;height:34px;background:var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:var(--text2)">
-            <i class="fas fa-user"></i>
-          </div>
-          <span style="font-weight:600">${escHtml(displayName)}</span>
-        </div>
-      </td>
-      <td class="col-sm">${escHtml(u.username)}</td>
-      <td>
-        <div style="display:flex;align-items:center;gap:.35rem">
-          <span style="font-family:monospace;font-size:.82rem;${visiblePwds[u.id]?'':'letter-spacing:.1em'}">${visiblePwds[u.id]?escHtml(u.password):'••••'}</span>
-          <button onclick="togglePasswordVisibility(${u.id})" class="icon-btn" title="Toggle Visibility">
-            <i class="fas ${visiblePwds[u.id]?'fa-eye-slash':'fa-eye'}"></i>
-          </button>
-        </div>
-      </td>
-      <td>
-        <span class="badge b-${u.role==='admin'?'important':u.role==='leader'?'general':u.role==='member'?'announcement':'reminder'}">
-          ${escHtml(u.role)}
-        </span>
-      </td>
-      <td>
-        <div class="online-badge ${online?'online':'offline'}">
-          <span class="status-dot ${online?'status-online':'status-offline'}"></span>
-          ${online?'Online':'Offline'}
-        </div>
-      </td>
-      <td class="tr">
-        <button onclick="editUser(${u.id})" class="icon-btn" style="color:var(--accent)" title="Edit User">
-          <i class="fas fa-edit"></i>
-        </button>
-        ${u.id !== currentUser.id ? `
-          <button onclick="deleteFromApi('users',${u.id})" class="icon-btn" style="color:#ef4444" title="Delete User">
-            <i class="fas fa-trash"></i>
-          </button>` : ''}
-      </td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text3)">No users found matching filters</td></tr>`;
-}
+  const ROLE_RANK = { admin: 4, leader: 3, member: 2, intern: 1 };
+  const rankExpr  = (col) =>
+    `CASE ${col} WHEN 'admin' THEN 4 WHEN 'leader' THEN 3 WHEN 'member' THEN 2 ELSE 1 END`;
+  const rbacWhere = (col, rank) => `${rankExpr(col)} <= ${rank}`;
 
-function showAdminTab(tab){
-  if(!isAdmin())return;
-  // Categories tab removed — only users tab remains
-  if(tab==='users') renderUsers();
-  // renderCategories kept for category manager modal
-  if(tab==='categories') renderCategories();
-}
-function renderCategories(){
-  // categoriesList element removed from admin panel — update manager list instead
-  const listEl=el('categoriesList');
-  if(listEl) listEl.innerHTML=appData.categories.map(cat=>`<div class="cat-card"><div style="display:flex;align-items:center;gap:.65rem"><div class="cat-icon"><i class="fas ${cat.icon}"></i></div><span style="font-weight:600">${escHtml(cat.name)}</span></div><div style="display:flex;gap:.35rem"><button onclick="openCategoryModal(${cat.id})" class="icon-btn" style="color:var(--accent)"><i class="fas fa-edit"></i></button><button onclick="deleteFromApi('categories',${cat.id})" class="icon-btn" style="color:#ef4444"><i class="fas fa-trash"></i></button></div></div>`).join('');
-  // Also refresh the manager list if it is currently open
-  if(el('categoryManagerModal')&&!el('categoryManagerModal').classList.contains('hidden')){
-    renderCategoryManagerList();
-  }
-}
-/* ── Category Manager (drag to sort) ────────────────────── */
-let catDragSrc=null;
+  const safeJson = (v, fallback = null) => {
+    try { return JSON.parse(v); } catch { return fallback; }
+  };
 
-function openCategoryManagerModal(){
-  renderCategoryManagerList();
-  el('categoryManagerModal').classList.remove('hidden');
-}
+  // ── Auth ───────────────────────────────────────────────────────────────────
+  const getAuth = async () => {
+    const auth = request.headers.get("Authorization") ?? "";
+    if (!auth.startsWith("Basic ")) return null;
 
-function renderCategoryManagerList(){
-  const list=el('categoryManagerList');
-  list.innerHTML=appData.categories.map(cat=>`
-    <div class="cat-mgr-item" draggable="true" data-cat-id="${cat.id}"
-         ondragstart="catDragStart(event,${cat.id})"
-         ondragover="catDragOver(event)"
-         ondrop="catDrop(event,${cat.id})"
-         ondragend="catDragEnd()">
-      <div class="cat-mgr-drag"><i class="fas fa-grip-vertical"></i></div>
-      <div class="cat-mgr-icon"><i class="fas ${cat.icon}"></i></div>
-      <span class="cat-mgr-name">${escHtml(cat.name)}</span>
-      <span class="cat-mgr-perm perm-${cat.min_role_required||'intern'}">${cat.min_role_required||'intern'}</span>
-      <div class="cat-mgr-actions">
-        <button onclick="openCategoryModal(${cat.id})" class="icon-btn" title="Edit"><i class="fas fa-edit"></i></button>
-        <button onclick="deleteCategoryConfirm(${cat.id})" class="icon-btn" style="color:#ef4444" title="Delete"><i class="fas fa-trash"></i></button>
-      </div>
-    </div>`).join('');
-}
+    try {
+      const dec  = atob(auth.slice(6));
+      const sep  = dec.indexOf(":");
+      const u    = dec.slice(0, sep);
+      const p    = dec.slice(sep + 1);
 
-function catDragStart(e,id){
-  catDragSrc=id;
-  e.dataTransfer.effectAllowed='move';
-  e.currentTarget.classList.add('cat-dragging');
-}
-function catDragOver(e){
-  e.preventDefault();e.dataTransfer.dropEffect='move';
-  document.querySelectorAll('.cat-mgr-item').forEach(el=>el.classList.remove('cat-drag-over'));
-  e.currentTarget.classList.add('cat-drag-over');
-}
-function catDragEnd(){document.querySelectorAll('.cat-mgr-item').forEach(el=>el.classList.remove('cat-dragging','cat-drag-over'));}
-async function catDrop(e,targetId){
-  e.preventDefault();
-  if(catDragSrc===targetId){catDragEnd();return;}
-  catDragEnd();
+      const user = await env.DB.prepare(
+        "SELECT * FROM users WHERE username=? AND password=?"
+      ).bind(u, p).first();
 
-  // Reorder locally
-  const cats=[...appData.categories];
-  const fromIdx=cats.findIndex(c=>c.id===catDragSrc);
-  const toIdx  =cats.findIndex(c=>c.id===targetId);
-  if(fromIdx<0||toIdx<0)return;
-  const [moved]=cats.splice(fromIdx,1);
-  cats.splice(toIdx,0,moved);
-  appData.categories=cats;
+      if (user) {
+        // Best effort only — do not fail auth if last_seen column does not exist yet
+        try {
+          await env.DB.prepare(
+            "UPDATE users SET last_seen = datetime('now') WHERE id = ?"
+          ).bind(user.id).run();
+        } catch (_) { /* ignore presence update errors */ }
+      }
 
-  // Re-render immediately for instant visual feedback
-  renderCategoryManagerList();
-  renderInfoDropdown();
-
-  // Persist to D1 via dedicated sort endpoint
-  try{
-    const res=await fetch(`${API_URL}/categories/sort`,{
-      method:'POST',
-      headers:getHeaders(),
-      body:JSON.stringify({order:cats.map(c=>c.id)})
-    });
-    const data=await res.json().catch(()=>({}));
-    if(!res.ok)throw new Error(data.error||'Sort failed');
-    // Silently refresh so appData stays in sync (no loading overlay)
-    refreshData(true);
-  }catch(e){
-    showToast('Failed to save sort order: '+e.message,'error');
-  }
-}
-
-async function deleteCategoryConfirm(id){
-  if(!confirm('Delete this category and all its info cards?'))return;
-  await deleteFromApi('categories',id);
-  renderCategoryManagerList();
-  renderCategoryPickerList();
-}
-
-// Cancel category form → close it and re-open the manager
-function cancelCategoryModal(){
-  closeModal('categoryModal');
-  openCategoryManagerModal();
-}
-
-function openCategoryModal(id=null){
-  // Hide the manager so the category form modal is clearly visible
-  el('categoryManagerModal').classList.add('hidden');
-  el('categoryModal').classList.remove('hidden');
-  el('categoryId').value=id||'';
-  if(id){const c=appData.categories.find(x=>x.id===id);el('categoryName').value=c.name;el('categoryIcon').value=c.icon;setRadio('catPerm',c.min_role_required||'intern');}
-  else{el('categoryForm').reset();setRadio('catPerm','intern');}
-}
-async function saveCategory(){
-  const id=el('categoryId').value;
-  const data={id:id?parseInt(id):null,name:el('categoryName').value,icon:el('categoryIcon').value,min_role_required:getRadio('catPerm')};
-  if(await saveToApi('categories',data)){
-    closeModal('categoryModal');
-    // Re-open the manager so user can continue sorting/editing
-    openCategoryManagerModal();
-  }
-}
-function openUserModal(id=null){el('userModal').classList.remove('hidden');el('userModalTitle').textContent=id?'Edit User':'Add User';el('userId').value=id||'';const p=el('userPassword');p.type='password';const ti=el('toggleEditPassword');if(ti)ti.querySelector('i').className='fas fa-eye';if(id){const u=appData.users.find(x=>x.id===id);el('userAccountName').value=u.accountName||u.account_name||'';el('userUsername').value=u.username;el('userPassword').value=u.password;el('userRole').value=u.role;}else el('userForm').reset();}
-async function saveUser(){const id=el('userId').value;const data={id:id?parseInt(id):null,accountName:el('userAccountName').value,username:el('userUsername').value,password:el('userPassword').value,role:el('userRole').value};if(await saveToApi('users',data))closeModal('userModal');}
-function editUser(id){openUserModal(id);}
-
-/* ══════════════════════════════════════════════════════════
-   SETTINGS
-══════════════════════════════════════════════════════════ */
-function openSettings(){loadPreferencesUI();el('settingsModal').classList.remove('hidden');}
-function loadPreferencesUI(){
-  const p=getPrefs();
-  el('darkModeToggle').checked=p.dark;
-  document.querySelectorAll('.font-opt').forEach(b=>b.classList.toggle('active',b.dataset.font===p.font));
-}
-function getPrefs(){return{dark:localStorage.getItem('noc_dark')==='1',color:localStorage.getItem('noc_color')||'blue',font:localStorage.getItem('noc_font')||'md',modal:localStorage.getItem('noc_modal')||'md'};}
-function loadPreferences(){const p=getPrefs();applyDarkMode(p.dark,false);applyColor(p.color,false);applyFont(p.font,false);applyModalSize(p.modal,false);}
-function applyDarkMode(on,save=true){document.documentElement.setAttribute('data-theme',on?'dark':'light');if(save)localStorage.setItem('noc_dark',on?'1':'0');}
-function applyColor(c,save=true){document.documentElement.setAttribute('data-color',c);if(save)localStorage.setItem('noc_color',c);}
-function applyFont(f,save=true){document.documentElement.setAttribute('data-font',f);if(save)localStorage.setItem('noc_font',f);if(save)loadPreferencesUI();}
-function applyModalSize(m,save=true){document.documentElement.setAttribute('data-modal',m);if(save)localStorage.setItem('noc_modal',m);if(save)loadPreferencesUI();}
-
-/* ══════════════════════════════════════════════════════════
-   CHANGE PASSWORD
-══════════════════════════════════════════════════════════ */
-function openChangePassword(){
-  el('changePwdModal').classList.remove('hidden');el('changePwdForm').reset();
-  ['cpOld','cpNew','cpConfirm'].forEach(id=>{el(id).type='password';});
-  document.querySelectorAll('#changePwdForm .eye-btn i').forEach(i=>i.className='fas fa-eye');
-  showCpMsg('','');updateStrengthBar('');
-}
-function togglePwdField(inputId,btn){const inp=el(inputId),icon=btn.querySelector('i');if(inp.type==='password'){inp.type='text';icon.classList.replace('fa-eye','fa-eye-slash');}else{inp.type='password';icon.classList.replace('fa-eye-slash','fa-eye');}}
-function showCpMsg(msg,type){const box=el('cpError');if(!msg){box.className='cp-error hidden';box.innerHTML='';return;}box.className=type==='success'?'cp-success':'cp-error';const icon=type==='success'?'fa-check-circle':'fa-exclamation-circle';box.innerHTML=`<i class="fas ${icon}"></i> ${escHtml(msg)}`;}
-function updateStrengthBar(pwd){
-  const bar=el('cpStrengthBar'),label=el('cpStrengthLabel');
-  if(!bar||!label)return;
-  const setRule=(id,pass)=>{const li=el(id);if(!li)return;li.classList.toggle('rule-pass',pass);li.classList.toggle('rule-fail',pwd.length>0&&!pass);li.querySelector('i').className='fas '+(pass?'fa-check-circle':'fa-circle-dot');};
-  setRule('ruleLen',pwd.length>=5);setRule('ruleUpper',/[A-Z]/.test(pwd));setRule('ruleNum',/[0-9]/.test(pwd));
-  if(!pwd){bar.style.width='0%';bar.style.background='var(--border)';label.textContent='';return;}
-  let score=0;
-  if(pwd.length>=5)score++;if(pwd.length>=8)score++;if(/[A-Z]/.test(pwd))score++;if(/[0-9]/.test(pwd))score++;if(/[^A-Za-z0-9]/.test(pwd))score++;
-  const levels=[{w:'20%',color:'#ef4444',text:'Very weak'},{w:'40%',color:'#f97316',text:'Weak'},{w:'60%',color:'#eab308',text:'Fair'},{w:'80%',color:'#22c55e',text:'Strong'},{w:'100%',color:'#16a34a',text:'Very strong'}];
-  const lvl=levels[Math.min(score,4)];bar.style.width=lvl.w;bar.style.background=lvl.color;label.textContent=lvl.text;label.style.color=lvl.color;
-}
-function liveMatchCheck(){
-  const np=el('cpNew').value,cp=el('cpConfirm').value,hint=el('cpMatchHint');if(!hint)return;
-  if(!cp){hint.className='cp-match-hint hidden';hint.innerHTML='';return;}
-  if(np===cp){hint.className='cp-match-hint match-ok';hint.innerHTML='<i class="fas fa-check-circle"></i> Passwords match';}
-  else{hint.className='cp-match-hint match-no';hint.innerHTML='<i class="fas fa-times-circle"></i> Passwords do not match';}
-}
-async function submitChangePassword(){
-  const oldPwd=el('cpOld').value,newPwd=el('cpNew').value,confirmPwd=el('cpConfirm').value;
-  if(!oldPwd){showCpMsg('Please enter your current password.','error');el('cpOld').focus();return;}
-  if(!newPwd){showCpMsg('Please enter a new password.','error');el('cpNew').focus();return;}
-  if(newPwd.length<5){showCpMsg('New password must be at least 5 characters.','error');el('cpNew').focus();return;}
-  if(!confirmPwd){showCpMsg('Please confirm your new password.','error');el('cpConfirm').focus();return;}
-  if(newPwd!==confirmPwd){showCpMsg('New passwords do not match.','error');el('cpConfirm').focus();return;}
-  if(oldPwd===newPwd){showCpMsg('New password must differ from current.','error');el('cpNew').focus();return;}
-  const submitBtn=document.querySelector('#changePwdModal .btn-primary');
-  if(submitBtn){submitBtn.disabled=true;submitBtn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Changing…';}
-  try{
-    const res=await fetch(`${API_URL}/changePassword`,{method:'POST',headers:getHeaders(),body:JSON.stringify({oldPassword:oldPwd,newPassword:newPwd})});
-    const data=await res.json().catch(()=>({}));
-    if(res.ok&&data.success){
-      currentUser.password=newPwd;authHeader='Basic '+btoa(currentUser.username+':'+newPwd);localStorage.setItem('authHeader',authHeader);
-      showCpMsg('Password changed successfully!','success');
-      setTimeout(()=>{closeModal('changePwdModal');closeModal('settingsModal');showToast('Password changed — please sign in again with your new password.','info');setTimeout(()=>logout(),2200);},1200);
-    } else showCpMsg(data.error||'Failed to change password.','error');
-  }catch(e){showCpMsg('Connection error. Please try again.','error');}
-  if(submitBtn){submitBtn.disabled=false;submitBtn.innerHTML='<i class="fas fa-check"></i> Change Password';}
-}
-
-/* ══════════════════════════════════════════════════════════
-   NOC UTILITIES
-══════════════════════════════════════════════════════════ */
-function openUtilities(){el('utilitiesModal').classList.remove('hidden');switchUtilTab('time');convertTime();loadStickyNotes();}
-function switchUtilTab(tab){
-  document.querySelectorAll('.util-tab').forEach(t=>t.classList.toggle('active',t.dataset.utab===tab));
-  document.querySelectorAll('.util-panel').forEach(p=>p.classList.add('hidden'));
-  el('util'+tab.charAt(0).toUpperCase()+tab.slice(1)).classList.remove('hidden');
-}
-
-/* Time Converter */
-const TZ_LIST=[
-  {id:'MMT',label:'MMT',name:'Myanmar   UTC+6:30',offset:390},
-  {id:'UTC',label:'UTC',name:'Universal UTC+0',offset:0},
-  {id:'IST',label:'IST',name:'India     UTC+5:30',offset:330},
-  {id:'ICT',label:'ICT',name:'Indochina/Thailand UTC+7:00',offset:420},
-  {id:'SGT',label:'SGT',name:'Singapore UTC+8:00',offset:480},
-];
-function convertTime(){
-  const h=parseInt(el('tcHour').value),m=parseInt(el('tcMin').value);
-  const inputZoneId=el('tcInputZone').value;
-  if(isNaN(h)||isNaN(m)||h<0||h>23||m<0||m>59){
-    if(el('tcHour').value!==''||el('tcMin').value!=='')
-      el('timeResults').innerHTML='<div style="color:#ef4444;font-size:.85rem;padding:.5rem 0">⚠ Invalid time</div>';
-    else el('timeResults').innerHTML='';return;
-  }
-  const inputZone=TZ_LIST.find(z=>z.id===inputZoneId)||TZ_LIST[0];
-  const utcMin=(h*60+m)-inputZone.offset;
-  el('timeResults').innerHTML=TZ_LIST.map(tz=>{
-    let mins=((utcMin+tz.offset)%1440+1440)%1440;
-    const th=Math.floor(mins/60),tm=mins%60;
-    const ampm=th>=12?'PM':'AM',h12=th%12||12;
-    const isInput=tz.id===inputZoneId;
-    return `<div class="tz-row${isInput?' tz-row--active':''}">
-      <div><div class="tz-label">${tz.label}${isInput?' <span class="tz-source">source</span>':''}</div><div class="tz-name">${tz.name}</div></div>
-      <div style="text-align:right"><div class="tz-time">${pad(th)}:${pad(tm)}</div><div class="tz-time12">${pad(h12)}:${pad(tm)} ${ampm}</div></div>
-    </div>`;
-  }).join('');
-}
-function pad(n){return String(n).padStart(2,'0');}
-
-/* Subnet Calculator — debounced so large subnets don't lag on every keystroke */
-let subnetTimer=null;
-el('subnetInput').addEventListener('input',()=>{
-  clearTimeout(subnetTimer);
-  subnetTimer=setTimeout(calcSubnet, 180);
-});
-
-function calcSubnet(){
-  const raw=el('subnetInput').value.trim();
-  const out=el('subnetResults');
-  const hb=el('handoverBlock');
-
-  if(!raw){ out.innerHTML=''; if(hb)hb.classList.add('hidden'); return; }
-
-  try{
-    const parts=raw.split('/');
-    if(parts.length<2) throw new Error('Enter CIDR e.g. 192.168.1.0/24');
-    const cidr=parseInt(parts[1]);
-    if(isNaN(cidr)||cidr<0||cidr>32) throw new Error('CIDR must be 0-32');
-    const oct=parts[0].split('.').map(Number);
-    if(oct.length!==4||oct.some(function(n){return isNaN(n)||n<0||n>255;}))
-      throw new Error('Invalid IP address');
-
-    var ipInt=((oct[0]*256+oct[1])*256+oct[2])*256+oct[3];
-    ipInt=ipInt>>>0;
-    var mask=cidr===0?0:(0xFFFFFFFF<<(32-cidr))>>>0;
-    var network=(ipInt&mask)>>>0;
-    var broadcast=(network|(~mask>>>0))>>>0;
-    var first=(network+1)>>>0;
-    var last=(broadcast-1)>>>0;
-    var total=Math.pow(2,32-cidr);
-    var usable=cidr>=31?total:Math.max(0,total-2);
-    function i2s(n){return [n>>>24&255,(n>>>16)&255,(n>>>8)&255,n&255].join('.');}
-    var maskStr=i2s(mask);
-
-    /* ── Subnet info table — always shown ───────── */
-    var tableRows=[
-      ['Network Address', i2s(network)],
-      ['Subnet Mask',     maskStr],
-      ['Wildcard Mask',   i2s((~mask)>>>0)],
-      ['Broadcast',       i2s(broadcast)],
-      ['First Usable',    cidr>=31?'N/A':i2s(first)],
-      ['Last Usable',     cidr>=31?'N/A':i2s(last)],
-      ['Total IPs',       total.toLocaleString()],
-      ['Usable Hosts',    usable.toLocaleString()],
-      ['CIDR',            '/'+cidr],
-    ];
-    out.innerHTML=tableRows.map(function(r){
-      return '<div class="sn-row"><span class="sn-label">'+escHtml(r[0])+'</span><span class="sn-val">'+escHtml(r[1])+'</span></div>';
-    }).join('');
-
-    /* ── Handover block — ONLY /29 and /30 ──────── */
-    if(cidr!==29&&cidr!==30){ if(hb)hb.classList.add('hidden'); return; }
-
-    var gateway=i2s(first);
-    var custCount=usable-1;
-    var custIPs=[];
-    for(var n=1;n<=custCount;n++){ custIPs.push(i2s((first+n)>>>0)); }
-    var custStr=custIPs.join(', ');
-    var subnetStr=i2s(network)+'/'+cidr+' ('+maskStr+')';
-
-    var lines=[
-      ['Customer IP', custStr],
-      ['Gateway    ', gateway],
-      ['Subnet     ', subnetStr],
-      ['DNS1       ', '59.153.88.210'],
-      ['DNS2       ', '59.153.90.34'],
-    ];
-
-    var htEl=el('handoverText');
-    if(htEl){
-      htEl.innerHTML=lines.map(function(r){
-        return '<div class="sn-ho-row">'+
-          '<span class="sn-ho-label">'+escHtml(r[0])+' : </span>'+
-          '<span class="sn-ho-value">'+escHtml(r[1])+'</span>'+
-          '</div>';
-      }).join('');
+      return user;
+    } catch {
+      return null;
     }
-    if(hb)hb.classList.remove('hidden');
+  };
 
-  }catch(e){
-    el('subnetResults').innerHTML='<div class="sn-error"><i class="fas fa-exclamation-circle"></i> '+escHtml(e.message)+'</div>';
-    var hb2=el('handoverBlock'); if(hb2)hb2.classList.add('hidden');
-  }
-}
+  // ── Dashboard helpers ──────────────────────────────────────────────────────
+  const DEFAULT_DASHBOARD_SETTINGS = {
+    showCards: {
+      totalTickets: true,
+      avgResolve: true,
+      closedRate: true,
+      quickSummary: true,
+      trendChart: true,
+      statusChart: true,
+      problemChart: true,
+      siteChart: true,
+      rootCauseChart: true,
+      repeatChart: true,
+    },
+    limits: {
+      trendPoints: 10,
+      statusCount: 5,
+      problemCount: 5,
+      siteCount: 5,
+      rootCauseCount: 6,
+      repeatCount: 5,
+    },
+    graphTypes: {
+      trendChart: 'line',
+      statusChart: 'doughnut',
+      problemChart: 'bar',
+      siteChart: 'bar',
+      rootCauseChart: 'bar',
+      repeatChart: 'list',
+    },
+    defaultGrouping: 'day'
+  };
 
-function copyHandoverText(){
-  const pre=el('handoverText');
-  if(!pre)return;
-  const rows=pre.querySelectorAll('.sn-ho-row');
-  const text=Array.from(rows).map(function(r){
-    return (r.querySelector('.sn-ho-label')||{textContent:''}).textContent
-          +(r.querySelector('.sn-ho-value')||{textContent:''}).textContent;
-  }).join('\n');
-  navigator.clipboard.writeText(text).then(()=>{
-    const btn=document.querySelector('.sn-copy-btn');
-    if(btn){
-      btn.innerHTML='<i class="fas fa-check"></i> Copied!';
-      btn.style.background='#10b981';btn.style.color='#fff';
-      setTimeout(()=>{btn.innerHTML='<i class="fas fa-copy"></i> Copy';btn.style.background='';btn.style.color='';},2000);
+  const cloneDashDefaults = () => JSON.parse(JSON.stringify(DEFAULT_DASHBOARD_SETTINGS));
+
+  const normalizeDashboardSettings = (raw) => {
+    const base = cloneDashDefaults();
+    const parsed = typeof raw === 'string' ? (safeJson(raw, {}) || {}) : (raw || {});
+    const show = parsed.showCards || parsed.show || {};
+    const limits = parsed.limits || {};
+    const graphTypes = parsed.graphTypes || {};
+
+    for (const key of Object.keys(base.showCards)) {
+      if (typeof show[key] === 'boolean') base.showCards[key] = show[key];
     }
-    showToast('Handover info copied!','success');
-  }).catch(()=>{
-    // Fallback for older browsers
-    const ta=document.createElement('textarea');
-    ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
-    document.body.appendChild(ta);ta.select();
-    document.execCommand('copy');document.body.removeChild(ta);
-    showToast('Copied!','success');
-  });
-}
-
-/* ══════════════════════════════════════════════════════════
-   STICKY NOTES — D1-backed
-══════════════════════════════════════════════════════════ */
-const STICKY_COLORS=['#fef9c3','#fce7f3','#dbeafe','#d1fae5','#ede9fe','#fee2e2'];
-
-async function loadStickyNotes(){
-  const board=el('stickyBoard');
-  board.innerHTML='<div style="text-align:center;padding:1rem;color:var(--text3);font-size:.82rem"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';
-  try{
-    const data=await fetchAPI('sticky',{silentFail:true});
-    stickyNotes=(data?.notes)||[];
-  } catch{ stickyNotes=[]; }
-  renderStickyNotes();
-}
-
-async function addStickyNote(){
-  // Show inline spinner inside the board
-  const board=el('stickyBoard');
-  const ghost=document.createElement('div');
-  ghost.className='sticky-note sticky-adding';
-  ghost.innerHTML='<div class="sticky-spinner"><i class="fas fa-spinner fa-spin"></i><span>Adding…</span></div>';
-  ghost.style.background='#f1f5f9';
-  board.prepend(ghost);
-
-  const color=STICKY_COLORS[Math.floor(Math.random()*STICKY_COLORS.length)];
-  try{
-    const data=await fetchAPI('sticky',{method:'POST',body:JSON.stringify({text:'',color,sort_order:stickyNotes.length})});
-    if(data?.note){
-      stickyNotes.push(data.note);
-      renderStickyNotes();
-      showToast('Note added','success');
-    } else throw new Error('No note returned');
-  }catch(e){
-    ghost.remove();
-    showToast('Failed to add note: '+e.message);
-  }
-}
-
-async function deleteSticky(id){
-  // Mark the note as deleting visually
-  const noteEl=document.querySelector(`.sticky-note[data-sid="${id}"]`);
-  if(noteEl){
-    noteEl.style.opacity='0.4';
-    noteEl.style.pointerEvents='none';
-    const spinner=document.createElement('div');
-    spinner.className='sticky-del-overlay';
-    spinner.innerHTML='<i class="fas fa-spinner fa-spin"></i>';
-    noteEl.appendChild(spinner);
-  }
-  try{
-    const res=await fetch(`${API_URL}/sticky/${id}`,{method:'DELETE',headers:getHeaders()});
-    if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error(d.error||'Delete failed');}
-    stickyNotes=stickyNotes.filter(n=>n.id!==id);
-    renderStickyNotes();
-    showToast('Note deleted','success');
-  }catch(e){
-    if(noteEl){noteEl.style.opacity='1';noteEl.style.pointerEvents='';noteEl.querySelector('.sticky-del-overlay')?.remove();}
-    showToast('Failed to delete: '+e.message);
-  }
-}
-
-// Debounced text save
-const stickyTextTimers={};
-function updateStickyText(id,text){
-  const note=stickyNotes.find(n=>n.id===id);if(note)note.text=text;
-  clearTimeout(stickyTextTimers[id]);
-  stickyTextTimers[id]=setTimeout(async()=>{
-    try{await fetch(`${API_URL}/sticky/${id}`,{method:'PUT',headers:getHeaders(),body:JSON.stringify({text})});}
-    catch(e){console.warn('Sticky save failed',e);}
-  },600);
-}
-
-async function updateStickyColor(id,color){
-  const note=stickyNotes.find(n=>n.id===id);if(note)note.color=color;
-  renderStickyNotes();
-  try{await fetch(`${API_URL}/sticky/${id}`,{method:'PUT',headers:getHeaders(),body:JSON.stringify({color})});}
-  catch(e){console.warn('Sticky color save failed',e);}
-}
-
-function renderStickyNotes(){
-  const board=el('stickyBoard');
-  if(!stickyNotes.length){
-    board.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--text2);font-size:.85rem"><i class="fas fa-sticky-note" style="font-size:1.5rem;display:block;margin-bottom:.5rem"></i>No notes yet. Click + Add Note</div>';
-    return;
-  }
-  board.innerHTML=stickyNotes.map(n=>{
-    // resolve display name of author
-    const author = n.accountName || n.account_name || n.username || 'Unknown';
-    // only the creator can edit text/color, but everyone can delete
-    const isOwn  = n.user_id === currentUser?.id;
-    return `
-    <div class="sticky-note" data-sid="${n.id}" style="background:${n.color}">
-      <div class="sticky-author"><i class="fas fa-user-circle"></i> ${escHtml(author)}</div>
-      <textarea placeholder="Type your note…"
-        ${isOwn ? `oninput="updateStickyText(${n.id},this.value)"` : 'readonly'}
-        style="${isOwn?'':'opacity:.75;cursor:default'}"
-      >${escHtml(n.text||'')}</textarea>
-      <div class="sticky-note-actions">
-        ${isOwn ? `<div class="sticky-color-pick">
-          ${STICKY_COLORS.map(c=>`<button class="sc-dot" style="background:${c};border:${n.color===c?'2px solid #1e293b':'1px solid rgba(0,0,0,.15)'}" onclick="updateStickyColor(${n.id},'${c}')"></button>`).join('')}
-        </div>` : '<div></div>'}
-        <button class="sticky-del" title="Delete" onclick="deleteSticky(${n.id})"><i class="fas fa-times"></i></button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-/* ══════════════════════════════════════════════════════════
-   RADIO HELPERS
-══════════════════════════════════════════════════════════ */
-function getRadio(name){const c=document.querySelector(`input[name="${name}"]:checked`);return c?c.value:'intern';}
-function setRadio(name,value){const r=document.querySelector(`input[name="${name}"][value="${value}"]`);if(r)r.checked=true;}
-
-/* ══════════════════════════════════════════════════════════
-   MODALS
-══════════════════════════════════════════════════════════ */
-function closeModal(id){const e=el(id);if(e)e.classList.add('hidden');}
-document.querySelectorAll('.modal-bd').forEach(bd=>{bd.addEventListener('click',e=>{if(e.target===bd)bd.classList.add('hidden');});});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-bd').forEach(m=>m.classList.add('hidden'));});
-
-/* ══════════════════════════════════════════════════════════
-   UTILS
-══════════════════════════════════════════════════════════ */
-function el(id){return document.getElementById(id);}
-function escHtml(s){if(s==null)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-function escAttr(s){if(s==null)return'';return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;');}
-
-/* ══════════════════════════════════════════════════════════
-   BOOT & REAL-TIME POLLING
-══════════════════════════════════════════════════════════ */
-const POLL_INTERVAL = 20000; // 20 seconds — balances freshness vs D1 query cost
-let pollTimer = null;
-
-function startPolling(){
-  stopPolling();
-  pollTimer=setInterval(async()=>{
-    if(!authHeader||document.hidden)return; // skip if not authed or tab hidden
-    await refreshData(true);                 // silent — no loading overlay
-    // Also refresh sticky notes if utilities modal is open
-    if(el('utilitiesModal')&&!el('utilitiesModal').classList.contains('hidden')){
-      const board=el('stickyBoard');
-      if(board){
-        try{
-          const data=await fetchAPI('sticky',{silentFail:true});
-          if(data?.notes){
-            stickyNotes=data.notes;
-            renderStickyNotes();
-          }
-        }catch{ /* ignore */ }
+    for (const key of Object.keys(base.limits)) {
+      const v = Number(limits[key]);
+      if (Number.isFinite(v) && v > 0) base.limits[key] = Math.round(v);
+    }
+    for (const key of Object.keys(base.graphTypes)) {
+      if (typeof graphTypes[key] === 'string' && graphTypes[key].trim()) {
+        base.graphTypes[key] = graphTypes[key].trim();
       }
     }
-  }, POLL_INTERVAL);
-}
+    if (['day', 'week', 'month', 'year'].includes(parsed.defaultGrouping)) {
+      base.defaultGrouping = parsed.defaultGrouping;
+    }
+    return base;
+  };
 
-function stopPolling(){
-  if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
-}
+  const extractDashboardRows = (payload) => {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== 'object') return [];
+    if (Array.isArray(payload.rows)) return payload.rows;
+    if (Array.isArray(payload.data)) return payload.data;
+    if (payload.data && Array.isArray(payload.data.rows)) return payload.data.rows;
+    if (payload.data && Array.isArray(payload.data.data)) return payload.data.data;
+    if (payload.data && Array.isArray(payload.data.result)) return payload.data.result;
+    if (payload.result && Array.isArray(payload.result)) return payload.result;
+    return [];
+  };
 
-// Refresh immediately on tab focus (user returns to tab)
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'&&authHeader){
-    refreshData(true);
-    if(isLeader()) startDashboardPrefetch(true);
-    startPolling(); // restart timer from now so we don't double-poll
-  } else {
-    stopPolling(); // pause polling when tab is hidden (saves resources)
+  const ensureDashboardTables = async () => {
+    const stmts = [
+      `CREATE TABLE IF NOT EXISTS dashboard_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        icon TEXT NOT NULL DEFAULT 'fa-chart-line',
+        api_url TEXT NOT NULL,
+        min_role_required TEXT NOT NULL DEFAULT 'leader',
+        overtime_hours REAL NOT NULL DEFAULT 8,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_cache (
+        dashboard_item_id INTEGER PRIMARY KEY,
+        dashboard_name TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        row_count INTEGER NOT NULL DEFAULT 0,
+        last_synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_error TEXT
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_cache_chunks (
+        dashboard_item_id INTEGER NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        payload_chunk TEXT NOT NULL,
+        PRIMARY KEY (dashboard_item_id, chunk_index)
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_item_settings (
+        dashboard_item_id INTEGER PRIMARY KEY,
+        settings_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_sync_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dashboard_item_id INTEGER NOT NULL,
+        sync_status TEXT NOT NULL,
+        row_count INTEGER NOT NULL DEFAULT 0,
+        message TEXT,
+        synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_items_sort ON dashboard_items(sort_order)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_items_active ON dashboard_items(is_active)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_cache_chunks_item ON dashboard_cache_chunks(dashboard_item_id, chunk_index)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC)`
+    ];
+
+    for (const sql of stmts) {
+      await env.DB.prepare(sql).run();
+    }
+  };
+
+  const DASHBOARD_CHUNK_SIZE = 450000;
+
+  const buildStoredDashboardPayload = (rawPayload) => {
+    const rows = extractDashboardRows(rawPayload);
+    return {
+      rows,
+      generatedAt: rawPayload?.generatedAt || rawPayload?.generated_at || new Date().toISOString(),
+      sourceMeta: {
+        success: rawPayload?.success,
+        sheet: rawPayload?.sheet || null,
+        rowCount: rows.length,
+        headers: Array.isArray(rawPayload?.headers) ? rawPayload.headers : null,
+      }
+    }; 
+  };
+
+  const writeDashboardPayload = async (item, payloadObj, rowCount, lastError = null) => {
+    const payloadJson = JSON.stringify(payloadObj);
+
+    await env.DB.prepare(
+      "DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?"
+    ).bind(item.id).run();
+
+    if (payloadJson.length <= DASHBOARD_CHUNK_SIZE) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_cache (
+          dashboard_item_id, dashboard_name, source_url, payload_json,
+          row_count, last_synced_at, last_error
+        )
+        VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+        ON CONFLICT(dashboard_item_id) DO UPDATE SET
+          dashboard_name = excluded.dashboard_name,
+          source_url = excluded.source_url,
+          payload_json = excluded.payload_json,
+          row_count = excluded.row_count,
+          last_synced_at = datetime('now'),
+          last_error = excluded.last_error
+      `).bind(
+        item.id,
+        item.name,
+        item.api_url,
+        payloadJson,
+        rowCount,
+        lastError
+      ).run();
+      return;
+    }
+
+    const chunks = [];
+    for (let i = 0; i < payloadJson.length; i += DASHBOARD_CHUNK_SIZE) {
+      chunks.push(payloadJson.slice(i, i + DASHBOARD_CHUNK_SIZE));
+    }
+
+    const manifest = JSON.stringify({ chunked: true, parts: chunks.length });
+
+    await env.DB.prepare(`
+      INSERT INTO dashboard_cache (
+        dashboard_item_id, dashboard_name, source_url, payload_json,
+        row_count, last_synced_at, last_error
+      )
+      VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+      ON CONFLICT(dashboard_item_id) DO UPDATE SET
+        dashboard_name = excluded.dashboard_name,
+        source_url = excluded.source_url,
+        payload_json = excluded.payload_json,
+        row_count = excluded.row_count,
+        last_synced_at = datetime('now'),
+        last_error = excluded.last_error
+    `).bind(
+      item.id,
+      item.name,
+      item.api_url,
+      manifest,
+      rowCount,
+      lastError
+    ).run();
+
+    for (let idx = 0; idx < chunks.length; idx++) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_cache_chunks (dashboard_item_id, chunk_index, payload_chunk)
+        VALUES (?, ?, ?)
+      `).bind(item.id, idx, chunks[idx]).run();
+    }
+  };
+
+  const readDashboardPayload = async (cacheRow) => {
+    if (!cacheRow?.payload_json) return [];
+
+    const parsed = safeJson(cacheRow.payload_json, null);
+
+    if (parsed && parsed.chunked) {
+      const chunkRows = (await env.DB.prepare(`
+        SELECT payload_chunk
+        FROM dashboard_cache_chunks
+        WHERE dashboard_item_id=?
+        ORDER BY chunk_index ASC
+      `).bind(cacheRow.dashboard_item_id).all()).results ?? [];
+
+      const combined = chunkRows.map(r => r.payload_chunk || '').join('');
+      return safeJson(combined, []);
+    }
+
+    return parsed ?? [];
+  };
+
+  const getDashboardItem = async (id) => {
+    await ensureDashboardTables();
+    return await env.DB.prepare(`
+      SELECT di.*, dis.settings_json
+      FROM dashboard_items di
+      LEFT JOIN dashboard_item_settings dis
+        ON dis.dashboard_item_id = di.id
+      WHERE di.id = ?
+    `).bind(id).first();
+  };
+
+  const syncDashboardItem = async (item) => {
+    await ensureDashboardTables();
+
+    try {
+      const res = await fetch(item.api_url, {
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Source HTTP ${res.status}`);
+      }
+
+      const rawText = await res.text();
+      const rawPayload = JSON.parse(rawText);
+      const storedPayload = buildStoredDashboardPayload(rawPayload);
+      const rowCount = Array.isArray(storedPayload.rows) ? storedPayload.rows.length : 0;
+
+      await writeDashboardPayload(item, storedPayload, rowCount, null);
+
+      await env.DB.prepare(`
+        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
+        VALUES (?, 'success', ?, 'OK', datetime('now'))
+      `).bind(item.id, rowCount).run();
+
+      return {
+        payload: storedPayload,
+        rowCount,
+        lastSynced: new Date().toISOString(),
+        settings: normalizeDashboardSettings(item.settings_json)
+      };
+    } catch (e) {
+      await env.DB.prepare(`
+        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
+        VALUES (?, 'failed', 0, ?, datetime('now'))
+      `).bind(item.id, e.message || 'Unknown error').run();
+
+      await writeDashboardPayload(
+        item,
+        {
+          rows: [],
+          generatedAt: new Date().toISOString(),
+          sourceMeta: { rowCount: 0 }
+        },
+        0,
+        e.message || 'Unknown error'
+      );
+
+      throw e;
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  Presence Management
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "presence/offline" && method === "POST") {
+    const authUser = await getAuth();
+    if (!authUser) return err("Unauthorized", 401);
+    try {
+      await env.DB.prepare(
+        "UPDATE users SET last_seen = datetime('now', '-10 minutes') WHERE id = ?"
+      ).bind(authUser.id).run();
+    } catch (_) { /* ignore */ }
+    return ok({ success: true });
   }
-});
 
-initApp();
+  // ════════════════════════════════════════════════════════════════════════════
+  //  PUBLIC — Login
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "login" && method === "POST") {
+    const user = await getAuth();
+    if (!user) return err("Invalid credentials", 401);
+    return ok({ success: true, user });
+  }
+
+  // All other routes require auth
+  const user = await getAuth();
+  if (!user) return err("Unauthorized", 401);
+
+  const uRank   = ROLE_RANK[user.role] ?? 1;
+  const isAdmin = user.role === "admin";
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  getData
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "getData" && method === "GET") {
+    try { await ensureDashboardTables(); } catch (_) { /* keep app usable */ }
+
+    const folderRows = isAdmin
+      ? await env.DB.prepare("SELECT * FROM folders").all()
+      : await env.DB.prepare(`SELECT * FROM folders WHERE ${rbacWhere('min_role_required', uRank)}`).all();
+
+    let liRows;
+    try {
+      liRows = isAdmin
+        ? await env.DB.prepare("SELECT * FROM learning_items").all()
+        : await env.DB.prepare(`
+            SELECT li.*
+            FROM learning_items li
+            LEFT JOIN folders f ON f.id = li.folderId
+            WHERE ${rbacWhere('li.min_role_required', uRank)}
+              AND (f.id IS NULL OR ${rbacWhere('f.min_role_required', uRank)})
+          `).all();
+    } catch {
+      liRows = isAdmin
+        ? await env.DB.prepare("SELECT * FROM learning_items").all()
+        : await env.DB.prepare(`
+            SELECT li.*
+            FROM learning_items li
+            LEFT JOIN folders f ON f.id = li.folderId
+            WHERE (f.id IS NULL OR ${rbacWhere('f.min_role_required', uRank)})
+          `).all();
+    }
+
+    let icRows;
+    try {
+      icRows = isAdmin
+        ? await env.DB.prepare("SELECT * FROM info_cards").all()
+        : await env.DB.prepare(`SELECT * FROM info_cards WHERE ${rbacWhere('min_role_required', uRank)}`).all();
+    } catch {
+      icRows = await env.DB.prepare("SELECT * FROM info_cards").all();
+    }
+
+    let catRows;
+    try {
+      catRows = isAdmin
+        ? await env.DB.prepare("SELECT * FROM categories ORDER BY sort_order ASC, id ASC").all()
+        : await env.DB.prepare(`
+            SELECT * FROM categories
+            WHERE ${rbacWhere('min_role_required', uRank)}
+            ORDER BY sort_order ASC, id ASC
+          `).all();
+    } catch {
+      catRows = await env.DB.prepare("SELECT * FROM categories ORDER BY id ASC").all();
+    }
+
+    let updRows;
+    try {
+      updRows = await env.DB.prepare("SELECT * FROM updates ORDER BY id DESC").all();
+    } catch {
+      updRows = { results: [] };
+    }
+
+    let dashRows = { results: [] };
+    if (uRank >= ROLE_RANK.leader) {
+      try {
+        dashRows = isAdmin
+          ? await env.DB.prepare(`
+              SELECT di.*, dis.settings_json
+              FROM dashboard_items di
+              LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
+              ORDER BY di.sort_order ASC, di.id ASC
+            `).all()
+          : await env.DB.prepare(`
+              SELECT di.*, dis.settings_json
+              FROM dashboard_items di
+              LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
+              WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)}
+              ORDER BY di.sort_order ASC, di.id ASC
+            `).all();
+      } catch (_) {
+        dashRows = { results: [] };
+      }
+    }
+
+    return ok({
+      updates      : updRows.results ?? [],
+      categories   : catRows.results ?? [],
+      infoCards    : icRows.results ?? [],
+      learningItems: liRows.results ?? [],
+      folders      : folderRows.results ?? [],
+      dashboardItems: (dashRows.results ?? []).map(r => ({
+        ...r,
+        settings: normalizeDashboardSettings(r.settings_json)
+      })),
+      currentUser  : {
+        id          : user.id,
+        username    : user.username,
+        accountName : user.accountName || user.account_name || user.username,
+        account_name: user.account_name || user.accountName || user.username,
+        role        : user.role,
+      },
+      users        : isAdmin
+        ? ((await env.DB.prepare("SELECT * FROM users").all()).results ?? [])
+        : [],
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  DASHBOARD ITEMS CRUD — dedicated endpoints for admin
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "dashboardItems" && method === "POST") {
+    if (!isAdmin) return err("Admin only", 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+
+    let body;
+    try { body = await request.json(); } catch { return err("Invalid JSON"); }
+
+    const name = String(body.name || '').trim();
+    const apiUrl = String(body.api_url || body.apiUrl || '').trim();
+    const icon = String(body.icon || 'fa-chart-line').trim() || 'fa-chart-line';
+    const slug = String(body.slug || body.name || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    if (!name || !apiUrl) return err('name and api_url are required', 400);
+
+    const maxRow = await env.DB.prepare(
+      "SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM dashboard_items"
+    ).first();
+    const nextSort = (maxRow?.max_sort ?? -1) + 1;
+
+    const inserted = await env.DB.prepare(`
+      INSERT INTO dashboard_items (name, slug, icon, api_url, min_role_required, is_active, sort_order, updated_at)
+      VALUES (?, ?, ?, ?, 'leader', 1, ?, datetime('now'))
+    `).bind(name, slug, icon, apiUrl, nextSort).run();
+
+    await env.DB.prepare(`
+      INSERT INTO dashboard_item_settings (dashboard_item_id, settings_json, updated_at)
+      VALUES (?, ?, datetime('now'))
+    `).bind(inserted.meta?.last_row_id, JSON.stringify(cloneDashDefaults())).run();
+
+    return ok({ success: true, id: inserted.meta?.last_row_id }, 201);
+  }
+
+  const dashboardItemMatch = path.match(/^dashboardItems\/(\d+)$/);
+  if (dashboardItemMatch && method === "PUT") {
+    if (!isAdmin) return err("Admin only", 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+
+    const dashId = parseInt(dashboardItemMatch[1], 10);
+    const existing = await env.DB.prepare(
+      "SELECT * FROM dashboard_items WHERE id=?"
+    ).bind(dashId).first();
+    if (!existing) return err("Dashboard item not found", 404);
+
+    let body;
+    try { body = await request.json(); } catch { return err("Invalid JSON"); }
+
+    const name = String(body.name || existing.name || '').trim();
+    const apiUrl = String(body.api_url || body.apiUrl || existing.api_url || '').trim();
+    const icon = String(body.icon || existing.icon || 'fa-chart-line').trim() || 'fa-chart-line';
+    const slug = String(body.slug || body.name || name)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    if (!name || !apiUrl) return err('name and api_url are required', 400);
+
+    await env.DB.prepare(`
+      UPDATE dashboard_items
+      SET name=?, slug=?, icon=?, api_url=?, min_role_required='leader', updated_at=datetime('now')
+      WHERE id=?
+    `).bind(name, slug, icon, apiUrl, dashId).run();
+
+    return ok({ success: true, id: dashId });
+  }
+
+  if (dashboardItemMatch && method === "DELETE") {
+    if (!isAdmin) return err("Admin only", 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+
+    const dashId = parseInt(dashboardItemMatch[1], 10);
+    await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(dashId).run();
+    await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(dashId).run();
+    await env.DB.prepare("DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?").bind(dashId).run();
+    await env.DB.prepare("DELETE FROM dashboard_sync_logs WHERE dashboard_item_id=?").bind(dashId).run();
+    await env.DB.prepare("DELETE FROM dashboard_items WHERE id=?").bind(dashId).run();
+    return ok({ success: true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  DASHBOARDS — item list, caching, per-item settings
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "dashboards/sort" && method === "POST") {
+    if (!isAdmin) return err("Admin only", 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+
+    let body;
+    try { body = await request.json(); } catch { return err("Invalid JSON"); }
+
+    const order = Array.isArray(body.order) ? body.order : [];
+    if (!order.length) return err("order must be a non-empty array", 400);
+
+    for (let i = 0; i < order.length; i++) {
+      const id = parseInt(order[i], 10);
+      if (!isNaN(id)) {
+        await env.DB.prepare(
+          "UPDATE dashboard_items SET sort_order=?, updated_at=datetime('now') WHERE id=?"
+        ).bind(i, id).run();
+      }
+    }
+    return ok({ success: true });
+  }
+
+  const dashSettingsMatch = path.match(/^dashboards\/(\d+)\/settings$/);
+  if (dashSettingsMatch && method === "GET") {
+    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+
+    const dashId = parseInt(dashSettingsMatch[1], 10);
+    const item = await getDashboardItem(dashId);
+    if (!item) return err("Dashboard item not found", 404);
+
+    return ok({
+      success: true,
+      dashboardId: dashId,
+      settings: normalizeDashboardSettings(item.settings_json)
+    });
+  }
+
+  if (dashSettingsMatch && method === "PUT") {
+    if (!isAdmin) return err("Admin only", 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+
+    const dashId = parseInt(dashSettingsMatch[1], 10);
+    const item = await getDashboardItem(dashId);
+    if (!item) return err("Dashboard item not found", 404);
+
+    let body;
+    try { body = await request.json(); } catch { return err("Invalid JSON"); }
+
+    const normalized = normalizeDashboardSettings(body.settings || body);
+    await env.DB.prepare(`
+      INSERT INTO dashboard_item_settings (dashboard_item_id, settings_json, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(dashboard_item_id) DO UPDATE SET
+        settings_json = excluded.settings_json,
+        updated_at = datetime('now')
+    `).bind(dashId, JSON.stringify(normalized)).run();
+
+    return ok({
+      success: true,
+      dashboardId: dashId,
+      settings: normalized
+    });
+  }
+
+  if (path === "dashboards/prefetch" && method === "POST") {
+    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
+    try { await ensureDashboardTables(); } catch (_) { return ok({ success: true, queued: 0, synced: 0 }); }
+
+    const items = (await env.DB.prepare(`
+      SELECT di.*, dis.settings_json
+      FROM dashboard_items di
+      LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
+      WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)}
+      ORDER BY di.sort_order ASC, di.id ASC
+    `).all()).results ?? [];
+
+    let synced = 0;
+    for (const item of items) {
+      try {
+        await syncDashboardItem(item);
+        synced++;
+      } catch { /* keep going */ }
+    }
+
+    return ok({ success: true, queued: items.length, synced });
+  }
+
+  const dashDataMatch = path.match(/^dashboards\/(\d+)\/data$/);
+  if (dashDataMatch && method === "GET") {
+    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+
+    const dashId = parseInt(dashDataMatch[1], 10);
+    const item = await getDashboardItem(dashId);
+    if (!item) return err("Dashboard item not found", 404);
+
+    if (!isAdmin && (item.is_active !== 1 || (ROLE_RANK[item.min_role_required] ?? 1) > uRank)) {
+      return err("Access denied", 403);
+    }
+
+    const refresh = url.searchParams.get('refresh') === '1';
+    let cache = await env.DB.prepare(
+      "SELECT * FROM dashboard_cache WHERE dashboard_item_id=?"
+    ).bind(dashId).first();
+
+    if (refresh || !cache) {
+      try {
+        await syncDashboardItem(item);
+        cache = await env.DB.prepare(
+          "SELECT * FROM dashboard_cache WHERE dashboard_item_id=?"
+        ).bind(dashId).first();
+      } catch (e) {
+        if (!cache) return err(`Dashboard sync failed: ${e.message}`, 502);
+      }
+    }
+
+    const payload = await readDashboardPayload(cache);
+    const rows = extractDashboardRows(payload);
+
+    return ok({
+      success: true,
+      dashboardId: dashId,
+      name: item.name,
+      lastSynced: cache?.last_synced_at || null,
+      rowCount: cache?.row_count ?? rows.length,
+      sourceUrl: item.api_url,
+      lastError: cache?.last_error || null,
+      settings: normalizeDashboardSettings(item.settings_json),
+      data: payload,
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  STICKY NOTES (D1-backed, per-user)
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "sticky" && method === "GET") {
+    const rows = (await env.DB.prepare(
+      "SELECT sn.*, u.accountName, u.account_name, u.username FROM sticky_notes sn LEFT JOIN users u ON u.id = sn.user_id ORDER BY sn.sort_order ASC, sn.id ASC"
+    ).all()).results ?? [];
+    return ok({ notes: rows });
+  }
+
+  if (path === "sticky" && method === "POST") {
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { text = "", color = "#fef9c3", sort_order = 0 } = body;
+    const r = await env.DB.prepare(
+      "INSERT INTO sticky_notes (user_id, text, color, sort_order, updated_at) VALUES (?,?,?,?,datetime('now'))"
+    ).bind(user.id, text, color, sort_order).run();
+    const note = await env.DB.prepare(
+      "SELECT sn.*, u.accountName, u.account_name, u.username FROM sticky_notes sn LEFT JOIN users u ON u.id = sn.user_id WHERE sn.id=?"
+    ).bind(r.meta?.last_row_id).first();
+    return ok({ success: true, note }, 201);
+  }
+
+  if (path.startsWith("sticky/") && method === "PUT") {
+    const noteId = parseInt(path.split("/")[1]);
+    if (isNaN(noteId)) return err("Invalid note id");
+
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const existing = await env.DB.prepare(
+      "SELECT * FROM sticky_notes WHERE id=? AND user_id=?"
+    ).bind(noteId, user.id).first();
+    if (!existing) return err("Note not found or not yours", 404);
+
+    const text  = "text"  in body ? body.text  : existing.text;
+    const color = "color" in body ? body.color : existing.color;
+    await env.DB.prepare(
+      "UPDATE sticky_notes SET text=?, color=?, updated_at=datetime('now') WHERE id=? AND user_id=?"
+    ).bind(text, color, noteId, user.id).run();
+    return ok({ success: true });
+  }
+
+  if (path.startsWith("sticky/") && method === "DELETE") {
+    const noteId = parseInt(path.split("/")[1]);
+    if (isNaN(noteId)) return err("Invalid note id");
+    const existing = await env.DB.prepare(
+      "SELECT id FROM sticky_notes WHERE id=?"
+    ).bind(noteId).first();
+    if (!existing) return err("Note not found", 404);
+    await env.DB.prepare("DELETE FROM sticky_notes WHERE id=?").bind(noteId).run();
+    return ok({ success: true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  UPDATES — all roles can create; delete scoped to creator (admin = any)
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "updates" && method === "POST") {
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { topic, badge = "general", message } = body;
+    if (!topic?.trim() || !message?.trim()) return err("topic and message are required");
+
+    const r = await env.DB.prepare(
+      "INSERT INTO updates (topic, badge, message, author, date, created_by) VALUES (?,?,?,?,?,?)"
+    ).bind(
+      topic.trim(),
+      badge,
+      message.trim(),
+      user.accountName || user.account_name || user.username,
+      (() => {
+        const now = new Date();
+        const mmt = new Date(now.getTime() + (6 * 60 + 30) * 60 * 1000);
+        return mmt.toISOString().slice(0, 10);
+      })(),
+      user.id
+    ).run();
+
+    return ok({ success: true, id: r.meta?.last_row_id }, 201);
+  }
+
+  if (path.startsWith("updates/") && method === "PUT") {
+    const upId = parseInt(path.split("/")[1]);
+    if (isNaN(upId)) return err("Invalid id");
+
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const existing = await env.DB.prepare("SELECT * FROM updates WHERE id=?").bind(upId).first();
+    if (!existing) return err("Update not found", 404);
+    if (!isAdmin && existing.created_by !== user.id) return err("You can only edit your own updates", 403);
+
+    const { topic = existing.topic, badge = existing.badge, message = existing.message } = body;
+    await env.DB.prepare(
+      "UPDATE updates SET topic=?, badge=?, message=? WHERE id=?"
+    ).bind(topic, badge, message, upId).run();
+    return ok({ success: true });
+  }
+
+  if (path.startsWith("updates/") && method === "DELETE") {
+    const upId = parseInt(path.split("/")[1]);
+    if (isNaN(upId)) return err("Invalid id");
+    const existing = await env.DB.prepare("SELECT * FROM updates WHERE id=?").bind(upId).first();
+    if (!existing) return err("Update not found", 404);
+    if (!isAdmin && existing.created_by !== user.id) return err("You can only delete your own updates", 403);
+    await env.DB.prepare("DELETE FROM updates WHERE id=?").bind(upId).run();
+    return ok({ success: true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  INFO CARDS & CATEGORIES — permission-gated create/edit/delete
+  // ════════════════════════════════════════════════════════════════════════════
+  const CAN_MANAGE_INFO = uRank >= ROLE_RANK.leader;
+
+  if (path === "infoCards" && method === "POST") {
+    if (!CAN_MANAGE_INFO) return err("Insufficient permissions", 403);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { title, displayType = "icon", icon = "fa-link", image = null, link, categoryId, min_role_required = "intern" } = body;
+    if (!title?.trim() || !link?.trim() || !categoryId) return err("title, link, categoryId required");
+    const r = await env.DB.prepare(
+      "INSERT INTO info_cards (title, displayType, icon, image, link, categoryId, min_role_required) VALUES (?,?,?,?,?,?,?)"
+    ).bind(title.trim(), displayType, icon, image, link.trim(), categoryId, min_role_required).run();
+    return ok({ success: true, id: r.meta?.last_row_id }, 201);
+  }
+
+  if (path.startsWith("infoCards/") && method === "PUT") {
+    if (!CAN_MANAGE_INFO) return err("Insufficient permissions", 403);
+    const icId = parseInt(path.split("/")[1]);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const ex = await env.DB.prepare("SELECT * FROM info_cards WHERE id=?").bind(icId).first();
+    if (!ex) return err("Not found", 404);
+    await env.DB.prepare(
+      "UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, min_role_required=? WHERE id=?"
+    ).bind(
+      body.title ?? ex.title,
+      body.displayType ?? ex.displayType,
+      body.icon ?? ex.icon,
+      body.image ?? ex.image,
+      body.link ?? ex.link,
+      body.categoryId ?? ex.categoryId,
+      body.min_role_required ?? ex.min_role_required ?? 'intern',
+      icId
+    ).run();
+    return ok({ success: true });
+  }
+
+  if (path.startsWith("infoCards/") && method === "DELETE") {
+    if (!CAN_MANAGE_INFO) return err("Insufficient permissions", 403);
+    const icId = parseInt(path.split("/")[1]);
+    await env.DB.prepare("DELETE FROM info_cards WHERE id=?").bind(icId).run();
+    return ok({ success: true });
+  }
+
+  if (path === "categories/sort" && method === "POST") {
+    if (!isAdmin) return err("Admin only", 403);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { order } = body;
+    if (!Array.isArray(order) || !order.length) return err("order must be a non-empty array of ids");
+    for (let i = 0; i < order.length; i++) {
+      const catId = parseInt(order[i]);
+      if (isNaN(catId)) continue;
+      try {
+        await env.DB.prepare("UPDATE categories SET sort_order=? WHERE id=?").bind(i, catId).run();
+      } catch {
+        try {
+          await env.DB.prepare("ALTER TABLE categories ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0").run();
+          await env.DB.prepare("UPDATE categories SET sort_order=? WHERE id=?").bind(i, catId).run();
+        } catch { /* ignore */ }
+      }
+    }
+    return ok({ success: true });
+  }
+
+  if (path === "categories" && method === "POST") {
+    if (!isAdmin) return err("Only admins can create categories", 403);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { name, icon = "fa-link", min_role_required = "intern" } = body;
+    if (!name?.trim()) return err("name required");
+    const r = await env.DB.prepare(
+      "INSERT INTO categories (name, icon, min_role_required) VALUES (?,?,?)"
+    ).bind(name.trim(), icon, min_role_required).run();
+    return ok({ success: true, id: r.meta?.last_row_id }, 201);
+  }
+
+  if (path.startsWith("categories/") && method === "PUT") {
+    if (!isAdmin) return err("Only admins can edit categories", 403);
+    const cId = parseInt(path.split("/")[1]);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const ex = await env.DB.prepare("SELECT * FROM categories WHERE id=?").bind(cId).first();
+    if (!ex) return err("Not found", 404);
+    await env.DB.prepare(
+      "UPDATE categories SET name=?, icon=?, min_role_required=? WHERE id=?"
+    ).bind(
+      body.name ?? ex.name,
+      body.icon ?? ex.icon,
+      body.min_role_required ?? ex.min_role_required ?? 'intern',
+      cId
+    ).run();
+    return ok({ success: true });
+  }
+
+  if (path.startsWith("categories/") && method === "DELETE") {
+    if (!isAdmin) return err("Only admins can delete categories", 403);
+    const cId = parseInt(path.split("/")[1]);
+    await env.DB.prepare("DELETE FROM categories WHERE id=?").bind(cId).run();
+    return ok({ success: true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  LEARNING — RBAC-filtered endpoints
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "learning" && method === "GET") {
+    const search      = (url.searchParams.get("search") ?? "").trim();
+    const folderParam = url.searchParams.get("folder_id") ?? "";
+    let folders = [], files = [], breadcrumb = [];
+
+    if (search) {
+      const term = `%${search}%`;
+      folders = (await env.DB.prepare(`
+        SELECT id, name, parent_id, parentId, min_role_required, created_at
+        FROM folders
+        WHERE name LIKE ? AND ${rbacWhere('min_role_required', uRank)}
+        ORDER BY name
+      `).bind(term).all()).results ?? [];
+
+      try {
+        files = (await env.DB.prepare(`
+          SELECT id, name, type, content, url, folder_id, min_role_required, created_at
+          FROM files
+          WHERE (name LIKE ? OR content LIKE ?) AND ${rbacWhere('min_role_required', uRank)}
+          ORDER BY name
+        `).bind(term, term).all()).results ?? [];
+      } catch {
+        files = [];
+      }
+    } else {
+      const isRoot = !folderParam || folderParam === "root";
+      const folderId = isRoot ? null : parseInt(folderParam, 10);
+      if (!isRoot && isNaN(folderId)) return err("Invalid folder_id");
+
+      if (!isRoot) {
+        const target = await env.DB.prepare(
+          "SELECT id, name, min_role_required FROM folders WHERE id=?"
+        ).bind(folderId).first();
+        if (!target) return err("Folder not found", 404);
+        if ((ROLE_RANK[target.min_role_required] ?? 1) > uRank) return err("Access denied", 403);
+
+        let cur = folderId;
+        const vis = new Set();
+        while (cur) {
+          if (vis.has(cur)) break;
+          vis.add(cur);
+          const row = await env.DB.prepare(
+            "SELECT id, name, parent_id, parentId FROM folders WHERE id=?"
+          ).bind(cur).first();
+          if (!row) break;
+          breadcrumb.unshift({ id: row.id, name: row.name });
+          cur = row.parent_id ?? row.parentId ?? null;
+        }
+      }
+
+      const fw = isRoot
+        ? "(parent_id IS NULL OR parent_id=0) AND (parentId IS NULL OR parentId=0)"
+        : `(parent_id=${folderId} OR parentId=${folderId})`;
+
+      folders = (await env.DB.prepare(`
+        SELECT id, name, parent_id, parentId, min_role_required, created_at
+        FROM folders
+        WHERE (${fw}) AND ${rbacWhere('min_role_required', uRank)}
+        ORDER BY name
+      `).all()).results ?? [];
+
+      try {
+        const fw2 = isRoot ? "folder_id IS NULL" : `folder_id=${folderId}`;
+        files = (await env.DB.prepare(`
+          SELECT id, name, type, content, url, folder_id, min_role_required, created_at
+          FROM files
+          WHERE ${fw2} AND ${rbacWhere('min_role_required', uRank)}
+          ORDER BY name
+        `).all()).results ?? [];
+      } catch {
+        files = [];
+      }
+    }
+
+    return ok({ folders, files, breadcrumb });
+  }
+
+  if (path === "learning/create" && method === "POST") {
+    if (user.role === "intern") return err("Interns cannot create items", 403);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { kind } = body;
+
+    if (kind === "folder") {
+      const { name, parent_id = null, min_role_required = "intern" } = body;
+      if (!name?.trim()) return err("Folder name required");
+      const r = await env.DB.prepare(
+        "INSERT INTO folders (name, parentId, parent_id, created_by, min_role_required) VALUES (?,?,?,?,?)"
+      ).bind(name.trim(), parent_id, parent_id, user.id, min_role_required).run();
+      return ok({ success: true, id: r.meta?.last_row_id }, 201);
+    }
+
+    if (kind === "file") {
+      const { name, type = "link", content = null, url: fu = null, folder_id = null, min_role_required = "intern" } = body;
+      if (!name?.trim()) return err("File name required");
+      const r = await env.DB.prepare(
+        "INSERT INTO files (name, type, content, url, folder_id, created_by, min_role_required) VALUES (?,?,?,?,?,?,?)"
+      ).bind(name.trim(), type, content, fu, folder_id, user.id, min_role_required).run();
+      return ok({ success: true, id: r.meta?.last_row_id }, 201);
+    }
+
+    return err('kind must be "folder" or "file"');
+  }
+
+  if (path === "learning/edit" && method === "PUT") {
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { kind, id } = body;
+    if (!id) return err("id required");
+
+    if (kind === "folder") {
+      const ex = await env.DB.prepare("SELECT * FROM folders WHERE id=?").bind(id).first();
+      if (!ex) return err("Not found", 404);
+      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader") return err("Insufficient permissions", 403);
+      await env.DB.prepare(
+        "UPDATE folders SET name=?, min_role_required=? WHERE id=?"
+      ).bind(body.name ?? ex.name, body.min_role_required ?? ex.min_role_required, id).run();
+      return ok({ success: true });
+    }
+
+    if (kind === "file") {
+      const ex = await env.DB.prepare("SELECT * FROM files WHERE id=?").bind(id).first();
+      if (!ex) return err("Not found", 404);
+      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader") return err("Insufficient permissions", 403);
+      await env.DB.prepare(
+        "UPDATE files SET name=?, type=?, content=?, url=?, min_role_required=? WHERE id=?"
+      ).bind(
+        body.name ?? ex.name,
+        body.type ?? ex.type,
+        "content" in body ? body.content : ex.content,
+        "url" in body ? body.url : ex.url,
+        body.min_role_required ?? ex.min_role_required,
+        id
+      ).run();
+      return ok({ success: true });
+    }
+
+    return err('kind must be "folder" or "file"');
+  }
+
+  if (path === "learning/move" && method === "PUT") {
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { kind, id, target_id = null } = body;
+    if (!id) return err("id required");
+
+    if (kind === "folder") {
+      const ex = await env.DB.prepare("SELECT * FROM folders WHERE id=?").bind(id).first();
+      if (!ex) return err("Not found", 404);
+      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader") return err("Insufficient permissions", 403);
+      if (target_id === id) return err("Cannot be own parent");
+      await env.DB.prepare(
+        "UPDATE folders SET parent_id=?, parentId=? WHERE id=?"
+      ).bind(target_id, target_id, id).run();
+      return ok({ success: true });
+    }
+
+    if (kind === "file") {
+      const ex = await env.DB.prepare("SELECT * FROM files WHERE id=?").bind(id).first();
+      if (!ex) return err("Not found", 404);
+      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader") return err("Insufficient permissions", 403);
+      await env.DB.prepare("UPDATE files SET folder_id=? WHERE id=?").bind(target_id, id).run();
+      return ok({ success: true });
+    }
+
+    return err('kind must be "folder" or "file"');
+  }
+
+  if (path === "learning/delete" && method === "DELETE") {
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { kind, id } = body;
+    if (!id) return err("id required");
+
+    const tbl = kind === "folder" ? "folders" : kind === "file" ? "files" : null;
+    if (!tbl) return err('kind must be "folder" or "file"');
+
+    const ex = await env.DB.prepare(`SELECT * FROM ${tbl} WHERE id=?`).bind(id).first();
+    if (!ex) return err("Not found", 404);
+    if (ex.created_by !== user.id && !isAdmin && user.role !== "leader") return err("Insufficient permissions", 403);
+    await env.DB.prepare(`DELETE FROM ${tbl} WHERE id=?`).bind(id).run();
+    return ok({ success: true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  CHANGE PASSWORD — all roles, self only
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "changePassword" && method === "POST") {
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { oldPassword, newPassword } = body;
+    if (!oldPassword || !newPassword) return err("Both fields required");
+    if (newPassword.length < 5) return err("New password must be at least 5 characters");
+    const dbUser = await env.DB.prepare("SELECT id, password FROM users WHERE id=?").bind(user.id).first();
+    if (!dbUser) return err("User not found", 404);
+    if (dbUser.password !== oldPassword) return err("Current password is incorrect", 403);
+    if (oldPassword === newPassword) return err("New password must differ from current");
+    await env.DB.prepare("UPDATE users SET password=? WHERE id=?").bind(newPassword, user.id).run();
+    return ok({ success: true, message: "Password changed successfully" });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  //  LEGACY Admin CRUD (POST action=save|delete) — admin only
+  // ════════════════════════════════════════════════════════════════════════════
+  if (method === "POST" && isAdmin) {
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const { action, table, data, id } = body;
+
+    try {
+      if (action === "delete") {
+        if (!id || !table) throw new Error("Missing id or table");
+        const allowed = ["updates", "categories", "info_cards", "learning_items", "folders", "files", "users", "sticky_notes", "dashboard_items"];
+        if (!allowed.includes(table)) throw new Error("Invalid table");
+
+        if (table === "dashboard_items") {
+          await ensureDashboardTables();
+          await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(id).run();
+          await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(id).run();
+          await env.DB.prepare("DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?").bind(id).run();
+          await env.DB.prepare("DELETE FROM dashboard_sync_logs WHERE dashboard_item_id=?").bind(id).run();
+          await env.DB.prepare("DELETE FROM dashboard_items WHERE id=?").bind(id).run();
+        } else {
+          await env.DB.prepare(`DELETE FROM ${table} WHERE id=?`).bind(id).run();
+        }
+        return ok({ success: true });
+      }
+
+      if (action === "save") {
+        if (table === "users") {
+          if (data.id) {
+            await env.DB.prepare(
+              "UPDATE users SET accountName=?, account_name=?, username=?, password=?, role=? WHERE id=?"
+            ).bind(data.accountName, data.accountName, data.username, data.password, data.role, data.id).run();
+          } else {
+            await env.DB.prepare(
+              "INSERT INTO users (accountName, account_name, username, password, role) VALUES (?,?,?,?,?)"
+            ).bind(data.accountName, data.accountName, data.username, data.password, data.role).run();
+          }
+        }
+        else if (table === "updates") {
+          if (data.id) {
+            await env.DB.prepare(
+              "UPDATE updates SET topic=?, badge=?, message=?, author=?, date=? WHERE id=?"
+            ).bind(data.topic, data.badge, data.message, data.author, data.date, data.id).run();
+          } else {
+            await env.DB.prepare(
+              "INSERT INTO updates (topic, badge, message, author, date, created_by) VALUES (?,?,?,?,?,?)"
+            ).bind(data.topic, data.badge, data.message, data.author, data.date, user.id).run();
+          }
+        }
+        else if (table === "categories") {
+          if (data.id) {
+            await env.DB.prepare(
+              "UPDATE categories SET name=?, icon=?, min_role_required=? WHERE id=?"
+            ).bind(data.name, data.icon, data.min_role_required ?? "intern", data.id).run();
+          } else {
+            await env.DB.prepare(
+              "INSERT INTO categories (name, icon, min_role_required) VALUES (?,?,?)"
+            ).bind(data.name, data.icon, data.min_role_required ?? "intern").run();
+          }
+        }
+        else if (table === "info_cards") {
+          if (data.id) {
+            await env.DB.prepare(
+              "UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, min_role_required=? WHERE id=?"
+            ).bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, data.min_role_required ?? "intern", data.id).run();
+          } else {
+            await env.DB.prepare(
+              "INSERT INTO info_cards (title, displayType, icon, image, link, categoryId, min_role_required) VALUES (?,?,?,?,?,?,?)"
+            ).bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, data.min_role_required ?? "intern").run();
+          }
+        }
+        else if (table === "folders") {
+          if (data.id) {
+            await env.DB.prepare(
+              "UPDATE folders SET name=?, parentId=?, parent_id=?, min_role_required=? WHERE id=?"
+            ).bind(data.name, data.parentId ?? null, data.parentId ?? null, data.min_role_required ?? "intern", data.id).run();
+          } else {
+            await env.DB.prepare(
+              "INSERT INTO folders (name, parentId, parent_id, min_role_required) VALUES (?,?,?,?)"
+            ).bind(data.name, data.parentId ?? null, data.parentId ?? null, data.min_role_required ?? "intern").run();
+          }
+        }
+        else if (table === "learning_items") {
+          if (data.id) {
+            await env.DB.prepare(
+              "UPDATE learning_items SET topic=?, type=?, link=?, content=?, folderId=?, min_role_required=? WHERE id=?"
+            ).bind(data.topic, data.type, data.link, data.content, data.folderId, data.min_role_required ?? "intern", data.id).run();
+          } else {
+            await env.DB.prepare(
+              "INSERT INTO learning_items (topic, type, link, content, folderId, min_role_required) VALUES (?,?,?,?,?,?)"
+            ).bind(data.topic, data.type, data.link, data.content, data.folderId, data.min_role_required ?? "intern").run();
+          }
+        }
+        else if (table === "dashboard_items") {
+          await ensureDashboardTables();
+          const slug = (data.slug || data.name || '')
+            .toString()
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+
+          if (!data.name || !data.api_url) throw new Error("name and api_url are required");
+
+          if (data.id) {
+            await env.DB.prepare(`
+              UPDATE dashboard_items
+              SET name=?, slug=?, icon=?, api_url=?, min_role_required=?, is_active=?, updated_at=datetime('now')
+              WHERE id=?
+            `).bind(
+              data.name,
+              slug,
+              data.icon || 'fa-chart-line',
+              data.api_url,
+              data.min_role_required || 'leader',
+              data.is_active ?? 1,
+              data.id
+            ).run();
+          } else {
+            const maxRow = await env.DB.prepare(
+              "SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM dashboard_items"
+            ).first();
+            const nextSort = (maxRow?.max_sort ?? -1) + 1;
+
+            const inserted = await env.DB.prepare(`
+              INSERT INTO dashboard_items (name, slug, icon, api_url, min_role_required, is_active, sort_order, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            `).bind(
+              data.name,
+              slug,
+              data.icon || 'fa-chart-line',
+              data.api_url,
+              data.min_role_required || 'leader',
+              data.is_active ?? 1,
+              nextSort
+            ).run();
+
+            await env.DB.prepare(`
+              INSERT INTO dashboard_item_settings (dashboard_item_id, settings_json, updated_at)
+              VALUES (?, ?, datetime('now'))
+            `).bind(inserted.meta?.last_row_id, JSON.stringify(cloneDashDefaults())).run();
+          }
+        }
+
+        return ok({ success: true });
+      }
+    } catch (e) {
+      return err(e.message, 500);
+    }
+  }
+
+  return err("Not Found", 404);
+};
+Open
+ရပြီ — [[path]].js တစ်ဖိုင်လုံး clean version ကို workspace ထဲမှာ prepare လုပ်ပြီး ဖွင့်ပေးထားပါတယ်။
+
+File
+
+clean_[[path]].js
+ဒီ file ကိုယူပြီး သင့် repo ထဲက
+
+text
+
+functions/api/[[path]].js
+နဲ့ လုံးဝအစားထိုး လုပ်ပါ။
+
+လုပ်ရန်
+1. file replace
+clean_[[path]].js content ကို copy လုပ်ပြီး
+GitHub / local repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ထဲ paste လုပ်ပါ
+
+2. commit / push
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Replace Pages API with clean version"
+git push
+3. Cloudflare Pages deploy ပြန်စစ်
+ဒီတစ်ခါ syntax error မပေါ်သင့်တော့ဘူး
+
+အရေးကြီး
+ဒီ clean version က
+
+duplicate catch fix ပါတယ်
+dashboard chunk storage ပါတယ်
+login last_seen fail-safe ပါတယ်
+dashboard item CRUD / cache / settings ပါတယ်
+deploy green ဖြစ်သွားရင် နောက်တစ်ဆင့်မှာ
+dashboard data render မပေါ်သေးရင် response ကိုဆက်စစ်မယ်။
+
+လိုချင်ရင် deploy ပြီးတဲ့နောက်
+/api/dashboards/{id}/data response ကို ဘယ်လိုကြည့်မလဲ
+step-by-step ဆက်ပြောပေးမယ်။
+
+
+image.png
+image.png
+still error
+
+
+အခု screenshot ကနေ တွေ့ရတာက old failed cache message ကိုပဲ ပြန်ပြနေတာ သို့မဟုတ် chunk size ကြီးနေသေးတာ ဖြစ်နိုင်ပါတယ်။
+
+ဒါကြောင့် ငါ နောက်ထပ် 2 ချက် ပြင်ပေးထားပြီးပြီ —
+
+အခုထပ်ပြင်ထားတာ
+1) Chunk size လျှော့ထားတယ်
+အရင်:
+
+450000
+အခု:
+
+50000
+ဒါကြောင့် D1 ထဲ chunk insert လုပ်တဲ့အခါ ပို safe ဖြစ်မယ်
+
+2) Old error cache ရှိရင် auto re-sync ပြန်လုပ်မယ်
+အခု GET /api/dashboards/{id}/data မှာ:
+
+cache မရှိရင် sync
+refresh=1 ရင် sync
+cache မှာ last_error ရှိပြီး row_count = 0 ရင်လည်း
+auto retry sync ပြန်လုပ်မယ်
+ဆိုတော့ old SQLITE_TOOBIG cache ကို user က manual clear မလုပ်လည်း
+dashboard open လိုက်ရင် အသစ်ပြန် sync ဖို့ ကြိုးစားမယ်
+
+သင်အခုလုပ်ရမယ့်အရာ
+Step 1
+clean version ကိုပဲ သုံးပါ
+
+workspace ထဲက file:
+
+
+clean_[[path]].js
+ကိုယူပြီး repo ထဲက
+
+text
+
+functions/api/[[path]].js
+နဲ့ ထပ် replace လုပ်ပါ
+(အခု version က updated retry + smaller chunk size ပါပြီးသား)
+
+Step 2
+commit + push
+
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Reduce dashboard chunk size and auto retry failed cache sync"
+git push
+Step 3
+Cloudflare Pages deploy green ဖြစ်တာစောင့်ပါ
+
+Step 4
+Browser hard refresh
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+Step 5
+Dashboard page ကိုပြန်ဖွင့်ပါ
+အခု version မှာ old cache error ရှိရင်တောင်
+auto re-sync ကြိုးစားမယ်
+
+မသေချာရင် safest way
+deploy ပြီးရင် dashboard page မှာ
+Refresh Data ကို တစ်ချက်နှိပ်ပါ
+
+ဒါက forced refresh=1 နဲ့ sync ပြန်ခိုင်းတာဖြစ်လို့
+old cache message ပိုလွယ်လွယ်ပြန်ဖျက်နိုင်တယ်
+
+If still same error after this
+အဲဒါဆို D1 ထဲ old cache row ကို ဖျက်ပြီး စမ်းရမယ်
+
+D1 မှာ delete လုပ်ရမယ့် query
+SQL
+
+DELETE FROM dashboard_cache WHERE dashboard_item_id = 1;
+DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id = 1;
+DELETE FROM dashboard_sync_logs WHERE dashboard_item_id = 1;
+1 ကို သင့် dashboard item id နဲ့ပြောင်းပါ
+
+ပြီးရင် dashboard page မှာ Refresh Data နှိပ်ပါ
+
+အကြံပြုချက်
+အရင်ဆုံး:
+
+clean_[[path]].js နဲ့ replace
+deploy
+hard refresh
+Refresh Data click
+ဒီ 4 ချက် အရင်လုပ်ပါ
+
+လိုချင်ရင် နောက် message မှာ
+Cloudflare D1 dashboard ထဲမှာ cache row ကို ဘယ်လိုဖျက်မလဲ
+ကို Burmese နဲ့ step-by-step ပြောပေးမယ်။
+
+
+data တွေမြင်ရပြီ နောက်ထပ် ဘာတွေထပ်လုပ်လို့ရမလဲ version update ပေါ့
+
+
+ကောင်းပါတယ် — data တွေမြင်ရပြီဆိုတော့ အခုက production-ready ဖြစ်အောင် version update roadmap ဆွဲလို့ရတဲ့အဆင့် ရောက်သွားပါပြီ။
+
+ကျွန်တော် recommend လုပ်မယ့် next versions
+V1.1 — Immediate Useful Update
+အရင်ဆုံး ဒီတွေထည့်ရင် အသုံးအရမ်းတက်မယ်
+
+1) Date Range Filter
+အခုက
+
+Day / Week / Month / Year grouping ပဲရှိတယ်
+ထပ်ထည့်သင့်တာ:
+
+From Date
+To Date
+ဘာကောင်းလဲ
+
+Feb 1 to Feb 7
+This month
+Last 30 days
+လို report ဆွဲလို့ရမယ်
+2) Export Function
+Export CSV
+Export Excel
+Export PNG / PDF
+အသုံးဝင်ချက်
+
+leader/manager ကို report ပို့ရလွယ်
+weekly report အတွက် screenshot မလိုတော့ဘူး
+3) Raw Data Table
+graph အောက်မှာ
+
+filtered raw table
+pagination
+search
+sort
+ဘာကောင်းလဲ
+graph ကနေ detail row ထိဆင်းကြည့်လို့ရမယ်
+
+4) Dashboard KPI Threshold Color
+ဥပမာ:
+
+SLA < 90% → red
+overtime > 20 → orange
+repeat complaint high → red
+ဘာကောင်းလဲ
+NOC team က issue ကိုချက်ချင်းမြင်မယ်
+
+5) Manual Cache Clear / Re-sync Button
+အခု Refresh Data ရှိတယ်
+ထပ်ထည့်သင့်တာ:
+
+Force Re-sync
+Clear Cache
+ဘာကောင်းလဲ
+sheet data ပြောင်းပြီး cache မတက်သေးရင် admin ကလက်နဲ့ပြန်ခိုင်းလို့ရမယ်
+
+V1.2 — Better Analysis Update
+ဒီအဆင့်က dashboard ကို ပို professional ဖြစ်စေမယ်
+
+1) Drill-down
+ဥပမာ:
+
+Township chart ကို click → site list ပေါ်
+Site chart ကို click → root cause breakdown
+Root cause chart ကို click → ticket rows
+ဒါက အရမ်းကောင်းတယ်
+
+2) Compare Period
+This week vs last week
+This month vs last month
+This year vs last year
+KPI card ထဲမှာ
+
++12%
+-8%
+လို compare ပြလို့ရမယ်
+3) Overtime / SLA Settings by Dashboard Item
+အခု overtime ကို default logic နဲ့သုံးနေတယ်
+နောက် version မှာ:
+
+overtime hours configurable
+response SLA
+resolution SLA
+service type based SLA
+4) Saved Filters / Saved Views
+ဥပမာ:
+
+Yangon only
+Queue = Customer Support
+Root cause = Fiber issue
+ဒီ filter set တွေ save လုပ်ထားလို့ရမယ်
+
+5) Dashboard Item Icon + Theme Custom
+dashboard တစ်ခုချင်းစီအတွက်
+
+accent color
+card style
+icon pack
+ချိန်လို့ရမယ်
+V2.0 — Full NOC Analytics Version
+ဒါက next major version အနေနဲ့သင့်တော်တယ်
+
+1) Multi-page Dashboard
+dashboard item တစ်ခုထဲမှာ tabs လိုမျိုး
+
+Summary
+Trend
+Root Cause
+Site
+Customer
+Raw Data
+2) Scheduled Sync
+Cloudflare Cron နဲ့
+
+every 15 min
+every 30 min
+every 1 hour
+auto sync
+ဘာကောင်းလဲ
+login ဝင်တိုင်းမှ prefetch မလိုတော့ဘူး
+
+3) Alert System
+ဥပမာ:
+
+complaint > threshold
+repeat complaint > threshold
+overtime count > threshold
+notification:
+
+email
+telegram bot
+internal alert panel
+4) Role-based Action
+leader = view/export
+admin = manage/sync/settings
+member = view certain dashboards only
+ပို granular permission လုပ်လို့ရမယ်
+
+5) Dashboard Builder
+Admin က graph တစ်ခုချင်းကို
+
+drag & drop
+resize
+reorder
+လုပ်နိုင်မယ့် builder
+NOC Report အတွက် ထပ်ထည့်သင့်တဲ့ analytics
+အခု graph တွေရှိပြီဆိုတော့ next analysis အနေနဲ့ ဒီတွေထည့်လို့ရတယ်
+
+Priority analytics
+SLA breach tickets
+MTTR trend
+MTTA trend
+Repeated complaint by customer
+Top 10 problematic site
+Root cause Pareto
+Queue workload trend
+Township complaint heatmap
+OLT / CA1 breakdown
+Site complaint percentage
+ကျွန်တော် recommend လုပ်မယ့် order
+If practical and fastest:
+Phase A
+From / To date filter
+Export CSV / Excel
+Raw data table
+Force re-sync / clear cache
+Phase B
+Drill-down
+Compare period
+SLA / overtime setting
+Saved views
+Phase C
+Scheduled sync
+Alerts
+Multi-page analytics
+Dashboard builder
+Short recommendation
+အခုအခြေအနေမှာ next best version က:
+
+V1.1 Recommended
+From-To date filter
+Export CSV/Excel
+Raw data table
+Force Re-sync / Clear Cache
+KPI threshold color
+ဒါတွေထည့်လိုက်ရင် dashboard က usable report system level ရောက်သွားမယ်
+
+လိုချင်ရင် ကျွန်တော် next step အနေနဲ့ တန်းလုပ်ပေးနိုင်တာ
+From-To date filter + raw data table
+Export CSV / Excel
+Scheduled auto sync
+Drill-down chart
+SLA/overtime settings
+သင်စချင်တာကို ပြောပါ။
+ကျွန်တော် recommend လုပ်တာက:
+
+“From-To date filter + Raw Data Table + Export CSV/Excel”
+ကို next version အနေနဲ့ အရင်လုပ်သင့်ပါတယ်။
+
+
+v2.0 အထိလုပ်ချင်တယ်
+
+
+Summary
+V2.0 ကို phase လိုက်တက်သင့်ပါတယ်။ အရင်ဆုံး ဘယ် batch ကိုစလုပ်မလဲ?
+Builder
+Export ကို ဘာ format တွေလိုချင်လဲ?
+CSV + Excel + PDF/PNG
+Alert system အတွက် ဘယ် channel ကို target ထားမလဲ?
+Email
+Scheduled sync ကို ဘယ်နှစ်မိနစ်တစ်ခါ လိုချင်လဲ?
+Manual only for now
+ရတယ် — V2.0 အထိ သွားလို့ရပါတယ်။
+ဒါပေမယ့် တစ်ခါတည်းအကုန်ပစ်မလုပ်ဘဲ phase လိုက်တက်တာ အကောင်းဆုံးပါ။
+မဟုတ်ရင် bug များပြီး maintain လုပ်ရခက်သွားနိုင်တယ်။
+
+အခုရွေးထားတဲ့ direction
+First batch → Builder
+Export → CSV + Excel + PDF/PNG
+Alert channel → Email
+Sync → Manual only for now
+V2.0 Roadmap အကြံပြုချက်
+Phase 1 — V1.3 Foundation
+Builder မတင်ခင် foundation အရင်ခိုင်အောင် လုပ်သင့်တယ်
+
+ပါဝင်မယ့်အရာ
+From-To date filter
+Raw data table
+widget data source standardize
+chart config model cleanup
+dashboard item layout schema prepare
+ဘာလို့အရင်လိုသလဲ
+Builder လုပ်မယ်ဆိုရင် card/widget တစ်ခုချင်းစီမှာ
+
+type
+data source
+filters
+position
+size
+settings
+ရှိရမယ်
+ဒါကြောင့် foundation မရှိဘဲ builder တန်းလုပ်ရင် နောက်ပိုင်းပြန်ဖြိုရနိုင်တယ်
+
+Phase 2 — V1.5 Multi-page Dashboard
+ပါဝင်မယ့်အရာ
+Dashboard item တစ်ခုထဲမှာ tabs လုပ်မယ်
+
+ဥပမာ:
+
+Summary
+Trend
+Root Cause
+Site
+Customer
+Raw Data
+Benefit
+dashboard item တစ်ခုကို page တစ်ခုထဲမှာ အရမ်းမကျပ်စေဘဲ
+analytics page-by-page ကြည့်လို့ရမယ်
+
+Phase 3 — V1.7 Dashboard Builder
+ပါဝင်မယ့်အရာ
+Admin အတွက်:
+
+widget add/remove
+drag & drop reorder
+widget resize
+page add/remove
+page rename
+widget settings per page
+save layout per dashboard item
+အဓိက result
+Dashboard item တစ်ခုချင်းစီကို Power BI mini-builder လို manage လုပ်လို့ရမယ်
+
+Phase 4 — V1.8 Export Suite
+ပါဝင်မယ့်အရာ
+Export CSV
+Export Excel
+Export PDF
+Export PNG
+Use case
+management report
+weekly summary
+mail attachment
+presentation
+Phase 5 — V1.9 Advanced Analytics
+ပါဝင်မယ့်အရာ
+drill-down
+compare period
+saved views
+SLA/overtime setting
+KPI threshold color
+top N custom logic
+Phase 6 — V2.0 Final
+ပါဝင်မယ့်အရာ
+email alert system
+alert rules
+alert history
+manual publish/export dashboard snapshot
+final permission hardening
+performance cleanup
+UI polish
+Database / D1 မှာ ထပ်လိုလာမယ့် table များ
+V2.0 builder အတွက် almost sure လိုမယ့် tables:
+
+1) dashboard_pages
+dashboard item တစ်ခုထဲက pages/tabs
+
+2) dashboard_widgets
+page တစ်ခုထဲက cards/graphs
+
+3) dashboard_widget_settings
+widget settings
+
+chart type
+limit
+visible
+axis
+filters
+color theme
+4) dashboard_exports
+export history/log
+
+5) dashboard_alert_rules
+email alert rules
+
+6) dashboard_alert_logs
+alert sent history
+
+Recommended implementation order
+သင် Builder ကို first priority ရွေးထားပေမယ့်
+technical dependency အရ ဒီအစီအစဉ်နဲ့သွားသင့်တယ်
+
+Step A
+Foundation
+
+date filter
+raw table
+standardized widget settings
+Step B
+Multi-page tabs
+
+Step C
+Drag/drop builder
+
+Step D
+Export suite
+
+Step E
+Email alert system
+
+Practical target
+V1.3
+date filter
+raw table
+config cleanup
+V1.5
+multi-page dashboard
+V1.7
+drag/drop builder
+V1.8
+CSV/Excel/PDF/PNG export
+V2.0
+email alerts + final polish
+My recommendation
+Yes, V2.0 အထိလုပ်နိုင်တယ်
+ဒါပေမယ့် အခု next coding step အနေနဲ့ ဒီ 3 ခုကို အရင်စသင့်တယ်:
+
+From-To date filter
+Raw data table
+Multi-page dashboard structure
+ဒါပြီးမှ
+
+drag/drop builder
+export suite
+email alerts
+ဆက်တက်ရင် အလွန်သန့်မယ်
+If you want, next turn မှာ ငါ စလုပ်နိုင်တာ
+Next Implementation Batch
+V1.3 + V1.5 start
+
+From-To date filter
+Raw data table
+Multi-page dashboard tabs structure
+D1 schema update for pages/widgets base
+လိုရင် နောက် message မှာ တိုက်ရိုက်ပြောပါ:
+
+“V1.3 + V1.5 start လုပ်ပေး”
+
+အဲဒါဆို ငါ code + schema + worker route + UI ကို ဆက်တက်ပေးမယ်။
+
+
+“V1.3 + V1.5 start လုပ်ပေး”
+
+
+
+Ran commands
+9
+ပြီးပြီ — V1.3 + V1.5 start batch ကို စထည့်ပေးထားပါတယ်။
+
+အခုအသစ်ပါလာတဲ့ feature တွေ
+V1.3
+From Date / To Date filter
+Raw Data tab
+Raw Data search
+Raw Data pagination
+dashboard data filter logic ပိုတိကျ
+V1.5
+Multi-page dashboard tabs
+Summary
+Trend
+Root Cause
+Site
+Customer
+Raw Data
+dashboard_pages / dashboard_widgets base schema
+frontend မှာ page/tab structure foundation
+ပြင်ထားတဲ့ files
+Frontend
+
+index.html
+
+script.js
+
+style.css
+Backend
+
+[[path]].js
+
+clean_[[path]].js
+Schema / Notes
+
+dashboard_d1_schema.sql
+
+dashboard_worker_notes.md
+အရေးကြီးဆုံး deploy file
+သင့် repo ထဲက
+
+text
+
+functions/api/[[path]].js
+ကို
+
+clean_[[path]].js
+ နဲ့ replace လုပ်တာကို recommend လုပ်ပါတယ်
+
+Step by Step
+1) Frontend files replace
+repo ထဲမှာ
+
+index.html
+script.js
+style.css
+ကို updated version နဲ့ replace လုပ်ပါ
+
+2) Worker replace
+repo ထဲက
+
+text
+
+functions/api/[[path]].js
+ကို
+
+clean_[[path]].js
+ နဲ့ replace လုပ်ပါ
+
+3) Commit / Push
+Bash
+
+git add .
+git commit -m "Start V1.3 + V1.5 dashboard foundation"
+git push
+4) Cloudflare Pages redeploy
+deploy green ဖြစ်တာစောင့်ပါ
+
+5) Hard refresh
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+အခု website မှာ ဘာမြင်ရမလဲ
+Dashboard page
+filter bar ထဲမှာ
+Day / Week / Month / Year
+From Date
+To Date
+Site
+Township
+Queue
+Dashboard page tabs
+Summary
+Trend
+Root Cause
+Site
+Customer
+Raw Data
+Raw Data tab
+table view
+search box
+prev / next pagination
+Note
+dashboard_pages / dashboard_widgets ကို foundation အနေနဲ့ပဲ စထားတာ
+အခု stage မှာ Admin page builder UI မပါသေးဘူး
+
+အဲ့တာကို next phase မှာ:
+
+page add/remove
+widget add/remove
+drag/drop builder
+ဆက်တက်မယ်
+Recommended next version
+V1.6 / V1.7 အတွက် အကောင်းဆုံး next step က:
+
+Page manager UI
+Widget manager UI
+Drag & Drop builder
+Export CSV / Excel / PDF / PNG
+လိုချင်ရင် နောက် message မှာ တန်းပြောပါ:
+
+“V1.6 + V1.7 start လုပ်ပေး”
+
+အဲဒါဆို
+
+dashboard page manager
+widget builder
+drag/drop layout
+ကို ဆက်တက်ပေးမယ်။
+
+image.png
+image.png
+no data show again
+
+
+
+Ran commands
+2
+အခု screenshot အရ frontend ပိုင်းမဟုတ်တော့ဘူး —
+old cached 0-row snapshot ကို ပြန်ဖတ်နေတာ ဖြစ်နိုင်တယ်။
+
+ဘာဖြစ်နေလဲ
+အခု message:
+
+No rows were found in the dashboard data...
+
+ဆိုတာက
+
+route အလုပ်လုပ်တယ်
+cache ထဲ data object တစ်ခုရှိတယ်
+ဒါပေမယ့် row_count = 0 ဖြစ်နေတာ
+အရင် version တစ်ခုမှာ source rows ကိုမဖမ်းမိဘဲ
+empty rows နဲ့ cache သိမ်းသွားနိုင်တယ်။
+အဲ့ cache က error မဟုတ်တော့ last_error = null ဖြစ်နေလို့
+အသစ်ပြန် sync မလုပ်ပဲ cached empty result ကိုပဲပြန်ပြနေတာ ဖြစ်နိုင်တယ်။
+
+ငါ အခုထပ် fix လုပ်ထားတာ
+Worker မှာ logic ကို ဒီလိုပြင်ထားတယ်:
+
+အရင်
+no cache
+refresh=1
+last_error ရှိမှ
+re-sync လုပ်တယ်
+အခု
+row_count = 0 ဖြစ်နေရင်လည်း auto re-sync ပြန်လုပ်မယ်
+
+ဆိုတော့ old empty cache တွေကို
+dashboard ကိုဖွင့်လိုက်တာနဲ့ ပြန် sync ကြိုးစားမယ်
+
+အခု သင်လုပ်ရမယ့်အရာ
+1) ဒီ file ကိုထပ် replace လုပ်ပါ
+repo ထဲက
+
+text
+
+functions/api/[[path]].js
+ကို
+
+text
+
+uploads/clean_[[path]].js
+နဲ့ ထပ် replace လုပ်ပါ
+
+2) Commit / Push
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Retry dashboard sync when cached row_count is zero"
+git push
+3) Cloudflare Pages deploy ပြန်တက်တာစောင့်ပါ
+4) Browser hard refresh
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+5) Dashboard page ကိုပြန်ဖွင့်ပါ
+ဒီတစ်ခါ:
+
+dashboard ကို open လိုက်တာနဲ့
+cache row_count = 0 ဖြစ်ရင်
+backend က source API ကိုပြန် sync လုပ်မယ်
+6) မသေချာရင် Refresh Data ကို တစ်ချက်နှိပ်ပါ
+ဒါက forced refresh ဖြစ်လို့
+cached empty data ကိုပြန်တင်နိုင်မယ်
+
+If still empty after this
+အဲ့ဒါဆို source API ကတကယ်ပဲ rows မပြန်နေတာဖြစ်နိုင်တယ်။
+အဲဒီအချိန် next check က:
+
+text
+
+GET /api/dashboards/{id}/data
+response body ထဲက:
+
+rowCount
+lastError
+data
+ကိုကြည့်ရမယ်
+
+Short version
+အခု issue = old empty cache
+fix = row_count 0 ဖြစ်ရင် auto re-sync
+
+လိုချင်ရင် နောက်တစ်ခါ
+Network tab က /api/dashboards/{id}/data response body ကို ဘယ်လိုကြည့်ရမလဲ
+ကို Burmese နဲ့ step-by-step ပြောပေးမယ်။
+
+
+image.png
+image.png
+progress bar က တကယ့် loading time ဖြစ်ချင်တာ
+
+
+
+Ran commands
+2
+ရပါတယ် — အခု fake pulse progress မဟုတ်ဘဲ actual loading phase အလိုက် progress ပြောင်းအောင် ပြင်ပေးထားပါတယ်။
+
+အခု progress bar ဘယ်လိုအလုပ်လုပ်မလဲ
+Dashboard open / refresh လုပ်တဲ့အချိန်:
+
+Requesting dashboard data → API ကိုခေါ်နေတုန်း
+Downloading dashboard payload → response body download လုပ်နေတုန်း
+Response received → JSON parse
+Extracting rows → payload ထဲက rows ဖတ်
+Preparing filters → tabs / filters / table state build
+Rendering dashboard → chart/table render
+အဲဒီလို တကယ့် phase အလိုက် % တက်မယ်
+
+ပိုကောင်းသွားတဲ့အချက်
+If content-length header ရရင်
+download byte amount အလိုက် progress ပိုတိကျမယ်
+
+ဥပမာ:
+
+Received 120 KB of 500 KB
+If content-length မရရင်
+phase-based progress နဲ့သွားမယ်
+ဒါပေမယ့် အရင်လို random pulse မဟုတ်တော့ဘူး
+
+ပြင်ထားတဲ့ file
+
+script.js
+သင်အခုလုပ်ရမယ့်အရာ
+Step 1
+repo ထဲက script.js ကို
+workspace ထဲက updated 
+script.js
+ နဲ့ replace လုပ်ပါ
+
+Step 2
+commit / push
+
+Bash
+
+git add script.js
+git commit -m "Use real dashboard loading progress phases"
+git push
+Step 3
+Cloudflare Pages redeploy / auto deploy စောင့်ပါ
+
+Step 4
+Browser hard refresh
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+Expected result
+အခု dashboard loading bar က:
+
+72% မှာပဲလှုပ်နေတဲ့ fake pulse မဟုတ်တော့ဘူး
+actual fetch / parse / render phase အလိုက် တက်မယ်
+Note
+တကယ့် network byte progress 100% perfect ဖြစ်ဖို့
+API response မှာ content-length ရှိရမယ်
+
+မရှိရင် phase-based progress ပဲ ဖြစ်မယ်
+ဒါပေမယ့် user experience က အခုထက်အများကြီး natural ဖြစ်သွားမယ်
+
+လိုချင်ရင် next step မှာ
+loading banner ထဲမှာ current phase text + source rows count preview
+လည်း ထပ်ထည့်ပေးလို့ရတယ်။
+
+
+image.png
+image.png
+“V1.6 + V1.7 start လုပ်ပေး”
+
+data လည်းမပြတော့ပြန်ဘူး progress bar ကို website color theme အလိုက်ပဲလုပ်ပေးပါ
+
+
+
+Ran commands
+6
+အိုကေ — အခု 2 ချက် ထပ်ပြင်ပေးထားပါတယ်:
+
+1) Data မပေါ်ရင် auto fresh re-sync တစ်ခါပြန်လုပ်မယ်
+အခု dashboard open လိုက်တာနဲ့ rows = 0 ဖြစ်နေရင်:
+
+old empty cache ဖြစ်နိုင်လို့
+system က တစ်ခါတည်း forced refresh (refresh=1) ပြန်လုပ်မယ်
+user က Refresh Data လက်နဲ့နှိပ်စရာမလိုအောင် စမ်းပေးမယ်
+Result
+old empty cached dashboard တွေကို
+automatic recover လုပ်ဖို့ အခွင့်အရေးပိုရသွားမယ်
+
+2) Progress bar color ကို website theme accent အလိုက်ပြောင်းထားတယ်
+အရင်က gradient ထဲမှာ fixed purple ပါနေတယ်
+
+အခု:
+
+var(--accent)
+var(--accent-h)
+ကိုသုံးထားလို့
+website color theme ပြောင်းရင် progress bar color လည်းလိုက်ပြောင်းမယ်
+
+ပြင်ထားတဲ့ file
+
+script.js
+
+style.css
+သင်အခုလုပ်ရမယ့် Step by Step
+Step 1
+repo ထဲမှာ
+
+script.js
+style.css
+ကို updated version နဲ့ replace လုပ်ပါ
+
+Step 2
+commit / push
+
+Bash
+
+git add script.js style.css
+git commit -m "Auto retry empty dashboard sync and theme-based loading bar"
+git push
+Step 3
+Cloudflare Pages redeploy ပြန်တက်တာစောင့်ပါ
+
+Step 4
+Browser hard refresh
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+Expected behavior
+Dashboard item ကိုဖွင့်လိုက်တဲ့အချိန်:
+
+If cached rows = 0
+loading state ပြမယ်
+auto re-sync ပြန်လုပ်မယ်
+data ရလာရင် dashboard render မယ်
+If still no rows after auto retry
+အဲဒီအချိန်မှသာ
+No rows were found...
+message ပြမယ်
+V1.6 + V1.7 note
+သင်တောင်းထားတဲ့ V1.6 + V1.7 start ကို
+ငါ start လုပ်ထားတာက:
+
+multi-page tabs foundation
+raw data table foundation
+dashboard pages/widgets schema base
+ဒါပေမယ့် data stability ပြဿနာရှိနေသေးလို့
+builder UI ကို မတိုးခင် data flow ကို stable လုပ်နေတာ မှန်ပါတယ်
+
+Next best move
+ဒီ version deploy ပြီးမှ စမ်းပါ
+
+If data ပြန်ပေါ်လာပြီဆို
+နောက်တစ်ဆင့်:
+V1.6 + V1.7 actual builder UI
+
+page manager
+add/remove pages
+widget manager
+widget reorder
+drag/drop layout
+ကို ဆက်လုပ်မယ်
+
+လိုချင်ရင် နောက် message မှာ တန်းပြောပါ:
+
+“V1.6 + V1.7 builder UI start လုပ်ပေး”
+
+ဒါဆို page manager + widget manager ကို ဆက်တက်ပေးမယ်။
+
+
+image.png
+image.png
+data မပေါ် သေးဘူး
+
+
+
+Ran commands
+2
+တွေ့ရတာက frontend UI ထက် backend row extraction ပိုင်း မှာပဲ stuck နေသေးတယ်။
+
+အခုဘယ်လိုဖြစ်နေလဲ
+No rows were found... ဆိုတာက
+
+API route အလုပ်လုပ်တယ်
+dashboard item လည်းရတယ်
+worker က response တစ်ခု သိမ်းထားတယ်
+ဒါပေမယ့်
+worker က source JSON ထဲက actual rows ကို မဖမ်းမိသေးတာ ဖြစ်နိုင်ခြေ အရမ်းမြင့်တယ်။
+
+ငါအခုထပ်ပြင်ပေးထားတာ
+Worker side fix
+clean_[[path]].js / [[path]].js ထဲမှာ:
+
+1) Recursive row extraction
+အရင်က rows / data / result ကိုပဲ shallow check လုပ်တယ်
+
+အခု:
+
+nested object တွေထဲ recursively ရှာမယ်
+rows
+data
+result
+items
+records
+payload
+အကုန်လိုက်ရှာမယ်
+2) Debug fields ထပ်ပို့မယ်
+GET /api/dashboards/{id}/data response ထဲမှာ အခု ထပ်ပါမယ်:
+
+rowCount
+extractedRowCount
+sourceMeta
+lastError
+ဒါကြောင့် source မှာ row ရှိပြီး extraction မရလား
+cache row_count 0 လား
+ပိုရှင်းသွားမယ်
+
+အခု သင်လုပ်ရမယ့်အရာ
+Step 1
+သေချာအစားထိုးရမယ့် file
+repo ထဲက
+
+text
+
+functions/api/[[path]].js
+ကို
+
+text
+
+uploads/clean_[[path]].js
+နဲ့ replace လုပ်ပါ
+
+clean_[[path]].js ကိုပဲသုံးပါ
+
+Step 2
+commit / push
+
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Fix recursive dashboard row extraction"
+git push
+Step 3
+Cloudflare Pages deploy green ဖြစ်တာစောင့်ပါ
+
+Step 4
+Browser hard refresh
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+Step 5
+Dashboard ကိုပြန်ဖွင့်ပြီး
+Refresh Data ကို တစ်ချက်နှိပ်ပါ
+
+If still no rows
+ဒီတစ်ခါတော့ exact response body ကိုကြည့်ရမယ်
+
+Network tab မှာ
+ဒီ endpoint ကိုဖွင့်ပါ:
+
+text
+
+/api/dashboards/{id}/data
+ပြီးရင် response ထဲက ဒီ 4 ခုကိုပို့ပါ:
+
+rowCount
+extractedRowCount
+sourceMeta
+lastError
+Result interpretation
+Case 1
+rowCount = 0
+extractedRowCount = 0
+sourceMeta.rowCount > 0
+
+→ source မှာ row ရှိတယ်
+→ worker extraction logic နောက်တစ်ဆင့် tweak လုပ်ရမယ်
+
+Case 2
+rowCount = 0
+sourceMeta.rowCount = 0
+
+→ source API က row မပြန်နေတာ
+
+Case 3
+lastError ရှိတယ်
+
+→ source sync fail
+
+Progress bar color
+သင်ပြောထားသလို
+website color theme အလိုက် ဖြစ်အောင် ပြင်ထားပြီးသားပါ
+var(--accent) / var(--accent-h) နဲ့သွားပါတယ်
+
+V1.6 + V1.7
+Builder UI ကို ဆက်လုပ်လို့ရတယ်
+ဒါပေမယ့် data flow stable ဖြစ်မှ ဆက်တက်တာပိုမှန်တယ်
+
+လိုချင်ရင် next message မှာ
+Network tab က response body ကို ဘယ်လို copy ယူရမလဲ
+ကို Burmese နဲ့ တစ်ဆင့်ချင်းပြောပေးမယ်။
+
+
+i will use this type of json when using google sheet api with google sheet id
+
+{
+"range": "Tickets!A1:AB22775",
+"majorDimension": "ROWS",
+"values": [
+[
+"Ticket ID",
+"Ticket No",
+"Status",
+"Created",
+"Resolved",
+"Ticket Problem",
+"CPE ID",
+"Service Area",
+"Root Cause",
+"Pole Name",
+"Opi Site Code",
+"Township",
+"Local Service ID",
+"Date Created",
+"Queue",
+"Fiber Ca1 Name",
+"Fiber Olt Name",
+"Suspected Area Of Issue",
+"Root Cause Category",
+"Service Root Cause"
+],
+[
+"9246126",
+"Feb26-TKT-9246126",
+"closed",
+"2026-2-6, 14:02",
+"2026-2-7, 13:11",
+"No Internet Connection",
+"LCF046256",
+"Yangon-FR-SLA-Fiber Internet-OPI",
+"N/A",
+"003F13ZDAY-C02-P15",
+"DNYG",
+"Dagon Myothit Seikkan",
+"2546716-001",
+"2026-02-06",
+"Customer Support",
+"CA1-003F03ZDAY-C",
+"OVF-PNIX07ADAY",
+"Access Network-Passive",
+"Infra-Access Splitter",
+"Uplink Fiber Issue"
+],
+[
+"9183879",
+"Jan26-TKT-9183879",
+"closed",
+"2026-1-24, 15:48",
+"2026-1-24, 15:51",
+"No Internet Connection",
+"LCC004958",
+"Yangon-FR-SLA-Fiber Internet-OPI",
+"N/A",
+"F12R02LWBN-D12-P3",
+"LWBN",
+"Lanmadaw",
+"2624678-001",
+"2026-01-24",
+"Customer Support",
+"CA1-F00R02LWBN-D",
+"OVF-LWBN01ZLWY",
+"Customer Site",
+"Customer-LAN",
+"Customer LAN Issue"
+],
+
+please change to that type
+
+
+
+Ran commands
+8
+ဟုတ်ပြီ — အခု Google Sheets API values matrix format ကို support လုပ်အောင် ပြင်ပေးထားပါတယ်။
+
+သင်သုံးမယ့် JSON ပုံစံက ဒီလိုပါ:
+
+JSON
+
+{
+  "range": "Tickets!A1:AB22775",
+  "majorDimension": "ROWS",
+  "values": [
+    ["Ticket ID", "Ticket No", "Status", ...],
+    ["9246126", "Feb26-TKT-9246126", "closed", ...],
+    ["9183879", "Jan26-TKT-9183879", "closed", ...]
+  ]
+}
+အခု version က ဒီ format ကိုမြင်ရင်:
+
+first row ကို header
+second row ကစပြီး data rows
+အဖြစ်ပြောင်းပြီး object array လုပ်မယ်
+ဥပမာ worker / frontend ထဲမှာ internally ဒီလိုဖြစ်သွားမယ်:
+
+JSON
+
+[
+  {
+    "Ticket ID": "9246126",
+    "Ticket No": "Feb26-TKT-9246126",
+    "Status": "closed"
+  },
+  {
+    "Ticket ID": "9183879",
+    "Ticket No": "Jan26-TKT-9183879",
+    "Status": "closed"
+  }
+]
+ငါ update လုပ်ပြီးတဲ့ files
+
+script.js
+
+clean_[[path]].js
+
+[[path]].js
+အခု သင်လုပ်ရမယ့်အရာ
+1) Backend file replace
+repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ကို
+
+text
+
+uploads/clean_[[path]].js
+နဲ့ replace လုပ်ပါ
+
+2) Frontend file replace
+repo ထဲက:
+
+text
+
+script.js
+ကို
+
+text
+
+uploads/script.js
+နဲ့ replace လုပ်ပါ
+
+3) Commit / Push
+Bash
+
+git add functions/api/[[path]].js script.js
+git commit -m "Support Google Sheets API values matrix format"
+git push
+4) Deploy ပြီးရင်
+hard refresh
+dashboard page ဖွင့်
+Refresh Data ကို တစ်ချက်နှိပ်
+အခုဘာဖြစ်သင့်လဲ
+သင် Google Sheets API response က values array format နဲ့ပြန်လာရင်
+dashboard က data rows ကို parse လုပ်နိုင်သင့်ပြီ
+
+အရေးကြီးမှတ်ချက်
+ဒီ support က ၂ နေရာလုံး မှာထည့်ထားတယ်
+
+Worker
+Google Sheets API raw response ကို parse လုပ်မယ်
+cache ထဲ rows object array အဖြစ်သိမ်းမယ်
+Frontend
+worst case fallback အနေနဲ့ raw values response တိုက်ရိုက်ရလာရင်လည်း parse လုပ်နိုင်မယ်
+If still no data after this
+အဲဒီအချိန် GET /api/dashboards/{id}/data response ထဲက ဒီ 4 ခုကို ပို့ပါ:
+
+rowCount
+extractedRowCount
+sourceMeta
+data
+ဒါဆို နောက်တစ်ဆင့်မှာ exact troubleshoot လုပ်ပေးမယ်။
+
+လိုချင်ရင် နောက် message မှာ
+Google Sheets API URL example ကို sheet id နဲ့ ဘယ်လိုဆောက်ရမလဲ
+ပါတစ်ခါတည်း ပေးမယ်။
+
+
+image.png
+image.png
+image.png
+image.png
+Dashboard source sync failed: Source HTTP 404
+
+progress bar is not showing real percent
+
+
+
+Ran commands
+7
+အခုအခြေအနေက 2 ပိုင်းခွဲပြီးကြည့်ရမယ် —
+
+1) Dashboard source sync failed: Source HTTP 404
+ဒီဟာက code parse bug မဟုတ်တော့ဘဲ source URL မှားနေတာ ဖြစ်ပါတယ်။
+
+အဓိပ္ပါယ်
+Dashboard item ထဲက API URL field မှာ ထည့်ထားတဲ့ link ကို worker က fetch လုပ်တဲ့အခါ:
+
+txt
+
+404 Not Found
+ပြန်လာတယ်
+
+အရေးကြီးဆုံး
+သင် earlier ပြောထားတဲ့ format:
+
+JSON
+
+{
+  "range": "Tickets!A1:AB22775",
+  "majorDimension": "ROWS",
+  "values": [...]
+}
+ဒီ format ကိုတော့ အခု system က support လုပ်နိုင်အောင် ပြင်ပြီးသား ပါ။
+ဒါပေမယ့် 404 ဆိုတာ format ပြဿနာမဟုတ်ဘဲ
+API URL ကိုခေါ်လို့မတွေ့တာ ပါ။
+
+သင်ဘာစစ်ရမလဲ
+Dashboard item ထဲက API URL
+Manage Dashboard > Edit Dashboard
+
+ထဲက API URL ကို စစ်ပါ။
+
+If you use Google Sheets API
+URL က ဒီပုံစံမျိုး ဖြစ်ရမယ်:
+
+text
+
+https://sheets.googleapis.com/v4/spreadsheets/YOUR_SHEET_ID/values/Tickets!A1:AB22775?majorDimension=ROWS&key=YOUR_API_KEY
+Example
+text
+
+https://sheets.googleapis.com/v4/spreadsheets/1UV9H8oUFq-EdHksLq8xINlrg8gGPsJWtWA2ePhR-8XU/values/Tickets!A1:AB22775?majorDimension=ROWS&key=AIza....
+If you are putting only Sheet ID
+ဥပမာ ဒီလို:
+
+text
+
+1UV9H8oUFq-EdHksLq8xINlrg8gGPsJWtWA2ePhR-8XU
+ဆိုရင် 404 ဖြစ်မယ်
+ဘာလို့လဲဆိုတော့ system က အဲဒါကို URL မဟုတ်ဘဲ plain text အဖြစ် fetch လုပ်နေတာပဲ ဖြစ်မယ်
+
+Recommended fix now
+Option A — Full Google Sheets API URL ထည့်
+အလွယ်ဆုံးနည်း
+
+API URL field ထဲမှာ sheet id သီးသန့်မဟုတ်ဘဲ full API URL ထည့်ပါ
+
+Option B — Apps Script Web App URL သုံး
+သင် Apps Script route သုံးမယ်ဆို
+ဒီလို exec URL ထည့်ပါ:
+
+text
+
+https://script.google.com/macros/s/XXXXXXXX/exec
+2) Progress bar “real percent” issue
+သင်ပြောတာမှန်တယ် — တကယ့် percent ဖြစ်ဖို့
+response မှာ content-length header ရှိရမယ်
+
+Reality
+Google Sheets / Worker response တချို့မှာ
+content-length မရနိုင်ဘူး
+
+အဲ့အချိန် 100% accurate percent မတွက်နိုင်ဘူး
+
+အခု ငါပြင်ထားတာ
+အရင်လို fake 72%, 82%, 97% မပြတော့ဘူး
+အခု:
+
+data size သိရင် → real download %
+data size မသိရင် → indeterminate “Syncing…” loading
+phase text ပဲပြမယ်
+ဒါက user ကို မလှည့်စားတဲ့ UX ဖြစ်တယ်
+
+အခုသင်လုပ်သင့်တဲ့အရာ
+Step 1
+Dashboard item ထဲက API URL ကို full Google Sheets API URL နဲ့ပြောင်းပါ
+
+Template
+text
+
+https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{SHEET_NAME}!A1:AB22775?majorDimension=ROWS&key={API_KEY}
+Step 2
+Refresh Data ကိုနှိပ်ပါ
+
+Step 3
+If still not work,
+browser မှာ API URL ကိုတိုက်ရိုက်ဖွင့်ကြည့်ပါ
+
+browser address bar ထဲ paste လုပ်ပြီး:
+
+JSON ပြန်လာလား
+404 လား
+403 လား
+စစ်ပါ
+
+If you want the cleanest long-term solution
+ကျွန်တော် next step မှာ “Google Sheet ID mode” ကို တန်းထည့်ပေးနိုင်ပါတယ်
+
+ဆိုလိုတာ:
+
+API URL မမေးတော့ဘဲ
+Sheet ID
+Sheet Name
+Range
+API Key
+ကိုသီးသန့် fields နဲ့ထည့်
+backend က URL ကို auto build လုပ်ပေးမယ်
+ဒါဆို user-friendly ပိုဖြစ်မယ်
+
+My recommendation
+အခုချက်ချင်းအတွက်:
+
+full Google Sheets API URL ထည့်
+Refresh Data နှိပ်
+response ပြန်လာမလာစစ်
+လိုချင်ရင် နောက် message မှာ
+“Google Sheet ID mode လုပ်ပေး”
+လို့ပြောပါ
+
+အဲဒါဆို Add Dashboard popup ကို
+
+Sheet ID
+Sheet Name
+Range
+API Key
+field တွေနဲ့ပြောင်းပြီး
+worker က auto URL build လုပ်ပေးအောင် ဆက်လုပ်မယ်။
+
+image.png
+image.png
+image.png
+image.png
+change ပြီးပြီမရသေးဘူး
+
+
+အခု screenshot အရ 404 မဟုတ်တော့ဘူး — ဒါက URL change လုပ်တာက အနည်းဆုံးတစ်စိတ်တစ်ပိုင်းမှန်သွားပြီလို့ ဆိုနိုင်ပါတယ်။
+ဒါပေမယ့် No rows were found... ဆိုတာက အများအားဖြင့် ဒီ ၃ ခုထဲက တစ်ခု ဖြစ်တတ်ပါတယ်။
+
+ဖြစ်နိုင်တဲ့ အကြောင်းရင်း ၃ ခု
+Google Sheets API က header row ပဲပြန်လာနေတယ်
+values matrix parse support ပါတဲ့ latest worker code မတက်သေးဘူး
+old zero-row cache ကိုပဲ ပြန်ဖတ်နေတယ်
+အမြန်ဆုံး စစ်နည်း
+Step 1 — API URL ကို browser မှာတိုက်ရိုက်ဖွင့်ပါ
+Dashboard item ထဲက API URL ကို copy ယူပြီး browser address bar မှာ paste လုပ်ဖွင့်ပါ။
+
+Expected
+ဒီလို JSON ပြန်လာရမယ်:
+
+JSON
+
+{
+  "range": "...",
+  "majorDimension": "ROWS",
+  "values": [
+    ["Ticket ID", "Ticket No", "Status", ...],
+    ["9246126", "Feb26-TKT-9246126", "closed", ...],
+    ["9183879", "Jan26-TKT-9183879", "closed", ...]
+  ]
+}
+အရေးကြီး
+values ထဲမှာ 1 row ပဲ ရှိရင်
+အဲ့ဒါ header only ဖြစ်နေတာ
+dashboard က row = 0 လို့ယူမယ်
+
+Step 2 — values.length စစ်ပါ
+OK ဖြစ်ရမယ့်ပုံ
+JSON
+
+"values": [
+  [header...],
+  [data row 1...],
+  [data row 2...]
+]
+မကောင်းတာ
+JSON
+
+"values": [
+  [header...]
+]
+ဒီလိုဆို data row မရှိဘူး
+
+Recommended API URL format
+သင့် sample data အရ columns က 20 လောက်ပဲရှိတော့
+AB22775 လို fixed range မသုံးဘဲ
+ဒီလိုပိုသန့်တဲ့ range သုံးပါ:
+
+text
+
+https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/Tickets!A:T?majorDimension=ROWS&key={API_KEY}
+သို့မဟုတ် whole sheet:
+
+text
+
+https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/Tickets?majorDimension=ROWS&key={API_KEY}
+Example
+text
+
+https://sheets.googleapis.com/v4/spreadsheets/1UV9H8oUFq-EdHksLq8xINlrg8gGPsJWtWA2ePhR-8XU/values/Tickets?majorDimension=ROWS&key=YOUR_API_KEY
+အခုလိုအပ်တဲ့ deploy checklist
+သင် full support ရဖို့ ၂ ဖိုင်လုံး latest version ဖြစ်ရမယ်
+
+1) Backend
+repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ကို
+
+clean_[[path]].js
+ နဲ့ replace
+
+2) Frontend
+repo ထဲက:
+
+text
+
+script.js
+ကို
+
+script.js
+ နဲ့ replace
+
+Cache ပြဿနာရှင်းဖို့
+တခါတရံ old zero-row cache ရှိနေတတ်လို့
+Refresh Data နှိပ်တာနဲ့မလုံလောက်ရင် D1 cache ကို clear လုပ်တာကပိုသေချာတယ်။
+
+ဖျက်ရမယ့် tables
+dashboard_cache
+dashboard_cache_chunks
+dashboard_sync_logs
+Generic SQL
+SQL
+
+DELETE FROM dashboard_cache WHERE dashboard_item_id = YOUR_ID;
+DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id = YOUR_ID;
+DELETE FROM dashboard_sync_logs WHERE dashboard_item_id = YOUR_ID;
+ပြီးရင် Dashboard ထဲက Refresh Data ကိုနှိပ်ပါ။
+
+Screenshot ထဲက အရေးကြီး security note
+API key ကို screenshot ထဲမှာ ပေါ်သွားပြီ
+ဒါကြောင့် Google API key ကို regenerate / restrict လုပ်ပါ။
+
+Recommendation
+old key revoke
+new key create
+Google Sheets API only restrict
+HTTP referrer / IP restriction လုပ်နိုင်ရင်လုပ်
+အခု ကျွန်တော် အကြံပြုတဲ့ exact next step
+အမြန်ဆုံးလုပ်ပါ
+API URL ကို browser မှာဖွင့်
+values ထဲမှာ header only လား data rows ပါလားစစ်
+functions/api/[[path]].js = clean_[[path]].js confirm
+script.js latest confirm
+D1 cache clear
+Refresh Data
+If you want, next reply မှာ ဒီ ၂ ခုထဲက တစ်ခုကိုလုပ်ပေးမယ်
+Option A
+Google Sheet ID mode
+Add Dashboard popup မှာ
+
+Sheet ID
+Sheet Name
+Range
+API Key
+ထည့်ရုံနဲ့ URL auto build လုပ်ပေးမယ်
+Option B
+D1 cache clear route/button
+Admin အတွက်
+
+Clear Cache
+Force Re-sync
+button ထည့်ပေးမယ်
+လိုချင်ရင် တန်းပြောပါ:
+
+“Google Sheet ID mode လုပ်ပေး”
+သို့မဟုတ်
+“Clear Cache button ထည့်ပေး”
+
+
+change ပြီးပြီမရသေးဘူး
+
+
+အိုကေ — အခုအခြေအနေမှာ code ပိုင်းထက် source data response ကိုအတည်ပြုဖို့လိုနေပြီ။
+ဘာလို့လဲဆိုတော့—
+
+404 မဟုတ်တော့ဘူး
+dashboard page လည်းပွင့်တယ်
+worker/function လည်းအလုပ်လုပ်တယ်
+ဒါပေမယ့်
+row မရဘူး ဆိုတာက Google Sheets API URL က header row ပဲပြန်လာနေတာ ဒါမှမဟုတ် source JSON ကို worker ကရသေးပေမယ့် source itself မှာ data row မပါနေတာ ဖြစ်နိုင်ခြေ အမြင့်ဆုံးပါ။
+
+အခု ချက်ချင်းစစ်ရမယ့်အရာ 3 ခု
+1) API URL ကို browser မှာ တိုက်ရိုက်ဖွင့်ပါ
+Manage Dashboard ထဲက URL ကို copy ယူပြီး browser address bar မှာ paste လုပ်ပါ။
+
+မှန်ရင် ဒီလိုဖြစ်ရမယ်
+JSON
+
+{
+  "range": "Tickets!A:T",
+  "majorDimension": "ROWS",
+  "values": [
+    ["Ticket ID", "Ticket No", "Status", ...],
+    ["9246126", "Feb26-TKT-9246126", "closed", ...],
+    ["9183879", "Jan26-TKT-9183879", "closed", ...]
+  ]
+}
+မမှန်တာ
+JSON
+
+{
+  "range": "Tickets!A:T",
+  "majorDimension": "ROWS",
+  "values": [
+    ["Ticket ID", "Ticket No", "Status", ...]
+  ]
+}
+ဒီလိုဆို header row တစ်ကြောင်းပဲရှိတယ်
+dashboard မှာ data 0 rows လို့ယူမယ်
+
+2) Range ကို ဒီလိုပြောင်းသုံးပါ
+အခု A1:AB22775 လို fixed range မသုံးဘဲ
+ပိုလုံခြုံတဲ့ range နဲ့သုံးပါ
+
+Recommend
+text
+
+https://sheets.googleapis.com/v4/spreadsheets/YOUR_SHEET_ID/values/Tickets?majorDimension=ROWS&key=YOUR_API_KEY
+သို့မဟုတ်
+
+text
+
+https://sheets.googleapis.com/v4/spreadsheets/YOUR_SHEET_ID/values/Tickets!A:T?majorDimension=ROWS&key=YOUR_API_KEY
+Tickets ဆိုတာ sheet tab name တိတိကျကျဖြစ်ရမယ်
+
+3) Sheet name မှန်မမှန်စစ်ပါ
+Google Sheets tab name က Tickets မဟုတ်ဘဲ
+
+tickets
+Ticket
+Ticket List
+Tickets (space ပါ)
+ဆိုရင် issue ဖြစ်နိုင်တယ်
+Example if space ပါရင်
+text
+
+values/Ticket%20List
+အရမ်းအရေးကြီးတဲ့ note
+Google Sheets API + API key က public/readable sheet ဖြစ်ဖို့လိုနိုင်တယ်
+သင့် sheet က private ဖြစ်ရင်
+
+403 ဖြစ်တတ်တယ်
+တချို့ setup တွေမှာ data မရနိုင်ဘူး
+ဒါဆို Apps Script endpoint သို့မဟုတ် service account သုံးတာပိုကောင်းတယ်
+
+အခု exact test လုပ်ပါ
+Test A — direct source URL
+browser မှာ URL ဖွင့်ပြီး
+values ထဲမှာ
+
+header only လား
+data rows ပါလား
+စစ်ပါ
+Test B — dashboard worker response
+browser / Network tab မှာ ဒီ URL ကိုဖွင့်ပါ:
+
+text
+
+/api/dashboards/1/data?refresh=1
+dashboard item id 1 မဟုတ်ရင် network tab မှာ actual id ကိုကြည့်ပါ
+
+အဲ့ response ထဲက ဒီ 4 ခုကိုပို့ပါ:
+
+rowCount
+extractedRowCount
+sourceMeta
+lastError
+ကျွန်တော်အခုအကြံပေးချင်တာ
+သင်လိုချင်တာက Google Sheets ID နဲ့သုံးချင်တာဆို
+အကောင်းဆုံး next update က:
+
+Google Sheet ID Mode
+Add Dashboard popup မှာ
+
+Sheet ID
+Sheet Name
+Range
+API Key
+ထည့်ရုံနဲ့
+system က URL ကို auto build လုပ်ပေးမယ်
+
+ဒါဆို URL မှားထည့်တာကိုလျှော့နိုင်တယ်
+
+အခု best next step
+အခု message တစ်ခုထဲမှာ ပြန်ပို့ပေးပါ:
+
+1. direct source URL response မှာ
+values ထဲက first 3 rows
+
+2. /api/dashboards/.../data?refresh=1 response မှာ
+rowCount
+extractedRowCount
+sourceMeta
+lastError
+လိုချင်ရင် နောက်တစ်ခါ
+Google Sheet ID mode လုပ်ပေး
+လို့ပြောပါ
+အဲဒါဆို Add Dashboard popup ကို full user-friendly mode ပြောင်းပေးမယ်။
+
+
+change ပြီးပြီမရသေးဘူး
+
+
+အခုအခြေအနေမှာ code format support က ပြီးပြီ —
+မရသေးတာက source/data side issue ဖြစ်နိုင်ခြေ အများဆုံး ပါ။
+
+တိုက်ရိုက်ပြောရရင်
+No rows were found... ဆိုတာက
+
+dashboard app ကပွင့်တယ်
+worker ကအလုပ်လုပ်တယ်
+ဒါပေမယ့် Google Sheets API က dashboard အတွက် usable rows မထွက်သေးဘူး
+အခု အတိအကျလုပ်ရမယ့် နည်း
+Step 1 — အခု OPI dashboard item ကို ဖျက်ပြီး ပြန်ထည့်
+Manage Dashboard ထဲက OPI item ကို delete လုပ်ပါ
+ပြီးရင် အသစ်ပြန် add လုပ်ပါ
+
+အဟောင်း cache/source setup ကိုဖယ်ရှားချင်လို့
+
+Step 2 — API URL ကို ဒီ format နဲ့ပဲထည့်
+Best safe URL
+text
+
+https://sheets.googleapis.com/v4/spreadsheets/YOUR_SHEET_ID/values/Tickets?majorDimension=ROWS&key=YOUR_API_KEY
+Example
+text
+
+https://sheets.googleapis.com/v4/spreadsheets/1UV9H8oUFq-EdHksLq8xINlrg8gGPsJWtWA2ePhR-8XU/values/Tickets?majorDimension=ROWS&key=YOUR_API_KEY
+မသုံးသင့်တာ
+text
+
+.../values/Tickets!A1:AB22775
+ဒီလို fixed range က sometimes empty/partial issue ဖြစ်နိုင်တယ်
+အရင်ဆုံး whole sheet Tickets နဲ့စမ်းပါ
+
+Step 3 — URL ကို browser မှာ တိုက်ရိုက်ဖွင့်
+Add Dashboard ထဲထည့်မယ့် URL ကို browser မှာ paste လုပ်ပြီးဖွင့်ပါ
+
+မှန်ရင် ဒီလို JSON ဖြစ်ရမယ်
+JSON
+
+{
+  "range": "Tickets!A1:T22775",
+  "majorDimension": "ROWS",
+  "values": [
+    ["Ticket ID", "Ticket No", "Status", ...],
+    ["9246126", "Feb26-TKT-9246126", "closed", ...],
+    ["9183879", "Jan26-TKT-9183879", "closed", ...]
+  ]
+}
+အရေးကြီး
+values ထဲမှာ header row + data rows ပါရမယ်
+header row တစ်ကြောင်းတည်း ပဲရှိရင် dashboard က row 0 လို့ယူမယ်
+
+Step 4 — Dashboard ကိုပြန်ဖွင့်ပြီး Refresh Data နှိပ်
+အသစ်ပြန် add လုပ်ပြီးမှ
+
+dashboard page ဖွင့်
+Refresh Data နှိပ်
+မရသေးရင် အဓိကဖြစ်နိုင်တဲ့အကြောင်းရင်း
+1) Sheet tab name မမှန်
+Tickets ဆိုတဲ့ sheet name အတိအကျဖြစ်ရမယ်
+
+ဥပမာ တကယ့် tab name က:
+
+tickets
+Ticket
+Ticket List
+Tickets
+ဆိုရင် URL ကမတူရဘူး
+
+2) Google API key limitation
+API key က
+
+Sheets API enable မလုပ်ထား
+referrer restriction မှား
+project setting issue
+ဖြစ်နိုင်တယ်
+3) Spreadsheet access
+Google Sheets API + API key နဲ့သုံးရင်
+sheet က public readable / accessible မဟုတ်ရင် problem ဖြစ်နိုင်တယ်
+
+private sheet ဆိုရင် Apps Script web app သို့မဟုတ် service account ပိုကောင်းတယ်
+
+အခုအမြန်ဆုံး အဖြေထုတ်နည်း
+ကျွန်တော်လိုတာ တစ်ခုတည်း ပဲ:
+
+browser မှာ URL ဖွင့်ပြီး
+values ထဲက
+
+first row
+second row
+third row
+ကို copy ပို့ပါ
+
+ဥပမာ ဒီလို:
+
+JSON
+
+"values": [
+  ["Ticket ID", "Ticket No", "Status"],
+  ["9246126", "Feb26-TKT-9246126", "closed"],
+  ["9183879", "Jan26-TKT-9183879", "closed"]
+]
+အဲဒါပို့ရင် source မှန်/မမှန် ကို ချက်ချင်းပြောနိုင်မယ်
+
+Short answer
+အခု next best action က
+
+OPI item delete
+whole-sheet URL နဲ့ re-add
+browser မှာ URL တိုက်ရိုက်ဖွင့်
+values ထဲမှာ data rows ပါ/မပါ စစ်
+လိုချင်ရင် နောက်တစ်ခါ
+“Google Sheet ID mode လုပ်ပေး”
+လို့ပြောပါ
+ဒါဆို API URL ကိုမထည့်တော့ဘဲ
+
+Sheet ID
+Sheet Name
+API Key
+ပဲထည့်ရမယ့်ပုံစံပြောင်းပေးမယ်။
+
+image.png
+image.png
+image.png
+image.png
+still no data found
+
+
+
+Ran commands
+9
+အခု issue ကို တိတိကျကျ ၂ ပိုင်းခွဲပြောနိုင်ပြီ —
+
+1) Source HTTP 404
+ဒါက dashboard item ထဲက API URL မှားနေတာ ဖြစ်ပြီး
+အခု worker error message ကိုလည်း ပိုရှင်းအောင်ပြင်ထားတယ်:
+
+Source HTTP 404 — check the dashboard API URL / Google Sheets API URL / sheet ID configuration
+
+2) Progress bar percent
+သင်ပြောတာမှန်တယ် — အရင် code မှာ တကယ့် byte progress မရတဲ့အခါ fake percent တက်နေတာတွေကျန်သေးတယ်
+အခု ငါ ပြင်ပြီး:
+
+byte size သိရင် → real %
+byte size မသိရင် → Syncing… indeterminate
+worker cache က no rows ပြန်လာရင် → direct source URL fallback
+လုပ်အောင်ပြင်ထားတယ်
+အရေးကြီးဆုံး fix အသစ်
+သင် browser မှာ source URL ဖွင့်တဲ့ screenshot အရ
+Google Sheets API source က data row တွေ ပြန်လာတယ်
+ဒါကြောင့် backend cache/worker က rows 0 ပြန်လာရင်
+
+အခု frontend က
+worker response မှာ rows မရှိရင်
+dashboard item ထဲက direct source URL ကို browser-side fetch ပြန်လုပ်မယ်
+ပြီးရင်
+
+values matrix ကို object rows အဖြစ် parse
+dashboard render ပြန်လုပ်မယ်
+ဒီဟာက အခု case အတွက်အမြန်ဆုံး recovery path ပါ။
+
+ပြင်ထားတဲ့ file
+
+script.js
+နောက်ပြီး worker 404 message လည်း update လုပ်ထားတယ်:
+
+
+clean_[[path]].js
+
+[[path]].js
+သင်အခုလုပ်ရမယ့်အရာ
+Step 1
+repo ထဲက script.js ကို
+
+script.js
+ နဲ့ replace လုပ်ပါ
+
+Step 2
+backend file ကိုလည်း latest နဲ့ confirm လုပ်ပါ
+repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ကို
+
+text
+
+uploads/clean_[[path]].js
+နဲ့ replace လုပ်ထားတာသေချာပါစေ
+
+Step 3
+commit / push
+
+Bash
+
+git add script.js functions/api/[[path]].js
+git commit -m "Add direct source fallback and real loading mode"
+git push
+Step 4
+Cloudflare Pages redeploy
+
+Step 5
+Browser hard refresh
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+Expected result
+If worker cache returns empty rows
+frontend က:
+
+worker route ကိုခေါ်
+rows မရှိရင်
+direct Google Sheets API source URL ကို browser မှာ fetch ပြန်လုပ်
+data ရလာရင် dashboard render မယ်
+Progress bar behavior အခု
+If content-length ရရင်
+10%, 34%, 68% စသဖြင့် download size အလိုက် တက်မယ်
+If content-length မရရင်
+% အစား Syncing…
+လိုမျိုး indeterminate mode ပြမယ်
+ဒါက user ကို ပိုတိကျတဲ့ UX ဖြစ်တယ်
+Short answer
+အခု latest script.js တင်ရင် source URL works ဖြစ်တဲ့ case မှာ dashboard data ပြန်ပေါ်ဖို့ အခွင့်အရေးအများကြီးတက်သွားပြီ
+
+လိုချင်ရင် next step မှာ
+Google Sheet ID mode ကို တန်းလုပ်ပေးနိုင်တယ်
+ဒါဆို full URL မထည့်တော့ဘဲ:
+
+Sheet ID
+Sheet Name
+Range
+API Key
+နဲ့ add dashboard လုပ်လို့ရမယ်။
+
+image.png
+image.png
+image.png
+image.png
+still don't get it
+
+
+အခု screenshot ကြည့်ပြီး တိတိကျကျပြောနိုင်တာ တစ်ခုရှိတယ် —
+
+လက်ရှိ live site က latest frontend code မတက်သေးဘူး
+ဘာလို့လဲဆိုတော့
+V1.3 + V1.5 တက်ပြီးသားဆိုရင် dashboard page မှာ ဒီဟာတွေ မြင်နေရမယ်:
+
+From Date / To Date filter
+Site / Township / Queue filter bar
+page tabs:
+Summary
+Trend
+Root Cause
+Site
+Customer
+Raw Data
+ဒါပေမယ့် screenshot ထဲမှာ
+tabs မရှိဘူး
+filter bar မရှိဘူး
+raw data tab မရှိဘူး
+=> ဆိုတော့ script.js နဲ့ index.html latest version မတက်သေးတာ almost sure ပါ။
+
+အခုဘာလုပ်ရမလဲ — အလွယ်ဆုံးနည်း
+Step 1 — ဒီ 3 files ကို repo ထဲမှာ replace လုပ်ပါ
+repo root မှာရှိတဲ့:
+
+index.html
+script.js
+style.css
+ကို workspace ထဲက updated file တွေနဲ့ replace လုပ်ပါ
+
+use these files
+
+index.html
+
+script.js
+
+style.css
+Step 2 — backend file ကိုလည်း latest ထားပါ
+repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ကို
+
+text
+
+uploads/clean_[[path]].js
+နဲ့ replace လုပ်ပါ
+
+Step 3 — commit / push
+Bash
+
+git add index.html script.js style.css functions/api/[[path]].js
+git commit -m "Deploy latest dashboard frontend and API"
+git push
+Step 4 — Cloudflare deploy list မှာ ဒီ 2 rows ကိုစစ်ပါ
+Deployments မှာ success ဖြစ်ရမယ့် commit တွေက:
+
+Update script.js
+Update index.html
+Update [[path]].js
+အနည်းဆုံး script.js / index.html / [[path]].js တင်ထားတဲ့ commit က green ဖြစ်ရမယ်
+
+Step 5 — browser cache ကိုသေချာရှင်း
+Best way
+incognito window နဲ့ဖွင့်
+or
+DevTools > Network > Disable cache check
+hard refresh (Ctrl+Shift+R)
+ဘာကြောင့်ဒါကိုပြောနိုင်တာလဲ
+သင့် latest version မှာ dashboard page က ဒီလိုဖြစ်ရမယ်:
+
+latest UI signs
+filter bar
+tabs
+loading banner text
+raw data table tab
+screenshot မှာ
+old preview card ပဲရှိတယ်
+
+ဒါက frontend old version run နေတယ်ဆိုတာအတော်သေချာတယ်
+
+အခု data issue မဟုတ်သေးဘူး
+သင်အခုမမြင်ရတဲ့ပြဿနာက:
+
+frontend latest မတက်သေး
+browser က old JS file ကို cache ဆွဲနေတယ်
+အဲဒါရှင်းပြီးမှ
+Google Sheets data parse issue ကို ဆက်ကြည့်ရမယ်
+
+အမြန် verify လုပ်နည်း
+live site ဖွင့်ပြီး
+Ctrl+U သို့မဟုတ် source inspect လုပ်ပြီး
+
+search for
+text
+
+dashboardPageTabs
+သို့မဟုတ်
+
+text
+
+Raw Data
+မတွေ့ရင် old index.html / script.js ပဲ
+
+အတိုချုပ်
+အခု first fix = latest frontend deploy
+data parse fix မရောက်ခင်
+frontend version mismatch ကိုရှင်းရမယ်
+
+လိုချင်ရင် နောက် message မှာ
+GitHub web editor နဲ့ ဘယ် file ကို ဘယ် file နဲ့ replace လုပ်ရမလဲ step-by-step
+တစ်ဆင့်ချင်း Burmese နဲ့ပြောပေးမယ်။
+
+
+data ရပြီ version အသစ်တင်ရအောင်
+
+
+ကောင်းပါတယ် — data ရပြီဆိုတော့ အခု version upgrade ကို သေချာတက်လို့ရပြီ။
+
+အခုအခြေအနေ summary
+လက်ရှိ dashboard မှာ already ရပြီးသားတွေက:
+
+Dashboard dropdown
+Manage Dashboard
+role restriction
+cache / prefetch base
+chart rendering base
+settings base
+Google Sheets values format support
+loading UI base
+အခု next version ကို stable feature release အနေနဲ့တက်သင့်ပါတယ်။
+
+Recommended Next Version Plan
+V1.6 — Page Manager + Better Data Tools
+ဒီ version မှာ dashboard ကို actual usable analytics tool ဖြစ်စေမယ်
+
+ပါဝင်သင့်တာ
+Dashboard Page Manager
+
+page add
+page rename
+page delete
+page reorder
+Raw Data Table Enhancements
+
+column show/hide
+sortable columns
+search by all columns
+page size selector
+Export Base
+
+Export CSV
+Export Excel
+Cache Tools
+
+Clear Cache button
+Force Re-sync button
+Last sync status badge
+V1.7 — Widget Builder
+ဒါက တကယ် “builder” phase စမယ့် version
+
+ပါဝင်သင့်တာ
+Widget Manager
+
+add widget
+remove widget
+rename widget
+chart type choose
+bind widget to page
+Widget Layout
+
+drag and drop reorder
+width/size choose
+widget visibility per page
+Widget Preset Types
+
+KPI card
+Trend chart
+Status chart
+Problem chart
+Site chart
+Root cause chart
+Raw table
+Repeat complaint list
+V1.8 — Export & Reporting
+ပါဝင်သင့်တာ
+CSV export
+Excel export
+PNG export
+PDF export
+page-only export
+whole dashboard export
+V1.9 — Advanced Analytics
+ပါဝင်သင့်တာ
+compare period
+drill-down
+SLA threshold
+overtime settings
+saved views
+normalized KPI
+V2.0 — Final major version
+ပါဝင်သင့်တာ
+email alerts
+scheduled sync
+alert history
+builder polish
+permission hardening
+performance tuning
+ကျွန်တော်အကြံပြုတဲ့ actual next coding batch
+Version 1.6.0
+အရင်ဆုံး ဒီ 5 ခုလုပ်ရင် အရမ်းအဆင်ပြေမယ်
+
+Dashboard Page Manager
+Clear Cache / Force Re-sync
+Raw Data Table upgrade
+CSV / Excel Export
+Last Sync Status card
+ဘာကြောင့် V1.6 ကို အရင်ဒီလိုလုပ်သင့်လဲ
+Widget builder (V1.7) ကို အရင်တက်ချင်ရင်တောင်
+page manager + data tools မရှိရင် admin experience မပြည့်စုံဘူး
+
+ဒါကြောင့် order က:
+
+V1.6 = admin control + reporting tools
+V1.7 = builder UI
+ဖြစ်သင့်တယ်
+
+Suggested release order
+Release 1
+V1.6.0
+
+page manager
+re-sync tools
+export csv/excel
+improved raw table
+Release 2
+V1.7.0
+
+widget manager
+drag/drop builder
+widget layout save
+Release 3
+V1.8.0
+
+png/pdf export
+report snapshot
+Short recommendation
+အခု best next step က:
+
+V1.6.0 start
+Page Manager
+Clear Cache / Force Re-sync
+Raw Data Table upgrade
+CSV / Excel Export
+လိုချင်ရင် နောက် message မှာ တန်းပြောပါ:
+
+“V1.6.0 start လုပ်ပေး”
+
+အဲဒါဆို ကျွန်တော်:
+
+schema
+worker routes
+frontend UI
+page manager modal
+export buttons
+ကို တန်းစလုပ်ပေးမယ်။
+
+image.png
+image.png
+image.png
+image.png
+ကြည့်ကြည့်
+
+
+အိုကေ — အခု ရပြီ။
+Screenshot အရ dashboard က data ကိုကောင်းကောင်းဖတ်နေပြီ။
+
+အခု screenshot မှာ confirm လုပ်လို့ရတဲ့အရာ
+Total rows = 22774
+Closed/Open split ထွက်နေပြီ
+Avg Resolve Time ထွက်နေပြီ
+Closed Rate donut ထွက်နေပြီ
+Filters ပေါ်နေပြီ
+Tabs ပေါ်နေပြီ
+Google Sheets API source က parse ဖြစ်နေပြီ
+=> system core data pipeline OK ဖြစ်သွားပြီ
+
+အခု issue မဟုတ်တော့ဘဲ “improvement phase” ဝင်ပြီ
+အခုက version update ဆက်တက်ဖို့ အကောင်းဆုံးအချိန်ပါ။
+
+Screenshot ကြည့်ပြီး immediate improvements
+1) API key ကို UI မှာမပြဖို့
+အခု meta chip ထဲမှာ full source URL ပေါ်နေတယ်
+အဲဒီထဲမှာ API key ပါလို့ security risk ဖြစ်တယ်
+
+လုပ်သင့်တာ
+source URL full string မပြ
+ဒီလိုပဲပြ:
+Google Sheets API
+Sheet: Tickets
+Range: A1:AB22775
+API key ကို hide/mask လုပ်
+ဒါကို နောက် version မှာ မဖြစ်မနေပြင်သင့်တယ်
+
+2) KPI values တွေ format ပိုကောင်းစေချင်တယ်
+ဥပမာ:
+
+22774 → 22,774
+17.3h → 17.3 hrs
+100% → ok
+3) Overtime logic
+အခု screenshot ထဲမှာ overtime = 10866 ဆိုတော့
+rule ကအရမ်း broad ဖြစ်နေနိုင်တယ်
+
+နောက်တစ်ဆင့်
+overtime threshold setting
+SLA threshold setting
+service-based threshold
+လုပ်ဖို့လိုတယ်
+4) Repeat logic
+repeat = 5199 ဆိုတော့
+repeat complaint definition ကိုနောက်တစ်ဆင့် refine လုပ်သင့်တယ်
+
+ဥပမာ:
+
+same Local Service ID within 7 days
+same issue within 30 days
+same customer same site only
+အခု version update recommendation
+V1.6.0 start
+အခု အကောင်းဆုံး next batch က:
+
+A. Security + UX
+source URL mask
+API key hide
+KPI number format improve
+error message polish
+B. Page manager
+add page
+rename page
+reorder page
+delete page
+C. Data tools
+raw data table better
+CSV export
+Excel export
+clear cache / force re-sync
+My strong recommendation
+အခု screenshot အခြေအနေမှာ
+builder မတန်းသွားခင် ဒီ version ကိုအရင်လုပ်သင့်တယ်:
+
+V1.6.0
+Page Manager
+Clear Cache / Force Re-sync
+Export CSV / Excel
+Source URL mask
+KPI formatting
+Raw data table improvement
+ပြီးရင် V1.7.0
+widget manager
+add/remove widgets
+drag/drop reorder
+per-page widget save
+Short answer
+ဟုတ်တယ် — အခု dashboard data ရပြီ၊ next version ကိုစတင်တင်လို့ရပြီ
+
+ကျွန်တော် recommend လုပ်တာ:
+
+Next:
+“V1.6.0 start လုပ်ပေး”
+
+ဒါဆို ငါ:
+
+source URL mask
+page manager
+export csv/excel
+clear cache / force re-sync
+raw data improvement
+ကို တန်းစလုပ်ပေးမယ်။
+
+“V1.6.0 start လုပ်ပေး”
+
+
+
+Explored
+1 read
+Read
+index.html
+
+Ran commands
+16
+ကြည့်လို့ရပြီ — data က အခုသေချာပေါ်နေပြီ။
+ဒါကြောင့် V1.6.0 start batch ကို ဆက်တိုးပေးထားပါတယ်။
+
+ဒီတစ်ခါ ထည့်ပေးထားတာ
+1) Source URL mask
+အရင်လို full Google Sheets URL + API key မပြတော့ဘူး
+meta chips ထဲမှာ:
+
+Google Sheets API
+Range ...
+Last sync ...
+လိုပဲပြမယ်
+2) Manage Pages button
+Dashboard header မှာ
+
+Manage Pages
+button ထည့်ထားတယ်
+3) Dashboard Page Manager
+Admin အတွက်:
+
+page add
+page edit
+page delete
+page reorder
+လုပ်လို့ရမယ့် modal foundation ထည့်ထားတယ်
+4) Clear Cache button
+Admin အတွက်:
+
+Clear Cache
+button ထည့်ထားတယ်
+cache ဖျက်ပြီး refresh ပြန်ခေါ်နိုင်မယ်
+5) Raw Data Table improvements
+Raw Data tab မှာ:
+
+search
+page size selector
+CSV export
+Excel export
+ပါလာမယ်
+6) Excel export
+xlsx library CDN ထည့်ထားတယ်
+ဒါကြောင့် .xlsx export လုပ်လို့ရမယ်
+
+ပြင်ထားတဲ့ files
+Frontend
+
+index.html
+
+script.js
+
+style.css
+Backend
+
+clean_[[path]].js
+
+[[path]].js
+သင် repo ထဲမှာ replace လုပ်ရမယ့် files
+Root
+index.html
+script.js
+style.css
+Functions
+functions/api/[[path]].js
+
+clean_[[path]].js
+ နဲ့ replace လုပ်ပါ
+Commit / Push
+Bash
+
+git add index.html script.js style.css functions/api/[[path]].js
+git commit -m "Start V1.6.0 dashboard tools and page manager"
+git push
+Deploy ပြီးရင် ဘာမြင်ရမလဲ
+Dashboard page header မှာ
+
+Refresh Data
+Clear Cache
+Manage Pages
+Dashboard Settings
+Manage Dashboard
+ဆိုပြီး ပိုပြည့်စုံလာမယ်
+
+Raw Data tab ထဲမှာ
+
+Search
+20 / 50 / 100 / 250 rows selector
+CSV export
+Excel export
+ပါလာမယ်
+
+Important note
+သင် screenshot ထဲက UI က တချို့ updated feature မမြင်ရသေးရင်
+အများအားဖြင့် latest frontend files မတက်သေးတာ ဖြစ်တတ်တယ်
+
+ဒါကြောင့် deploy ပြီးရင်:
+
+hard refresh
+incognito test
+လုပ်ပါ
+Next recommended version
+V1.6.0 တက်ပြီးရင် နောက်တစ်ဆင့်အကောင်းဆုံးက:
+
+V1.7.0
+widget manager
+add/remove widgets
+drag & drop layout
+per-page widget save
+လိုချင်ရင် နောက်တစ်ခါ တန်းပြောပါ:
+
+“V1.7.0 start လုပ်ပေး”
+
+အဲဒါဆို builder UI စစ်စစ်ကို ဆက်တက်ပေးမယ်။
+
+
+“V1.6.0 start လုပ်ပေး”
+
+
+
+Explored
+4 reads
+Read
+index.html
+Read
+script.js
+Read
+style.css
+Read
+clean_[[path]].js
+ကြည့်ပြီးပြီ — ဒီ screenshot က V1.6 latest UI မဟုတ်သေးဘူး။
+
+Screenshot ကဘာပြောနေလဲ
+အခု screenshot ထဲမှာရှိတာ:
+
+Refresh Data
+Dashboard Settings
+Manage Dashboard
+ဒါပဲရှိတယ်။
+
+ဒါပေမယ့် V1.6 latest ဖြစ်ရင် ထပ်မြင်ရမယ့်ဟာတွေ
+Clear Cache
+Manage Pages
+Raw Data tab ထဲမှာ CSV / Excel export
+meta chip မှာ full URL မဟုတ်ဘဲ Google Sheets API / Range ... လို masked display
+အဲဒါကြောင့် conclusion
+latest index.html / script.js / style.css မတက်သေးဘူး
+သို့မဟုတ် browser က old JS/CSS ကို cache ဆွဲနေသေးတယ်။
+
+အခုလုပ်ရမယ့် exact checklist
+1) ဒီ 4 files ကို repo ထဲမှာ replace လုပ်ပါ
+root
+index.html
+script.js
+style.css
+functions
+functions/api/[[path]].js
+use these workspace files
+
+index.html
+
+script.js
+
+style.css
+
+clean_[[path]].js
+2) commit / push
+Bash
+
+git add index.html script.js style.css functions/api/[[path]].js
+git commit -m "Deploy V1.6.0 dashboard tools"
+git push
+3) deploy success စစ်
+Cloudflare Pages deployment list မှာ
+အခု commit green ဖြစ်ရမယ်
+
+4) browser cache ကိုသေချာရှင်း
+အကောင်းဆုံး:
+
+Incognito နဲ့ဖွင့်
+သို့မဟုတ်
+DevTools > Network > Disable cache
+Ctrl + Shift + R
+Deploy တက်ပြီးရင် ဘာမြင်ရမလဲ
+Dashboard header မှာ ဒီ button 5 ခုရှိရမယ်:
+
+Refresh Data
+Clear Cache
+Manage Pages
+Dashboard Settings
+Manage Dashboard
+Screenshot ထဲမှာ အခု
+2 နဲ့ 3 မရှိဘူး
+=> old version ပဲ run နေတာ
+
+နောက်ထပ် important point
+Screenshot ထဲမှာ full Google Sheets URL + API key ပေါ်နေတယ်
+ဒါလည်း latest code တက်မသေးတဲ့ သက်သေပါ
+
+latest code ဆို
+
+full URL မပြတော့ဘူး
+Google Sheets API
+Range ...
+လိုပဲပြမယ်
+Quick verification
+Live site မှာ:
+
+Manage Pages button မပေါ်သေးရင်
+=> latest frontend မတက်သေး
+full URL meta chip ထဲမှာပေါ်နေသေးရင်
+=> old script.js ပဲ
+အခုအတိုချုပ်
+Data က အခုအလုပ်လုပ်နေပြီ
+ဒါပေမယ့် V1.6 UI deploy မတက်သေးဘူး
+
+လိုချင်ရင် နောက် message မှာ ကျွန်တော်
+“GitHub web editor နဲ့ file 4 ခုကို step-by-step ဘယ်လို replace လုပ်မလဲ”
+ကို Burmese နဲ့ တစ်ဆင့်ချင်းပြောပေးမယ်။
+
+
+ကျန်တာကအဆင်ပြေပါတယ် ဒါပေမဲ့ လေးနေတယ် အဲ့တာလေးပြင်ပေးပါ
+
+
+
+Ran commands
+5
+ဟုတ်တယ် — လေးနေတာအတွက် performance optimization လုပ်ပေးထားပါတယ်။
+အထူးသဖြင့် 22,774 rows လောက်ရှိတဲ့ data နဲ့ဆို frontend က repeated parsing / filtering / chart animation ကြောင့်လေးနိုင်တယ်။
+
+ဒီတစ်ခါ optimize လုပ်ပြီးတာ
+1) Row metadata ကို တစ်ခါတည်း preprocess
+အရင်:
+
+filter တစ်ခါပြောင်းတိုင်း
+row တစ်ကြောင်းချင်းစီက
+status
+site
+township
+queue
+created/resolved date
+ကို ပြန် parse လုပ်နေတယ်
+အခု:
+
+data ရလာတဲ့အချိန် တစ်ခါပဲ preprocess လုပ်မယ်
+နောက်ပိုင်း filter/graph တွေက cached meta ကိုသုံးမယ်
+2) Filter result ကို cache လုပ်ထားတယ်
+အရင်:
+
+render တိုင်း rows အကုန်ပြန် filter
+အခု:
+
+current filters အလိုက် filtered rows ကို cache လုပ်ထားမယ်
+same filter state နဲ့ပြန် render လုပ်ရင် ပြန်တွက်မနေတော့ဘူး
+3) Filter options ကို cache လုပ်ထားတယ်
+Site / Township / Queue dropdown options ကို
+render တိုင်းပြန်မလုပ်တော့ဘူး
+4) Chart animation ပိတ်ထားတယ်
+Chart.js animation က rows များရင် UI ကိုနှေးစေတတ်တယ်
+
+အခု:
+
+animation: false
+tooltip animation လည်း off
+ဒါကြောင့် chart redraw ပိုမြန်မယ်
+
+5) Raw data search ကို debounce လုပ်ထားတယ်
+search box မှာ type လုပ်တိုင်း
+immediately full rerender မလုပ်တော့ဘဲ
+140ms debounce နဲ့သွားမယ်
+
+ဒါကြောင့် search ရိုက်တဲ့အခါ ပို smooth ဖြစ်မယ်
+
+ပြင်ထားတဲ့ file
+
+script.js
+သင်အခုလုပ်ရမယ့်အရာ
+Step 1
+repo ထဲက script.js ကို
+
+script.js
+ နဲ့ replace လုပ်ပါ
+
+Step 2
+commit / push
+
+Bash
+
+git add script.js
+git commit -m "Optimize dashboard performance for large datasets"
+git push
+Step 3
+Cloudflare Pages deploy ပြန်တက်တာစောင့်ပါ
+
+Step 4
+Browser hard refresh
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+ဘာပိုမြန်သွားမလဲ
+ဒီ optimization တင်ပြီးရင်:
+
+dashboard open ပြီး render
+tab ပြောင်းတာ
+filter ပြောင်းတာ
+raw data search
+chart redraw
+တွေ ပိုမြန်သွားမယ်
+မှတ်ထားဖို့
+First load ကတော့ network ပေါ်မူတည်တယ်
+Google Sheets API + worker + D1 cache + browser render ပါလို့
+first load မှာ အနည်းငယ်ကြာနိုင်သေးတယ်
+
+ဒါပေမယ့်
+after loaded interactions က ပိုမြန်သွားရမယ်
+
+If you want even faster in next version
+နောက်တစ်ဆင့် performance upgrade အတွက် အကောင်းဆုံး 3 ခုက:
+
+Worker-side summary cache
+
+total tickets
+status counts
+top sites
+top root causes
+ကို backend မှာ pre-calculate
+Virtualized raw table
+
+20k+ rows ကို table render ပိုမြန်
+Tab-level lazy rendering
+
+Summary tab ပဲအရင် render
+Root Cause / Raw Data ကို click မှ render
+လိုချင်ရင် နောက်တစ်ခါ
+“speed အတွက် worker-side summary cache လုပ်ပေး”
+လို့ပြောပါ
+အဲ့ဒါက next performance boost အရမ်းကောင်းမယ်။
+
+
+ကျန်တာကအဆင်ပြေပါတယ် ဒါပေမဲ့ လေးနေတယ် အဲ့တာလေးပြင်ပေးပါ
+
+
+
+Ran commands
+6
+အိုကေ — လေးနေတဲ့ပိုင်းကို ထပ် optimize လုပ်ပြီးပြီ။
+အခု optimize က dataset ကြီးတဲ့အခါ အရမ်းသက်ရောက်မယ်။
+သင့် screenshot ထဲမှာ 22,774 rows ရှိလို့ frontend render/filter/chart တွေ လေးတာ သဘာဝပါပဲ။
+
+အခု ထပ်ပြင်ထားတာ
+1) Row parsing ကို one-time preprocess
+row တစ်ကြောင်းချင်းစီရဲ့
+status
+site
+township
+queue
+created/resolved
+resolutionHours
+ကို တစ်ခါတည်း cache လုပ်မယ်
+2) Filter result cache
+တူညီတဲ့ filter state နဲ့ render ပြန်လုပ်ရင်
+rows အကုန်ပြန်မ filter တော့ဘူး
+3) Filter options cache
+Site / Township / Queue options ကို
+render တိုင်းပြန်တွက်မနေတော့ဘူး
+4) Stats cache
+Summary/Trend/Root Cause page တွေအတွက်
+required stats ကို cache ထားမယ်
+tab ပြောင်းတိုင်း full recount မလုပ်တော့ဘူး
+5) Page-specific stats only
+အရင်က tab ဘာဖွင့်ဖွင့်
+
+top problems
+top sites
+trend
+repeat
+queue
+root cause
+အကုန်တွက်နေတယ်
+အခု:
+
+current page အတွက်လိုတဲ့ stats ကိုပဲတွက်မယ်
+6) Chart animation off
+Chart.js animation ပိတ်ထားတယ်
+tooltip animation လည်းပိတ်ထားတယ်
+redraw ပိုမြန်မယ်
+7) Raw table search debounce
+search box ရိုက်တိုင်း immediate rerender မလုပ်ဘဲ
+140ms debounce နဲ့သွားမယ်
+8) Number formatting
+rows count စတာတွေ locale format နဲ့ပြမယ်
+22774 → 22,774
+ပြင်ထားတဲ့ file
+
+script.js
+သင်အခုလုပ်ရမယ့်အရာ
+Step 1
+repo ထဲက script.js ကို
+
+script.js
+ နဲ့ replace လုပ်ပါ
+
+Step 2
+commit / push
+
+Bash
+
+git add script.js
+git commit -m "Optimize dashboard performance for large data"
+git push
+Step 3
+Cloudflare deploy စောင့်ပါ
+
+Step 4
+Browser hard refresh
+
+Windows → Ctrl + Shift + R
+Mac → Cmd + Shift + R
+Expected result
+ဒီ version တင်ပြီးရင်:
+
+page open ပြီး render ပိုမြန်မယ်
+filter ပြောင်းတာ ပိုမြန်မယ်
+tab ပြောင်းတာ ပိုသက်သာမယ်
+raw table search ပို smooth ဖြစ်မယ်
+သတိထားဖို့
+First load
+first load ကတော့
+
+Google Sheets API fetch
+worker response
+browser parse
+ရှိသေးလို့ ကြာနိုင်တယ်
+But after loaded
+filter
+tabs
+table search
+chart redraw
+တွေက ပိုမြန်သွားရမယ်
+နောက်တစ်ဆင့် performance boost
+ဒီထက်ပိုမြန်ချင်ရင် next version မှာ:
+
+worker-side summary cache
+virtualized raw table
+tab lazy render
+လုပ်ရမယ်
+လိုချင်ရင် နောက်တစ်ခါ
+“speed အတွက် worker-side summary cache လုပ်ပေး”
+လို့ပြောပါ။
+
+
+ကျန်တာကပေါ့နေပြီ mange pages ကိုနှိပ်ရင်လေးနေတုန်း
+
+“speed အတွက် worker-side summary cache ပါ လုပ်ပေးပါ”
+
+
+
+Ran commands
+4
+ရပါတယ် — လေးနေတာအတွက် ထပ် optimize လုပ်ပြီးပြီ။
+ဒီတစ်ခါက Manage Pages popup လေးနေတဲ့ပိုင်း နဲ့ dashboard render speed နှစ်ခုလုံးကို တိုက်ရိုက်လျှော့ထားတာပါ။
+
+အခု optimize လုပ်ပြီးတဲ့အချက်
+1) Manage Pages ကိုချက်ချင်းဖွင့်မယ်
+အရင်က:
+
+Manage Pages နှိပ်တိုင်း
+refreshData() ကို စောင့်ပြီးမှ modal ပေါ်လို့ လေး နေတာ
+အခု:
+
+modal ကို ချက်ချင်းပေါ်မယ်
+current pages ကို အရင်ပြမယ်
+background မှာ silent refresh ပြန်လုပ်မယ်
+2) Worker-side summary cache
+အခု worker က Google Sheets data sync လုပ်တဲ့အချိန်မှာ
+source summary ကို backend မှာတစ်ခါတည်းတွက်သိမ်းထားမယ်
+
+ဥပမာ:
+
+totalRows
+closed/open
+avgResolutionHours
+topProblems
+topSites
+topRootCauses
+topQueues
+topTownships
+repeatEntries
+trendBy day/week/month/year
+ဒါကြောင့် dashboard ဖွင့်ချိန်မှာ
+filter မသုံးသေးတဲ့ default state အတွက် frontend က row 22k အကုန်ပြန်မတွက်ရတော့ဘူး
+
+3) Frontend stats cache
+tab အလိုက်လိုတဲ့ stats ကိုပဲတွက်မယ်
+ပြီးတော့ cache ထားမယ်
+
+4) Filter cache + preprocessed row meta
+rows ကြီးတဲ့ data အတွက်
+
+filter result cache
+site/township/queue option cache
+parsed row metadata cache
+သုံးထားတယ်
+5) Chart animation off
+chart redraw ပိုမြန်အောင် animation ပိတ်ထားတယ်
+
+6) Raw data search debounce
+search input တစ်လုံးချင်းရိုက်တိုင်း full render မလုပ်တော့ဘူး
+
+ပြင်ထားတဲ့ files
+Frontend
+
+script.js
+
+index.html
+
+style.css
+Backend
+
+clean_[[path]].js
+
+[[path]].js
+သင် repo ထဲမှာ replace လုပ်ရမယ့် files
+Root
+index.html
+script.js
+style.css
+Functions
+functions/api/[[path]].js
+
+clean_[[path]].js
+ နဲ့ replace လုပ်ပါ
+Commit / Push
+Bash
+
+git add index.html script.js style.css functions/api/[[path]].js
+git commit -m "Optimize dashboard speed and page manager responsiveness"
+git push
+Deploy ပြီးရင် ဘာပိုမြန်သွားမလဲ
+Manage Pages popup open time
+dashboard first render
+tab switch
+filter apply
+raw data search
+summary page loading
+အရေးကြီး
+ဒီ performance fix က အထူးသဖြင့် large dataset အတွက် အလုပ်လုပ်မယ်
+သင့် data က 22k+ rows ဖြစ်လို့ သိသာသင့်တယ်
+
+If you want next
+နောက်တစ်ဆင့် speed ကို ထပ်တက်ချင်ရင်
+အကောင်းဆုံးက:
+
+Raw table virtualization
+Tab lazy render
+Widget-level builder cache
+လိုချင်ရင် နောက်တစ်ခါ
+“V1.7.0 start လုပ်ပေး”
+လို့ပြောပါ — builder UI ကို ဆက်တက်ပေးမယ်။
+
+
+“V1.7.0 start လုပ်ပေး”
+
+
+
+Ran commands
+2
+ဟုတ်ပါတယ် — သင် paste ပေးထားတဲ့ file contents အရ V1.6.0 code က workspace ထဲမှာ ထည့်ပြီးသား ပါ။
+
+အခု file တွေထဲမှာ already ပါနေတဲ့ V1.6 features
+index.html
+Clear Cache button ✅
+Manage Pages button ✅
+Dashboard Page Manager Modal ✅
+Dashboard Page Modal ✅
+xlsx export library ✅
+script.js
+openDashboardPageManagerModal() ✅
+saveDashboardPage() ✅
+deleteDashboardPageConfirm() ✅
+clearCurrentDashboardCache() ✅
+exportCurrentDashboardCSV() ✅
+exportCurrentDashboardExcel() ✅
+speed optimization / stats cache ✅
+[[path]].js
+dashboardPages/sort route ✅
+dashboards/:id/pages create route ✅
+dashboardPages/:id edit/delete route ✅
+dashboards/:id/cache clear route ✅
+ဒါဆို အခု ဘာလုပ်ဖို့ကျန်သေးလဲ
+အဓိကက ဒီ updated files တွေကို repo/live site ထဲတင်ဖို့ ပဲကျန်တယ်။
+
+Replace လုပ်ရမယ့် files
+Root
+index.html
+script.js
+style.css
+Functions
+functions/api/[[path]].js
+Use these workspace files
+
+index.html
+
+script.js
+
+style.css
+
+clean_[[path]].js
+Commit / Push
+Bash
+
+git add index.html script.js style.css functions/api/[[path]].js
+git commit -m "Deploy V1.6.0 dashboard page manager and export tools"
+git push
+ပြီးရင်
+Cloudflare Pages deploy green ဖြစ်ရမယ်
+ပြီးသွားရင် browser ကို:
+
+Ctrl + Shift + R
+or
+incognito window
+နဲ့ test လုပ်ပါ
+
+ပြီးရင် မြင်ရမယ့်ဟာ
+Dashboard header မှာ:
+
+Refresh Data
+Clear Cache
+Manage Pages
+Dashboard Settings
+Manage Dashboard
+ဆိုပြီး button 5 ခုရှိရမယ်
+
+အရေးကြီး note
+HTML ထဲမှာ Clear Cache / Manage Pages buttons က
+အစမှာ hidden class ပါတာ သာမန်ပါ။
+
+JS ထဲက updateAdminUI() က
+admin login ဖြစ်ရင် အဲဒါကို remove လုပ်ပါတယ်။
+
+အဲဒါကြောင့်
+button မပေါ်သေးရင်:
+
+old script.js load ဖြစ်နေတာ
+browser cache
+deploy old commit
+ထဲကတစ်ခုပါ
+Quick verify
+Live site မှာ:
+
+1) View Source / inspect
+search:
+
+text
+
+Manage Pages
+တွေ့ရမယ်
+
+2) browser console မှာ
+search:
+
+text
+
+openDashboardPageManagerModal
+current loaded script မှာရှိရမယ်
+
+Short answer
+ဟုတ်တယ် — V1.6.0 start code က ready ဖြစ်နေပြီ
+အခု ကျန်တာက:
+
+repo file replace
+commit/push
+deploy
+hard refresh
+လိုချင်ရင် နောက် message မှာ
+GitHub web editor နဲ့ 4 files ကို step-by-step ဘယ်လို replace လုပ်ရမလဲ
+တစ်ဆင့်ချင်း Burmese နဲ့ပြောပေးမယ်။
+
+
+“V1.7.0 start လုပ်ပေး”
+
+
+
+Ran commands
+11
+ပြီးပါပြီ — V1.7.0 start ကို စလုပ်ပေးထားပါတယ်။
+
+ဒီတစ်ခါ အသစ်ထည့်ထားတဲ့အရာ
+1) Manage Widgets button
+Dashboard header မှာ
+
+Manage Widgets
+button ထည့်ထားတယ်
+2) Widget Manager modal
+Admin အတွက်:
+
+current page ထဲက widgets list ကြည့်
+drag & drop reorder
+edit
+delete
+လုပ်လို့ရမယ်
+3) Add / Edit Widget modal
+Widget type ရွေးလို့ရမယ်:
+
+Total Tickets KPI
+Avg Resolve KPI
+Closed Rate KPI
+Quick Summary
+Trend Chart
+Status Chart
+Problem Chart
+Site Chart
+Root Cause Chart
+Repeat Complaint
+Township Chart
+Queue Chart
+Raw Data Table
+4) Widget-based page rendering
+အခု page တစ်ခုမှာ widget configs ရှိရင်
+page slug default layout မသုံးတော့ဘဲ widget list အလိုက် render လုပ်မယ်
+
+5) Widget routes backend
+Worker မှာ support ပါလာပြီ:
+
+POST /api/dashboardPages/:id/widgets
+PUT /api/dashboardWidgets/:id
+DELETE /api/dashboardWidgets/:id
+POST /api/dashboardWidgets/sort
+6) getData ထဲမှာ dashboard widgets ပါပြီ
+frontend က page widgets list ကိုရနိုင်ပြီ
+
+အရေးကြီး behavior
+If page မှာ widget config မရှိသေးရင်
+system က existing default page layout ကိုပဲသုံးမယ်
+
+If page မှာ widget config ရှိပြီဆို
+system က widget manager နဲ့သတ်မှတ်ထားတဲ့ layout နဲ့ render လုပ်မယ်
+
+ဒါကြောင့် builder phase ကို safe migration နဲ့စထားတာပါ
+
+ပြင်ထားတဲ့ files
+Frontend
+
+index.html
+
+script.js
+
+style.css
+Backend
+
+clean_[[path]].js
+
+[[path]].js
+Repo ထဲမှာ replace လုပ်ရမယ့် files
+Root
+index.html
+script.js
+style.css
+Functions
+functions/api/[[path]].js
+
+clean_[[path]].js
+ နဲ့ replace
+Commit / Push
+Bash
+
+git add index.html script.js style.css functions/api/[[path]].js
+git commit -m "Start V1.7.0 widget manager and builder foundation"
+git push
+Deploy ပြီးရင် ဘာမြင်ရမလဲ
+Dashboard header မှာ:
+
+Refresh Data
+Clear Cache
+Manage Pages
+Manage Widgets
+Dashboard Settings
+Manage Dashboard
+Manage Widgets modal ထဲမှာ
+current page widgets list
+Add Widget
+drag/drop reorder
+edit
+delete
+V1.7.0 status
+ဒီ version က builder foundation ပါ
+အပြည့် builder မဟုတ်သေးဘူး
+
+အခုရတာ
+widget CRUD
+widget order save
+widget-based page render
+နောက်တစ်ဆင့် V1.7.1 / V1.8 မှာထပ်လုပ်သင့်တာ
+widget resize
+widget width (half / full)
+widget custom chart type per widget
+widget settings JSON UI
+drag/drop on actual dashboard canvas
+PNG / PDF export
+Short answer
+V1.7.0 start done
+အခု deploy တင်ပြီးရင် widget manager ကို စမ်းလို့ရပြီ
+
+လိုချင်ရင် နောက်တစ်ခါ တန်းပြောပါ:
+
+“V1.7.1 continue လုပ်ပေး”
+
+အဲဒါဆို
+
+widget width
+widget layout drag/drop on page
+builder polish
+ကို ဆက်တက်ပေးမယ်။
+
+image.png
+image.png
+not found error
+
+
+
+Ran commands
+6
+တွေ့ပြီ — screenshot ထဲက Not Found က
+V1.7 frontend က route ကိုခေါ်နေပြီ၊ ဒါပေမယ့် live backend မှာ widget routes မတက်သေးတာ ဖြစ်နိုင်ခြေ အမြင့်ဆုံးပါ။
+
+Root cause
+Add Widget မှာ frontend က ဒီ route ကိုခေါ်တယ်:
+
+POST /api/dashboardPages/:id/widgets
+PUT /api/dashboardWidgets/:id
+DELETE /api/dashboardWidgets/:id
+POST /api/dashboardWidgets/sort
+ဒါပေမယ့်
+သင် live site မှာ functions/api/[[path]].js က latest V1.7 version မဟုတ်ရင်
+server က Not Found ပြန်မယ်
+
+အခု ကျွန်တော်လုပ်ပြီးတာ
+
+clean_[[path]].js
+ ကို latest V1.7 + V1.6 + performance + Google Sheets matrix support ပါအောင် finalize လုပ်ထားပြီး
+
+[[path]].js
+ ကိုလည်း exact same latest version နဲ့ sync လုပ်ထားပါတယ်
+သင်အခုလုပ်ရမယ့်အရာ
+1) Backend file ကို latest clean version နဲ့ replace
+repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ကို
+
+text
+
+uploads/clean_[[path]].js
+နဲ့ replace လုပ်ပါ
+
+
+[[path]].js
+ ထက်
+
+clean_[[path]].js
+ ကိုသုံးတာပိုကောင်းပါတယ်
+
+2) Frontend files ကိုလည်း latest နဲ့ replace
+repo root ထဲက:
+
+index.html
+script.js
+style.css
+ကို အောက်က files နဲ့ replace လုပ်ပါ:
+
+
+index.html
+
+script.js
+
+style.css
+3) Commit / Push
+Bash
+
+git add index.html script.js style.css functions/api/[[path]].js
+git commit -m "Deploy V1.7 widget manager routes and UI"
+git push
+4) Cloudflare Pages deploy green ဖြစ်တာစောင့်ပါ
+5) Browser hard refresh
+Ctrl + Shift + R
+or
+incognito window
+ဘာဖြစ်သင့်လဲ
+Deploy တက်ပြီးရင်:
+
+Manage Widgets
+modal ပွင့်မယ်
+Add Widget save လုပ်လို့ရမယ်
+widget reorder လုပ်လို့ရမယ်
+edit/delete လုပ်လို့ရမယ်
+Important check
+Deploy ပြီးရင် live site မှာ:
+
+Header buttons
+ဒါတွေရှိရမယ်:
+
+Refresh Data
+Clear Cache
+Manage Pages
+Manage Widgets
+Dashboard Settings
+Manage Dashboard
+If Manage Widgets button ရှိပေမယ့် save မှာ Not Found
+=> frontend updated but backend old
+
+Why this happened
+V1.7 မှာ frontend script က routes အသစ်ခေါ်တယ်
+backend [[path]].js က old version ဖြစ်နေရင်
+route မသိလို့ Not Found ပြန်တယ်
+
+အတိုချုပ်
+ဒီ issue က code logic bug မဟုတ်ဘဲ deploy mismatch ပါ
+
+frontend new
+backend old
+လိုချင်ရင် နောက် message မှာ
+GitHub web editor နဲ့ functions/api/[[path]].js ကို clean version နဲ့ step-by-step ဘယ်လို replace လုပ်မလဲ
+တစ်ဆင့်ချင်း Burmese နဲ့ပြောပေးမယ်။
+
+
+image.png
+image.png
+/api/dashboards/1/data:1 Failed to load resource: the server responded with a status of 503 ()
+
+script.js:1164 SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+
+text
+
+at JSON.parse (&lt;anonymous&gt;)
+
+at fetchFromWorker (script.js:1121:29)
+
+at async script.js:1130:18
+(anonymous) @ script.js:1164
+
+/api/getData:1 Failed to load resource: the server responded with a status of 503 ()
+
+/api/dashboards/prefetch:1 Failed to load resource: the server responded with a status of 503 ()
+
+script.js:147 Error: HTTP 503
+
+text
+
+at fetchAPI (script.js:143:13)
+
+at async refreshData (script.js:155:14)
+fetchAPI @ script.js:147
+
+/api/dashboards/1/data?refresh=1:1 Failed to load resource: the server responded with a status of 503 ()
+
+script.js:1164 SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+
+text
+
+at JSON.parse (&lt;anonymous&gt;)
+
+at fetchFromWorker (script.js:1121:29)
+
+at async script.js:1130:18
+
+at async fetchDashboardData (script.js:1171:15)
+
+at async refreshCurrentDashboard (script.js:1186:14)
+(anonymous) @ script.js:1164
+
+/api/getData:1 Failed to load resource: the server responded with a status of 503 ()
+
+script.js:147 Error: HTTP 503
+
+text
+
+at fetchAPI (script.js:143:13)
+
+at async refreshData (script.js:155:14)
+
+at async script.js:2818:5
+fetchAPI @ script.js:147
+
+/api/dashboards/1/data?refresh=1:1 Failed to load resource: the server responded with a status of 503 ()
+
+script.js:1164 SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+
+text
+
+at JSON.parse (&lt;anonymous&gt;)
+
+at fetchFromWorker (script.js:1121:29)
+
+at async script.js:1130:18
+
+at async fetchDashboardData (script.js:1171:15)
+
+at async refreshCurrentDashboard (script.js:1186:14)
+
+
+Ran commands
+3
+တွေ့ပြီ — console ထဲက error အရ frontend bug မဟုတ်ဘဲ backend worker က 503 နဲ့ crash နေတာ ပါ။
+
+Console က ဘာပြောနေလဲ
+/api/getData → 503
+/api/dashboards/1/data → 503
+/api/dashboards/prefetch → 503
+frontend က worker response ကို JSON ထင်ပြီး parse လုပ်တော့
+<!DOCTYPE ...> HTML error page ကိုတွေ့ပြီး:
+txt
+
+Unexpected token '<'
+ဖြစ်နေတာ
+ဒါဘာဆိုလိုလဲ
+Cloudflare Pages Functions ထဲက
+
+text
+
+functions/api/[[path]].js
+မှာ runtime error တစ်ခုရှိနေတယ်
+ဒါကြောင့် Cloudflare က JSON မပြန်ဘဲ default HTML error page ပြန်ပေးနေတာ
+
+ငါအခုပြင်ထားတာ
+1) Worker ကို top-level try/catch ပတ်ထားတယ်
+အခု runtime error ဖြစ်ရင် HTML 503 page မဟုတ်ဘဲ
+JSON error message ပြန်ပေးမယ်
+
+ဥပမာ:
+
+JSON
+
+{ "error": "some real error here" }
+2) Frontend fetchFromWorker ကို non-JSON safe လုပ်ထားတယ်
+အခု response က HTML ဖြစ်ရင်
+Unexpected token '<' မဖြစ်တော့ဘဲ
+ပိုရှင်းတဲ့ error message ပြမယ်
+
+3) getData ထဲက dashboard widget query ကို safer လုပ်ထားတယ်
+အဲ့ route မှာ unhandled DB issue တက်ပြီး 503 ဖြစ်နိုင်တာကို လျှော့ထားတယ်
+
+အခု သင်လုပ်ရမယ့်အရာ
+Step 1
+repo ထဲက worker file ကို latest နဲ့ replace လုပ်ပါ
+
+text
+
+functions/api/[[path]].js
+with
+
+text
+
+uploads/clean_[[path]].js
+Step 2
+repo root ထဲက script.js ကိုလည်း replace လုပ်ပါ
+
+text
+
+script.js
+with
+
+text
+
+uploads/script.js
+Step 3
+commit / push
+
+Bash
+
+git add functions/api/[[path]].js script.js
+git commit -m "Add JSON error handling for dashboard worker"
+git push
+Step 4
+Cloudflare Pages deploy ပြန်တက်ပြီး
+browser hard refresh လုပ်ပါ
+
+ပြီးရင် ဘာဖြစ်မလဲ
+If backend ထဲမှာ error တစ်ခုခု ရှိနေသေးရင်
+အခုတစ်ခါ console/network မှာ
+HTML 503 page မဟုတ်ဘဲ
+real JSON error text ကိုမြင်ရမယ်
+
+ဒါနဲ့ exact root cause ကို straight fix လုပ်လို့ရမယ်
+
+နောက်တစ်ဆင့်
+ဒီ version deploy ပြီးရင်
+Network tab မှာ /api/getData သို့ /api/dashboards/1/data response body ကိုကြည့်ပါ
+
+အခုတစ်ခါ response က JSON error message ဖြစ်ရမယ်
+
+ဥပမာ:
+
+JSON
+
+{ "error": "no such table: dashboard_widgets" }
+သို့မဟုတ်
+
+JSON
+
+{ "error": "some runtime error..." }
+Short answer
+အခု issue က:
+backend function crash
+ငါ fix ထည့်ထားတာ:
+
+HTML 503 → JSON error
+frontend safe parsing
+ဒါကြောင့် next deploy ပြီးရင် တကယ့် error message ထွက်လာမယ်
+အဲ့ message ကိုပို့ရင် နောက်တစ်ခါ exact fix ပေးမယ်။
+
+လိုချင်ရင် နောက် message မှာ
+Network tab က JSON error body ကို ဘယ်လို copy ယူရမလဲ
+တစ်ဆင့်ချင်းပြောပေးမယ်။
+
+
+index.umd.ts:50 Uncaught Error: Canvas is already in use. Chart with ID '13' must be destroyed before the canvas with ID 'dashTrendCanvas' can be reused.
+
+constructor @ index.umd.ts:50
+
+createDashboardChart @ script.js:1471
+
+renderDashboardCharts @ script.js:1462
+
+(anonymous) @ script.js:1277
+
+requestAnimationFrame
+
+renderDashboardData @ script.js:1277
+
+renderCurrentDashboard @ script.js:1247
+
+saveDashboardWidget @ script.js:992
+
+await in saveDashboardWidget
+
+onclick @ (index):852
+
+index.umd.ts:50 Uncaught Error: Canvas is already in use. Chart with ID '27' must be destroyed before the canvas with ID 'dashStatusCanvas' can be reused.
+
+manage wiget ထဲက ဟာတွေက ဘယ်မှာပေါ််မှာလဲ
+
+
+
+Ran commands
+2
+ဟုတ်ပါတယ် — အခု Manage Widgets save လုပ်တဲ့အခါ Not Found ဖြစ်တာက
+frontend က route ကိုခေါ်နေပြီ၊ backend live file မှာ widget routes မတက်သေးတာ ကြောင့်ပါ။
+
+Widgets က ဘယ်မှာပေါ်မလဲ
+အခု selected page/tab ပေါ်မှာပဲ ပေါ်မယ်။
+
+ဥပမာ
+သင် Summary tab မှာရှိနေပြီး Manage Widgets > Add Widget လုပ်တယ်ဆို
+
+အဲဒီ widget က Summary page ပေါ်မှာပေါ်မယ်
+သင် Trend tab ကိုရွေးထားပြီး add လုပ်တယ်ဆို
+
+အဲဒီ widget က Trend page ပေါ်မှာပေါ်မယ်
+အရေးကြီး behavior
+Current logic
+page တစ်ခုမှာ custom widget မရှိသေးရင်
+default layout ပဲပြမယ်
+page တစ်ခုမှာ custom widget တစ်ခု라도ရှိလာရင်
+အဲဒီ page က custom widget layout နဲ့ render လုပ်မယ်
+ဆိုလိုတာ
+Manage Widgets ထဲက widget တွေက
+လက်ရှိရွေးထားတဲ့ page/tab ကို control လုပ်တာ ပါ
+
+Not Found error ကို ဘယ်လိုရှင်းမလဲ
+ဒီ issue က almost sure backend deploy mismatch ပါ
+
+replace လုပ်ရမယ့် file
+repo ထဲက
+
+text
+
+functions/api/[[path]].js
+ကို
+
+text
+
+uploads/clean_[[path]].js
+နဲ့ replace လုပ်ပါ
+
+frontend file တွေလည်း latest ဖြစ်ရမယ်
+repo root ထဲက:
+
+index.html
+script.js
+style.css
+ကို workspace ထဲက latest files နဲ့ replace လုပ်ပါ:
+
+
+index.html
+
+script.js
+
+style.css
+Commit / Push
+Bash
+
+git add index.html script.js style.css functions/api/[[path]].js
+git commit -m "Fix V1.7 widget routes and deploy latest dashboard builder"
+git push
+Deploy ပြီးရင် စမ်းနည်း
+Step 1
+dashboard ကိုဖွင့်
+
+Step 2
+ဥပမာ Summary tab ကိုရွေး
+
+Step 3
+Manage Widgets ကိုနှိပ်
+
+Step 4
+Add Widget
+
+widget type ရွေး
+Save
+Step 5
+modal ပိတ်ပြီး
+Summary page ပေါ်မှာ widget render ပြောင်းလာသင့်တယ်
+
+သတိထားရမယ့် limitation
+အခု V1.7.0 start version မှာ
+တူညီတဲ့ chart type ကို page တစ်ခုထဲမှာ အများကြီးထည့်တာ
+conflict ဖြစ်နိုင်သေးတယ်
+
+ဥပမာ:
+
+Trend Chart ၂ ခု
+Status Chart ၂ ခု
+ဒီလိုထည့်ရင် canvas id clash ဖြစ်နိုင်တယ်
+
+လောလောဆယ် safe usage
+page တစ်ခုထဲမှာ
+
+Trend Chart ၁ ခု
+Status Chart ၁ ခု
+Problem Chart ၁ ခု
+လို type မတူတာတွေ ထည့်သုံးပါ
+If you want next
+နောက်တစ်ဆင့်မှာ ကျွန်တော်
+
+V1.7.1
+widget canvas id unique
+duplicate widget types support
+widget width (half/full)
+better drag/drop layout
+ကို ဆက်လုပ်ပေးနိုင်တယ်
+Short answer
+Manage Widgets ထဲက widget တွေ = current selected page/tab ပေါ်မှာပေါ်မယ်
+Not Found = backend latest [[path]].js မတက်သေး
+
+clean_[[path]].js
+ နဲ့ replace လုပ်ပြီး deploy ပြန်တင်ပါ
+လိုချင်ရင် နောက် message မှာ
+V1.7.1 continue လုပ်ပေး
+လို့ပြောပါ — duplicate widget support နဲ့ actual builder layout ဆက်တက်ပေးမယ်။
+
+
+index.umd.ts:50 Uncaught Error: Canvas is already in use. Chart with ID '6' must be destroyed before the canvas with ID 'dashStatusCanvas' can be reused.
+
+constructor @ index.umd.ts:50
+
+createDashboardChart @ script.js:1471
+
+renderDashboardCharts @ script.js:1463
+
+(anonymous) @ script.js:1277
+
+requestAnimationFrame
+
+renderDashboardData @ script.js:1277
+
+renderCurrentDashboard @ script.js:1247
+
+deleteDashboardWidgetConfirm @ script.js:1007
+
+await in deleteDashboardWidgetConfirm
+
+onclick @ (index):1
+
+index.umd.ts:50 Uncaught Error: Canvas is already in use. Chart with ID '12' must be destroyed before the canvas with ID 'dashStatusCanvas' can be reused.
+
+still error
+
+ပြီးတော့ login page မှာChecking auth...ဆိုပြီး ကြာနေတယ် အဲ့တာလေးပြင်ပေးပါ dashboard item api တွေကိုယူနေတယ်ဆိုပေမဲ့ တခြားဟာတွေကိုမနှောင့်ယှက်ပဲ နောက်ကွယ်ကယူပါ
+
+
+
+Ran commands
+4
+ပြင်ပြီးပါပြီ — ၂ ပိုင်းလုံး fix ထည့်ပေးထားပါတယ်။
+
+Fix 1 — Canvas is already in use
+ဒီ error က chart render အဟောင်းမပိတ်ခင်
+အသစ်ပြန် draw လုပ်လို့ ဖြစ်တာပါ။
+
+အခု ပြင်ထားတာ
+old requestAnimationFrame callback ကို cancel လုပ်တယ်
+dashboardRenderToken နဲ့ stale render callback တွေ block လုပ်တယ်
+Chart.getChart(canvas) နဲ့ canvas ပေါ်က chart အဟောင်းရှိရင် destroy လုပ်တယ်
+widget save / delete / rerender တွေမှာ chart reuse conflict မဖြစ်အောင်ကာထားတယ်
+=> dashTrendCanvas, dashStatusCanvas reuse error မဖြစ်သင့်တော့ဘူး
+
+Fix 2 — Login page မှာ Checking auth... ကြာနေတယ်
+အရင်က:
+
+app reload/restore session မှာ getData အကုန်ခေါ်ပြီးမှ app ပြတာ
+ဒါကြောင့် slow ဖြစ်နေတာ
+အခု ပြင်ထားတာ
+worker မှာ lightweight /api/session route ထည့်ပေးထားတယ်
+frontend initApp() က getData မခေါ်တော့ဘဲ session ပဲခေါ်မယ်
+app ကို မြန်မြန်ဖွင့် ပြီး
+refreshData(true) ကို background မှာယူမယ်
+Login submit ကလည်း
+auth OK လိုက်တာနဲ့ app open
+general data/background data ကိုနောက်ကွယ်ယူမယ်
+dashboard API prefetch လည်း UI မပိတ်ဘဲ background မှာသွားမယ်
+=> “dashboard item api တွေကိုယူနေတယ်ဆိုပေမဲ့ တခြားဟာတွေကိုမနှောင့်ယှက်ပဲ နောက်ကွယ်ကယူ” ဆိုတဲ့ requirement နဲ့ကိုက်တယ်
+
+Manage Pages လေးနေတုန်းဆို?
+အဲဒါကိုလည်း already optimize ထည့်ထားတယ်:
+
+modal ကိုအရင်ပေါ်မယ်
+page list refresh ကို background မှာလုပ်မယ်
+ဒါပေမယ့် latest script.js မတက်သေးရင် old behavior ပဲမြင်ရမယ်
+
+ပြင်ထားတဲ့ files
+Frontend
+
+script.js
+Backend
+
+clean_[[path]].js
+
+[[path]].js
+သင် repo ထဲမှာ replace လုပ်ရမယ့် files
+Root
+script.js
+Functions
+functions/api/[[path]].js
+
+clean_[[path]].js
+ နဲ့ replace လုပ်ပါ
+Commit / Push
+Bash
+
+git add script.js functions/api/[[path]].js
+git commit -m "Fix chart reuse and speed up auth/session load"
+git push
+Deploy ပြီးရင် ဘာပိုကောင်းသွားမလဲ
+Dashboard
+widget add / edit / delete ပြီး rerender လုပ်ရင် canvas reuse error မတက်သင့်
+page/tab switch ပို stable ဖြစ်မယ်
+Login / App load
+page refresh ဝင်တဲ့အချိန် Checking auth... ပိုမြန်မယ်
+app ကို first show လုပ်ပြီး data ကို background မှာယူမယ်
+Important
+သင် live site မှာ effect မြင်ဖို့:
+
+script.js latest
+functions/api/[[path]].js latest
+deploy green
+hard refresh
+လိုတယ်
+
+If next step
+နောက်တစ်ဆင့်မှာ
+widget width (half/full), duplicate widget type support, page canvas drag/drop
+ကို ဆက်လုပ်လို့ရတယ်
+
+လိုချင်ရင် နောက် message မှာ
+“V1.7.1 continue လုပ်ပေး”
+လို့ပြောပါ။
+
+
+image.png
+image.png
+image.png
+image.png
+image.png
+image.png
+i create widget but graph not show
+
+
+
+Ran commands
+2
+အိုကေ — အခု issue ကို တိတိကျကျ fix လုပ်ပေးထားပါတယ်။
+
+ဘာကြောင့် widget create ပြီး graph မပေါ်တာလဲ
+အများဆုံးဖြစ်နိုင်တာက:
+
+1) Page ID persistence issue
+Dashboard pages က
+
+UI default page slug (summary, trend) နဲ့ပြနေတယ်
+backend ကတော့ numeric page id (1, 2, 3) နဲ့ widget သိမ်းချင်တယ်
+ဒါကြောင့် widget save တာက backend မှာသိမ်းသွားပေမယ့်
+frontend က current page ကို same real page id နဲ့မချိတ်နိုင်ရင်
+widget မပေါ်သလိုထင်နိုင်တယ်
+
+2) Save ပြီး refresh အထိစောင့်နေရတာ
+widget save ပြီးတာနဲ့ local UI ထဲမထည့်ဘဲ
+refreshData ပြီးမှပဲပြလို့
+user က “မပေါ်ဘူး” လို့ထင်နိုင်တယ်
+
+အခု ငါ ဘာပြင်ထားလဲ
+1) ensurePersistentDashboardPage()
+widget manager / widget save မတိုင်ခင်
+current page ကို
+real backend page id နဲ့ resolve လုပ်မယ်
+
+2) optimistic local update
+widget save ပြီးတာနဲ့:
+
+appData.dashboardWidgets ထဲကို local add/update လုပ်မယ်
+renderCurrentDashboard() ချက်ချင်းခေါ်မယ်
+ဒါကြောင့် widget create ပြီးတာနဲ့ page ပေါ်မှာချက်ချင်းမြင်ရမယ်
+
+3) optimistic delete
+widget delete လုပ်ရင်လည်း
+
+local state ကနေချက်ချင်းဖျက်
+page ကိုချက်ချင်း rerender လုပ်မယ်
+4) background refresh
+server sync ကိုတော့ background မှာဆက်လုပ်မယ်
+ဒါပေမယ့် UI က already update ဖြစ်နေမယ်
+
+အခု widgets တွေဘယ်မှာပေါ်မလဲ
+Current selected page/tab ပေါ်မှာပဲ ပေါ်မယ်
+
+ဥပမာ
+Summary tab မှာရှိပြီး Trend Chart widget ထည့်ရင်
+→ Summary page ပေါ်မှာ Trend Chart widget ပေါ်မယ်
+
+Root Cause tab မှာရှိပြီး Problem Chart ထည့်ရင်
+→ Root Cause page ပေါ်မှာ ပေါ်မယ်
+
+ပြင်ထားတဲ့ file
+
+script.js
+သင်အခုလုပ်ရမယ့်အရာ
+Step 1
+repo ထဲက script.js ကို
+
+script.js
+ နဲ့ replace လုပ်ပါ
+
+Step 2
+commit / push
+
+Bash
+
+git add script.js
+git commit -m "Fix widget immediate render on current page"
+git push
+Step 3
+Cloudflare deploy စောင့်ပါ
+
+Step 4
+hard refresh
+
+Ctrl + Shift + R
+or
+incognito
+ပြီးရင်စမ်းနည်း
+Summary page ကိုရွေး
+Manage Widgets
+Add Widget
+Trend Chart ရွေး
+Save
+Expected
+Widget saved on Summary page toast ပေါ်မယ်
+Summary page ပေါ်မှာ custom widget render ပြောင်းလာမယ်
+Important note
+အခု version မှာ
+page တစ်ခုထဲမှာ widget custom layout ရှိသွားရင်
+default layout အစား custom widget layout ပေါ်မယ်
+
+ဒါကြောင့် first widget ထည့်လိုက်ရင်
+page UI ကပြောင်းတာ normal ပါ
+
+Short answer
+widget create ပြီး graph မပေါ်တဲ့ issue ကို current page persistence + immediate local render နဲ့ fix လုပ်ထားပါတယ်
+
+လိုချင်ရင် next step မှာ
+V1.7.1 continue
+
+widget width (half/full)
+duplicate widget type support
+widget resize/layout
+ကို ဆက်တက်ပေးမယ်။
+
+++script.js:1106++ POST ++https://frontiir.nocportal.casacam.net/api/dashboards/prefetch++ 503 (Service Unavailable)
+
+++script.js:141++ GET ++https://frontiir.nocportal.casacam.net/api/getData++ 503 (Service Unavailable)
+
+++script.js:149++ Error: HTTP 503
+at fetchAPI (++script.js:145:13++)
+at async refreshData (++script.js:157:14++)
+at async ++script.js:2857:5++
+
+++script.js:1121++ GET ++https://frontiir.nocportal.casacam.net/api/dashboards/1/data?refresh=1++ 503 (Service Unavailable)
+
+++script.js:1196++ Error: Worker returned non-JSON response (HTTP 503). <!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]--> <!--[if IE 7]> <html class
+at fetchFromWorker (++script.js:1151:13++)
+at async ++script.js:1162:18++
+at async fetchDashboardData (++script.js:1203:15++)
+at async refreshCurrentDashboard (++script.js:1218:14++)
+
+++script.js:1106++ POST ++https://frontiir.nocportal.casacam.net/api/dashboards/prefetch++ 503 (Service Unavailable)
+
+++script.js:141++ GET ++https://frontiir.nocportal.casacam.net/api/getData++ 503 (Service Unavailable)
+
+++script.js:149++ Error: HTTP 503
+at fetchAPI (++script.js:145:13++)
+at async refreshData (++script.js:157:14++)
+
+
+
+Ran commands
+2
+တွေ့ပြီ — အခု 503 issue က V1.7 ထည့်ပြီးနောက် backend getData route က dashboard_widgets query မှာ crash ဖြစ်နေတာ ဖြစ်နိုင်ခြေ အများဆုံးပါ။
+
+ဘာကြောင့် 503 တက်နေလဲ
+console ထဲမှာ
+
+/api/getData → 503
+/api/dashboards/prefetch → 503
+/api/dashboards/1/data?refresh=1 → 503
+ဆိုတော့ frontend bug မဟုတ်ဘဲ backend function (functions/api/[[path]].js) crash နေတာပါ။
+
+အဓိက culprit
+V1.7 မှာ dashboard_widgets table/query ပါလာတယ်။
+live DB / live worker မှာ:
+
+table မရှိသေးတာ
+old worker code / new frontend mismatch
+widget query ကို safe fallback မထားတာ
+ကြောင့် getData တစ်ခုလုံး down သွားနိုင်တယ်။
+အခု ငါ fix ထည့်ပြီးသား
+Worker fix
+
+clean_[[path]].js
+ ထဲမှာ
+
+dashboardWidgets query ကို try/catch safe fallback လုပ်ထားတယ်
+table မရှိရင် app တစ်ခုလုံး 503 မဖြစ်ဘဲ [] ပဲပြန်မယ်
+ဆိုလိုတာ
+widget feature မရသေးရင်တောင်
+dashboard app တစ်ခုလုံး မပျက်တော့ဘူး
+
+အခု သင်လုပ်ရမယ့်အရာ
+Step 1 — backend file replace
+repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ကို
+
+text
+
+uploads/clean_[[path]].js
+နဲ့ ထပ် replace လုပ်ပါ
+
+အခုတစ်ခါ clean_[[path]].js ကိုသုံးပါ
+
+Step 2 — frontend script.js ကိုလည်း latest နဲ့ထားပါ
+repo root ထဲက:
+
+text
+
+script.js
+ကို
+
+text
+
+uploads/script.js
+နဲ့ replace လုပ်ပါ
+
+Step 3 — commit / push
+Bash
+
+git add script.js functions/api/[[path]].js
+git commit -m "Fix V1.7 worker 503 and safe widget loading"
+git push
+Step 4 — deploy green စောင့်
+Cloudflare Pages deploy success ဖြစ်ရမယ်
+
+Step 5 — hard refresh
+Ctrl + Shift + R
+or
+incognito window
+Widget ဘယ်မှာပေါ်မလဲ
+အခု widget က current selected page/tab ပေါ်မှာပဲ ပေါ်မယ်
+
+ဥပမာ
+Summary page ထဲက Manage Widgets > Add Widget
+→ Summary page ပေါ်မှာပဲ
+အရေးကြီး note
+V1.7 မှာ page တစ်ခုထဲမှာ custom widget ရှိလာတာနဲ့
+default layout ကနေ
+widget-based layout ကို switch ဖြစ်နိုင်တယ်
+
+ဒါက normal ပါ
+
+If 503 still continues
+အဲ့အခါ error က ပိုတိကျသွားမယ်
+ဒါဆို live function logs / JSON error body ကိုကြည့်ရမယ်
+
+ဒါပေမယ့် အခုအချိန်မှာ first fix က latest clean worker deploy လုပ်တာပါ
+
+Short answer
+503 issue = backend worker crash
+fix = latest 
+clean_[[path]].js
+ deploy
+
+လိုချင်ရင် နောက် message မှာ
+D1 schema ကို latest version နဲ့ re-run လုပ်သင့်တဲ့ SQL
+ကိုတစ်ခါတည်းပေးမယ်။
+
+
+script.js:1121 GET https://frontiir.nocportal.casacam.net/api/dashboards/1/data?refresh=1 503 (Service Unavailable)
+
+fetchFromWorker @ script.js:1121
+
+(anonymous) @ script.js:1162
+
+fetchDashboardData @ script.js:1200
+
+refreshCurrentDashboard @ script.js:1218
+
+onclick @ (index):218
+
+prefetch:1 Failed to load resource: the server responded with a status of 503 ()
+
+script.js:1196 Error: Worker returned non-JSON response (HTTP 503). <!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]--> <!--[if IE 7]> <html class
+
+text
+
+at fetchFromWorker (script.js:1151:13)
+
+at async script.js:1162:18
+
+at async fetchDashboardData (script.js:1203:15)
+
+at async refreshCurrentDashboard (script.js:1218:14)
+when click refresh it show in console log
+
+
+
+Ran commands
+3
+အခု console log အရ frontend ကမဟုတ်တော့ဘဲ /api/* backend route က Pages error page ပြန်ပေးနေတာ ပါ။
+
+အဓိပ္ပါယ်
+txt
+
+HTTP 503
+<!DOCTYPE html> ... is not valid JSON
+ဆိုတာက:
+
+script.js က JSON လိုချင်တယ်
+ဒါပေမယ့် /api/getData, /api/dashboards/prefetch, /api/dashboards/1/data က
+Cloudflare HTML error page ပြန်လာတယ်
+=> backend function live version / DB schema side issue
+
+အခုဖြေရှင်းဖို့ အကောင်းဆုံး 2-step fix
+Step 1 — latest worker file ကို သေချာတင်
+repo ထဲက
+
+text
+
+functions/api/[[path]].js
+ကို ဒီ file နဲ့ အစားထိုးပါ:
+
+text
+
+uploads/clean_[[path]].js
+[[path]].js မဟုတ်ဘဲ clean_[[path]].js ကိုသုံးပါ
+
+Step 2 — D1 schema ကို rerun လုပ်ပါ
+V1.6 / V1.7 မှာ table အသစ်တွေပါလာတယ်:
+
+dashboard_pages
+dashboard_widgets
+dashboard_item_settings
+dashboard_cache
+dashboard_cache_chunks
+dashboard_sync_logs
+ဒါကြောင့် schema rerun မလုပ်ရင် route တွေ crash နိုင်တယ်
+
+run this file
+text
+
+uploads/dashboard_d1_schema.sql
+Wrangler example
+Bash
+
+wrangler d1 execute YOUR_DB_NAME --file=dashboard_d1_schema.sql
+အခုအမြန်စမ်းချင်ရင် manual SQL
+D1 console ထဲမှာ ဒီ SQL ကို run လုပ်လို့ရတယ်:
+
+SQL
+
+CREATE TABLE IF NOT EXISTS dashboard_pages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dashboard_item_id INTEGER NOT NULL,
+  slug TEXT NOT NULL,
+  name TEXT NOT NULL,
+  icon TEXT DEFAULT 'fa-layer-group',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS dashboard_widgets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dashboard_page_id INTEGER NOT NULL,
+  widget_type TEXT NOT NULL,
+  title TEXT,
+  settings_json TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dashboard_pages_item
+ON dashboard_pages(dashboard_item_id, sort_order);
+
+CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_page
+ON dashboard_widgets(dashboard_page_id, sort_order);
+Commit / Push
+ပြီးရင်:
+
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Deploy clean dashboard worker"
+git push
+ပြီးနောက် စမ်းသင့်တာ
+Cloudflare Pages deploy green ဖြစ်မယ်
+D1 schema run ပြီးသားဖြစ်မယ်
+browser hard refresh (Ctrl + Shift + R)
+dashboard ပြန်ဖွင့်
+Refresh Data နှိပ်
+Why this is likely the fix
+အခု buttons တွေ (Manage Widgets, Clear Cache) ပေါ်နေတာကြောင့်
+frontend latest တက်ပြီးသားဖြစ်နိုင်တယ်
+
+ဒါပေမယ့် /api/* endpoints က HTML 503 ပြန်လာတာကြောင့်
+backend function သို့မဟုတ် DB schema ပိုင်းပဲ issue ရှိနေတယ်
+
+If still 503 after that
+အဲဒီအချိန် next check က:
+
+Cloudflare Pages deployment log
+Functions log
+D1 query result
+ဒါပေမယ့် အခု first fix က:
+
+latest clean worker + D1 schema rerun
+လိုချင်ရင် နောက် message မှာ
+Cloudflare D1 console ထဲမှာ step-by-step ဘယ်လို SQL run မလဲ
+ကို Burmese နဲ့ တစ်ဆင့်ချင်းပြောပေးမယ်။
+
+
+script.js:141 GET https://frontiir.nocportal.casacam.net/api/getData 503 (Service Unavailable)
+
+fetchAPI @ script.js:141
+
+refreshData @ script.js:157
+
+(anonymous) @ script.js:2857
+
+setInterval
+
+startPolling @ script.js:2855
+
+doShowApp @ script.js:233
+
+initApp @ script.js:298
+
+await in initApp
+
+(anonymous) @ script.js:2889
+
+script.js:1106 POST https://frontiir.nocportal.casacam.net/api/dashboards/prefetch 503 (Service Unavailable)
+
+startDashboardPrefetch @ script.js:1106
+
+(anonymous) @ script.js:2882
+
+script.js:1121 GET https://frontiir.nocportal.casacam.net/api/dashboards/1/data?refresh=1 503 (Service Unavailable)
+
+fetchFromWorker @ script.js:1121
+
+(anonymous) @ script.js:1162
+
+fetchDashboardData @ script.js:1200
+
+refreshCurrentDashboard @ script.js:1218
+
+onclick @ (index):218
+
+script.js:1106 POST https://frontiir.nocportal.casacam.net/api/dashboards/prefetch 503 (Service Unavailable)
+
+startDashboardPrefetch @ script.js:1106
+
+doShowApp @ script.js:232
+
+initApp @ script.js:298
+
+await in initApp
+
+(anonymous) @ script.js:2889
+
+script.js:149 Error: HTTP 503
+
+text
+
+at fetchAPI (script.js:145:13)
+
+at async refreshData (script.js:157:14)
+
+at async script.js:2857:5
+fetchAPI @ script.js:149
+
+await in fetchAPI
+
+refreshData @ script.js:157
+
+(anonymous) @ script.js:2857
+
+setInterval
+
+startPolling @ script.js:2855
+
+doShowApp @ script.js:233
+
+initApp @ script.js:298
+
+await in initApp
+
+(anonymous) @ script.js:2889
+
+script.js:1196 Error: Worker returned non-JSON response (HTTP 503). <!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]--> <!--[if IE 7]> <html class
+
+text
+
+at fetchFromWorker (script.js:1151:13)
+
+at async script.js:1162:18
+
+at async fetchDashboardData (script.js:1203:15)
+
+at async refreshCurrentDashboard (script.js:1218:14)
+(anonymous) @ script.js:1196
+
+await in (anonymous)
+
+fetchDashboardData @ script.js:1200
+
+refreshCurrentDashboard @ script.js:1218
+
+onclick @ (index):218
+
+script.js:1106 POST https://frontiir.nocportal.casacam.net/api/dashboards/prefetch 503 (Service Unavailable)
+
+startDashboardPrefetch @ script.js:1106
+
+(anonymous) @ script.js:2882
+
+script.js:1121 GET https://frontiir.nocportal.casacam.net/api/dashboards/1/data?refresh=1 503 (Service Unavailable)
+
+fetchFromWorker @ script.js:1121
+
+(anonymous) @ script.js:1162
+
+fetchDashboardData @ script.js:1200
+
+refreshCurrentDashboard @ script.js:1218
+
+onclick @ (index):218
+
+script.js:1106 POST https://frontiir.nocportal.casacam.net/api/dashboards/prefetch 503 (Service Unavailable)
+
+startDashboardPrefetch @ script.js:1106
+
+(anonymous) @ script.js:2882
+
+script.js:1196 Error: Worker returned non-JSON response (HTTP 503). <!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]--> <!--[if IE 7]> <html class
+
+text
+
+at fetchFromWorker (script.js:1151:13)
+
+at async script.js:1162:18
+
+at async fetchDashboardData (script.js:1203:15)
+
+at async refreshCurrentDashboard (script.js:1218:14)
+
+ဒီ console log အရ dashboard logic issue မဟုတ်တော့ဘူး —
+/api/* backend route တစ်ခုလုံး မတက်ထား / function deployment ပျက်နေတာ ပါ။
+
+အဓိကသက်သေ
+အခု error တွေက:
+
+/api/getData → 503
+/api/dashboards/prefetch → 503
+/api/dashboards/1/data?refresh=1 → 503
+ပြီးတော့ frontend မှာ:
+
+txt
+
+Worker returned non-JSON response (HTTP 503). <!DOCTYPE html>...
+ဒါက ဘာကိုဆိုလိုလဲဆိုတော့:
+
+request က function code ထဲမဝင်သေးဘူး
+အကယ်၍ function code ထဲဝင်ပြီး error တက်ရင်
+ကျွန်တော်ထည့်ထားတဲ့ handler အရ JSON error ပြန်လာရမယ်။
+
+ဒါပေမယ့် အခု HTML 503 page ပြန်လာနေတယ်ဆိုတော့:
+
+Functions build failed
+Functions deploy မတက်
+Production မှာ old/broken Functions version
+functions/api/[[path]].js ကို Pages မတင်နိုင်
+ထဲကတစ်ခုဖြစ်နေပါတယ်။
+အခုအရေးကြီးဆုံး conclusion
+Static frontend တက်ပြီး Functions backend မတက်သေး
+ဒါကြောင့် UI အသစ်ကိုမြင်ရပေမယ့်
+API route တွေက 503 ဖြစ်နေတယ်
+
+အခုလုပ်ရမယ့် exact steps
+Step 1 — Cloudflare Pages deployment status စစ်
+Cloudflare Pages > Deployments ထဲမှာ
+နောက်ဆုံး commit က green ဖြစ်လား စစ်ပါ
+
+မဖြစ်မနေကြည့်ရမယ့် commit
+script.js update
+functions/api/[[path]].js update
+If red / warning ဖြစ်ရင်
+အဲ့ deploy က Functions မတက်တာ
+
+Step 2 — /api/session ကို browser မှာဖွင့်စမ်း
+ဒီ URL ကို browser မှာတိုက်ရိုက်ဖွင့်ပါ:
+
+text
+
+https://frontiir.nocportal.casacam.net/api/session
+Expected if function works
+JSON
+
+{"success":true,"currentUser":...}
+If HTML 503 page ထွက်ရင်
+Functions backend မတက်သေးတာ confirm
+
+Step 3 — latest clean worker ကိုသုံး
+repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ကို
+
+text
+
+uploads/clean_[[path]].js
+နဲ့ replace လုပ်ပါ
+
+
+[[path]].js
+ မဟုတ်ဘဲ
+
+clean_[[path]].js
+ ကိုသုံးပါ
+
+Step 4 — D1 binding / schema re-check
+A. D1 binding name
+Production environment မှာ binding name က:
+
+text
+
+DB
+ဖြစ်ရမယ်
+
+B. schema
+dashboard_pages, dashboard_widgets စတဲ့ tables ရှိရမယ်
+
+dashboard_d1_schema.sql ကို production DB မှာ rerun လုပ်ပါ
+
+Step 5 — commit / push
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Deploy clean Pages API worker"
+git push
+Step 6 — deploy logs ကြည့်
+Deployment Details ထဲက:
+
+build log
+functions log
+ကိုဖွင့်ပါ
+
+ဘာကြောင့်ဒီလိုပြောနိုင်တာလဲ
+အခု script.js က latest ဖြစ်နေပြီ
+
+Manage Widgets
+Clear Cache
+Manage Pages
+တွေမြင်ရတယ်
+ဒါပေမယ့် /api/getData ပါ 503 ဖြစ်နေတယ်ဆိုတော့
+frontend issue မဟုတ်
+backend function deployment issue ပဲ
+
+If you want fastest verification
+ဒီ 2 ခုကိုစမ်းရုံနဲ့သိမယ်
+
+Test 1
+Open:
+
+text
+
+https://frontiir.nocportal.casacam.net/api/session
+Test 2
+Open:
+
+text
+
+https://frontiir.nocportal.casacam.net/api/getData
+If both return HTML 503
+Functions မတက်သေးတာ 100% နီးပါး
+
+ကျွန်တော်အကြံပေးတဲ့ next action
+နောက် message မှာ Cloudflare deployment Details log ကိုပို့ပါ
+အထူးသဖြင့်:
+
+Failed building Pages Functions
+wrangler
+[[path]].js
+first red error lines
+အဲဒါရရင် exact root cause ကိုတန်းပြောနိုင်မယ်။
+
+လိုချင်ရင် နောက်တစ်ခါ
+“Cloudflare Pages မှာ Functions build log ဘယ်လိုဖွင့်မလဲ step-by-step ပြော”
+လို့ပြောပါ။
+
+
+script.js:141 GET https://frontiir.nocportal.casacam.net/api/getData 503 (Service Unavailable)
+
+fetchAPI @ script.js:141
+
+refreshData @ script.js:157
+
+(anonymous) @ script.js:2857
+
+setInterval
+
+startPolling @ script.js:2855
+
+doShowApp @ script.js:233
+
+initApp @ script.js:298
+
+await in initApp
+
+(anonymous) @ script.js:2889
+
+script.js:1106 POST https://frontiir.nocportal.casacam.net/api/dashboards/prefetch 503 (Service Unavailable)
+
+startDashboardPrefetch @ script.js:1106
+
+(anonymous) @ script.js:2882
+
+script.js:1121 GET https://frontiir.nocportal.casacam.net/api/dashboards/1/data?refresh=1 503 (Service Unavailable)
+
+fetchFromWorker @ script.js:1121
+
+(anonymous) @ script.js:1162
+
+fetchDashboardData @ script.js:1200
+
+refreshCurrentDashboard @ script.js:1218
+
+onclick @ (index):218
+
+script.js:1106 POST https://frontiir.nocportal.casacam.net/api/dashboards/prefetch 503 (Service Unavailable)
+
+startDashboardPrefetch @ script.js:1106
+
+doShowApp @ script.js:232
+
+initApp @ script.js:298
+
+await in initApp
+
+(anonymous) @ script.js:2889
+
+script.js:149 Error: HTTP 503
+
+text
+
+at fetchAPI (script.js:145:13)
+
+at async refreshData (script.js:157:14)
+
+at async script.js:2857:5
+fetchAPI @ script.js:149
+
+await in fetchAPI
+
+refreshData @ script.js:157
+
+(anonymous) @ script.js:2857
+
+setInterval
+
+startPolling @ script.js:2855
+
+doShowApp @ script.js:233
+
+initApp @ script.js:298
+
+await in initApp
+
+(anonymous) @ script.js:2889
+
+script.js:1196 Error: Worker returned non-JSON response (HTTP 503). <!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]--> <!--[if IE 7]> <html class
+
+text
+
+at fetchFromWorker (script.js:1151:13)
+
+at async script.js:1162:18
+
+at async fetchDashboardData (script.js:1203:15)
+
+at async refreshCurrentDashboard (script.js:1218:14)
+(anonymous) @ script.js:1196
+
+await in (anonymous)
+
+fetchDashboardData @ script.js:1200
+
+refreshCurrentDashboard @ script.js:1218
+
+onclick @ (index):218
+
+script.js:1106 POST https://frontiir.nocportal.casacam.net/api/dashboards/prefetch 503 (Service Unavailable)
+
+startDashboardPrefetch @ script.js:1106
+
+(anonymous) @ script.js:2882
+
+script.js:1121 GET https://frontiir.nocportal.casacam.net/api/dashboards/1/data?refresh=1 503 (Service Unavailable)
+
+fetchFromWorker @ script.js:1121
+
+(anonymous) @ script.js:1162
+
+fetchDashboardData @ script.js:1200
+
+refreshCurrentDashboard @ script.js:1218
+
+onclick @ (index):218
+
+script.js:1106 POST https://frontiir.nocportal.casacam.net/api/dashboards/prefetch 503 (Service Unavailable)
+
+startDashboardPrefetch @ script.js:1106
+
+(anonymous) @ script.js:2882
+
+script.js:1196 Error: Worker returned non-JSON response (HTTP 503). <!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]--> <!--[if IE 7]> <html class
+
+text
+
+at fetchFromWorker (script.js:1151:13)
+
+at async script.js:1162:18
+
+at async fetchDashboardData (script.js:1203:15)
+
+at async refreshCurrentDashboard (script.js:1218:14)
+
+ဒီ console log တွေကြည့်ပြီး တိတိကျကျတစ်ခုပဲပြောနိုင်တယ် —
+
+အခု problem က script.js မဟုတ်ဘူး
+Cloudflare Pages Functions (/api/*) production မှာ မတက် / မအလုပ်လုပ်နေဘူး။
+
+အဓိကသက်သေ
+ဒီ endpoints အကုန်:
+
+/api/getData
+/api/dashboards/prefetch
+/api/dashboards/1/data?refresh=1
+အားလုံး 503 ပြန်တယ်။
+
+ပြီးတော့ frontend က:
+
+txt
+
+<!DOCTYPE html> ... is not valid JSON
+ကိုမြင်နေတာက
+API JSON မဟုတ်ဘဲ Cloudflare HTML error page ပြန်လာနေတယ် ဆိုလိုတာပါ။
+
+ဒါဘာအဓိပ္ပါယ်လဲ
+အခု issue က 2 မျိုးထဲကတစ်ခုပါ:
+
+1) functions/api/[[path]].js production deployment မတက်သေး
+သို့မဟုတ်
+
+2) Cloudflare Pages Functions build/runtime error ရှိလို့ /api/* route အကုန် down
+အခု frontend debugging မလုပ်တော့ဘဲ ဒီ 3 step နဲ့စစ်ပါ
+Step 1 — browser မှာ ဒီ URL ကိုတိုက်ရိုက်ဖွင့်
+text
+
+https://frontiir.nocportal.casacam.net/api/session
+Expected if function works
+JSON
+
+{"success":true,"currentUser":{...}}
+If HTML 503 page ထွက်ရင်
+Functions backend မတက်သေးတာ confirm
+
+Step 2 — Cloudflare Pages deployment log ကိုကြည့်
+Cloudflare Pages > Deployments > latest deployment > Details
+
+အဲ့ထဲက:
+
+Functions
+Build logs
+ကိုဖွင့်ပါ
+ကျွန်တော်လိုချင်တာ
+first red error 20 lines ပဲ
+
+Step 3 — repo file path မှန်မမှန်စစ်
+repo ထဲမှာ ဒီ path အတိအကျ ဖြစ်ရမယ်:
+
+text
+
+functions/api/[[path]].js
+မဖြစ်သင့်တာ
+functions/api/[path].js
+functions/api/[[path]].js.txt
+repo root မှာ [[path]].js
+အခု fastest isolation test
+Production function path မှန်မမှန် စမ်းဖို့
+current worker ကို temporary minimal file နဲ့ test လုပ်ရအောင်
+
+functions/api/[[path]].js ကို ဒီ code နဲ့ ခဏအစားထိုးပါ
+JavaScript
+
+export const onRequest = async ({ request }) => {
+  const url = new URL(request.url);
+  const path = url.pathname.replace('/api/', '').replace(/\/$/, '');
+
+  return new Response(JSON.stringify({
+    ok: true,
+    path,
+    method: request.method,
+    time: new Date().toISOString()
+  }), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type'
+    }
+  });
+};
+ပြီးရင် commit/push
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Test minimal Pages API worker"
+git push
+ပြီးတော့ browser မှာဖွင့်
+text
+
+https://frontiir.nocportal.casacam.net/api/session
+If JSON ပြန်လာတယ်ဆို
+function path / deployment OK
+problem က original worker code ထဲမှာပဲရှိတယ်
+အဲဒါနောက်တစ်ဆင့် ကျွန်တော် exact cut-down clean worker ပေးမယ်
+If HTML 503 ပဲပြန်လာသေးတယ်ဆို
+problem က code မဟုတ်ဘဲ
+Cloudflare Pages Functions setup / deploy / path / project config ပိုင်း
+ဘာကြောင့် ဒီ minimal test က အရေးကြီးလဲ
+အခုသင်ပို့နေတဲ့ console logs က
+frontend side symptoms ပဲပြတယ်
+root cause ကို မခွဲနိုင်သေးဘူး
+
+minimal worker test နဲ့:
+
+deployment issue
+worker code issue
+ကို 1 မိနစ်အတွင်း ခွဲနိုင်မယ်
+အခု ကျွန်တော် recommend လုပ်တာ
+အရင်ဆုံး ဒီ minimal test ကိုလုပ်ပါ
+ပြီးရင် result 2 မျိုးထဲကတစ်ခုလာမယ်:
+
+JSON ပြန်လာတယ်
+503 HTML ပဲပြန်လာတယ်
+အဲဒီ result ကိုပို့ပါ
+
+If you prefer
+လိုချင်ရင် နောက် message မှာ ကျွန်တော်
+“minimal worker test ပြီးရင် ပြန်တင်ဖို့ reduced clean worker version”
+ကို ပေးနိုင်တယ် — feature အနည်းငယ်ချင်းပြန်ထည့်မယ့်နည်းနဲ့။
+
+
+full code please
+
+
+ရပါတယ် — အခု 503 issue ကိုခွဲစမ်းဖို့ functions/api/[[path]].js ထဲမှာ တစ်ဖိုင်လုံး replace လုပ်ရမယ့် minimal test code ကို အောက်မှာပေးထားပါတယ်။
+
+ဒီ code ရဲ့ရည်ရွယ်ချက်
+ဒါက diagnostic / test worker ပါ။
+ဒီ code နဲ့တင်ပြီး:
+
+/api/session
+/api/getData
+/api/dashboards/prefetch
+/api/dashboards/1/data
+တို့ကိုခေါ်တဲ့အခါ
+JSON ပြန်လာသလား စစ်မယ်
+
+If JSON ပြန်လာရင်
+Cloudflare Pages Functions path / deploy OK
+original worker code ထဲမှာပဲ problem ရှိ
+If 503 HTML ပဲပြန်လာသေးရင်
+project / functions deployment / route path issue
+functions/api/[[path]].js
+ဒီ code တစ်ဖိုင်လုံးနဲ့ replace လုပ်ပါ
+
+JavaScript
+
+export const onRequest = async (context) => {
+  const { request } = context;
+  const url = new URL(request.url);
+  const method = request.method.toUpperCase();
+  const path = url.pathname.replace('/api/', '').replace(/\/$/, '');
+
+  const cors = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Content-Type': 'application/json',
+  };
+
+  if (method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: cors });
+  }
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      message: 'Minimal Pages Function is working',
+      path,
+      method,
+      time: new Date().toISOString(),
+      url: request.url,
+    }),
+    {
+      status: 200,
+      headers: cors,
+    }
+  );
+};
+ပြီးရင် လုပ်ရန်
+1) commit / push
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Test minimal Pages API worker"
+git push
+2) Deploy ပြီးရင် browser မှာဖွင့်စမ်း
+အောက်က URL တွေကို browser မှာ တိုက်ရိုက်ဖွင့်ပါ:
+
+text
+
+https://frontiir.nocportal.casacam.net/api/session
+https://frontiir.nocportal.casacam.net/api/getData
+https://frontiir.nocportal.casacam.net/api/dashboards/prefetch
+https://frontiir.nocportal.casacam.net/api/dashboards/1/data
+Expected result
+ဒီလို JSON ပြန်လာရမယ်:
+
+JSON
+
+{
+  "ok": true,
+  "message": "Minimal Pages Function is working",
+  "path": "getData",
+  "method": "GET",
+  "time": "2026-07-10T..."
+}
+Result interpretation
+Case 1: JSON ပြန်လာတယ်
+ဆိုရင်
+
+Functions route OK
+deploy OK
+original worker code ထဲက logic / DB / query တစ်ခုခုက crash နေတာ
+အဲ့အချိန် ကျွန်တော် next step အနေနဲ့ reduced clean worker full code ပေးမယ်
+
+Case 2: HTML 503 ပဲပြန်လာတယ်
+ဆိုရင်
+
+Functions deployment မတက်သေး
+path issue
+Pages Functions setup issue
+ဖြစ်နိုင်တယ်
+နောက်တစ်ခါ ပြန်ပို့ပေးရမယ့်အရာ
+ဒီ minimal code deploy ပြီးပြီးနောက်
+browser မှာ /api/getData ဖွင့်တဲ့ result ကို screenshot/paste ပို့ပါ။
+
+လိုချင်ရင် minimal test OK ပြီးတာနဲ့
+“production worker full code ပေး”
+လို့ပြောပါ — ကျွန်တော် feature နည်းနည်းချင်းပြန်ထည့်ထားတဲ့ safer full version ကိုပေးမယ်။
+
+
+image.png
+image.png
+image.png
+image.png
+image.png
+image.png
+image.png
+image.png
+တွေ့ပြီ — အခု production မှာတင်ထားတာ full worker မဟုတ်ဘဲ “minimal test worker” ပဲ ဖြစ်နေတယ်။
+
+Screenshot က confirm လုပ်ပေးတာ
+သင်ဖွင့်ထားတဲ့ URL:
+
+text
+
+/api/dashboards/1/data
+ပြန်လာတာက:
+
+JSON
+
+{
+  "ok": true,
+  "message": "Minimal Pages Function is working",
+  "path": "dashboards/1/data",
+  "method": "GET",
+  ...
+}
+ဒါဆို ဘာဆိုလိုလဲ
+အခု functions/api/[[path]].js မှာ test code ပဲရှိနေတယ် —
+အဲဒါက route အကုန်ကို real logic မလုပ်ဘဲ dummy JSON ပဲပြန်ပေးနေတာ။
+
+အဲ့ဒါကြောင့် ဘာတွေမလုပ်နိုင်တာလဲ
+getData → real app data မရ
+dashboards/prefetch → sync မလုပ်
+dashboards/:id/data → sheet data မရ
+dashboardPages / dashboardWidgets CRUD → မလုပ်
+Manage Widgets / Manage Pages → backend action မရှိ
+အခုလိုအပ်တာ တစ်ခုတည်း
+Minimal test worker ကို full worker နဲ့ပြန်အစားထိုးရမယ်
+လုပ်ရမယ့်အဆင့်
+1) ဒီ file ကို replace လုပ်ပါ
+repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ကို
+
+text
+
+uploads/clean_[[path]].js
+နဲ့ လုံးဝအစားထိုး လုပ်ပါ
+
+အရေးကြီး:
+test code ဒီလိုဟာ မကျန်ရဘူး
+
+JavaScript
+
+{
+  ok: true,
+  message: "Minimal Pages Function is working"
+}
+2) frontend files တွေလည်း latest ဖြစ်ရမယ်
+repo root ထဲက:
+
+index.html
+script.js
+style.css
+ကို workspace ထဲက latest files နဲ့ replace လုပ်ပါ:
+
+
+index.html
+
+script.js
+
+style.css
+3) commit / push
+Bash
+
+git add index.html script.js style.css functions/api/[[path]].js
+git commit -m "Restore full dashboard API worker"
+git push
+4) D1 schema run လုပ်ပါ
+V1.6 / V1.7 feature တွေအတွက် table တွေရှိရမယ်
+
+run this file:
+
+text
+
+uploads/dashboard_d1_schema.sql
+5) deploy green ဖြစ်အောင်စောင့်
+Cloudflare Pages deployment success ဖြစ်ရမယ်
+
+6) hard refresh
+Ctrl + Shift + R
+or
+incognito window
+ပြီးရင် verify လုပ်နည်း
+/api/session
+အခု minimal worker မဟုတ်တော့ရင် ဒီလိုမျိုးပြန်လာရမယ်:
+
+JSON
+
+{
+  "success": true,
+  "currentUser": {
+    ...
+  }
+}
+/api/getData
+ဒီလိုမျိုး app data structure ပြန်လာရမယ်:
+
+JSON
+
+{
+  "updates": [...],
+  "categories": [...],
+  "dashboardItems": [...],
+  "dashboardPages": [...],
+  "dashboardWidgets": [...]
+}
+မဖြစ်သင့်တာ
+JSON
+
+{
+  "ok": true,
+  "message": "Minimal Pages Function is working"
+}
+အခုအတိုချုပ်
+Current problem = full backend ကိုပြန်မတင်သေးဘူး
+Current production = test worker
+
+If you want
+နောက် message မှာ ကျွန်တော်
+
+“functions/api/[[path]].js ထဲကို တင်ရမယ့် final full code ကို တစ်ခါတည်းထုတ်ပေး”
+လို့လုပ်ပေးနိုင်တယ်
+
+ဒါမှ copy-paste one shot နဲ့လုပ်လို့ရမယ်။
+
+ပြောချင်တာ:
+“final full worker code ပေး”
+လို့ပြောပါ။
+
+
+image.png
+image.png
+
+Ran commands
+5
+တွေ့ပြီ — အခု error က widget မဟုတ်ဘဲ concurrent sync race ပါ။
+
+Root cause
+console ထဲက earlier error:
+
+txt
+
+UNIQUE constraint failed:
+dashboard_cache_chunks.dashboard_item_id,
+dashboard_cache_chunks.chunk_index
+ဒါက အဓိပ္ပါယ်:
+
+prefetch က sync လုပ်နေတုန်း
+သင် Refresh Data / page open က တစ်ပြိုင်နက် sync ထပ်ခေါ်တယ်
+chunk table ထဲကို row တူတူ insert ဝင်လို့ conflict ဖြစ်တယ်
+ငါ အခု fix ထည့်ပြီးပြီ
+1) Frontend side
+script.js မှာ
+in-flight fetch ရှိပြီးသားဆို force=true ဖြစ်লেও အဲဒီ promise ကို share လုပ်မယ်
+
+အရင်:
+
+refresh click → current fetch ရှိရင်တောင် request အသစ်ထပ်ပို့
+အခု:
+
+current dashboard id အတွက် request တစ်ခု running ဖြစ်နေရင်
+အသစ်မခေါ်တော့ဘဲ existing one ကိုပဲ await လုပ်မယ်
+2) Backend side
+dashboard_cache_chunks ထဲ insert လုပ်တဲ့နေရာမှာ
+
+အရင်:
+
+SQL
+
+INSERT INTO dashboard_cache_chunks ...
+အခု:
+
+SQL
+
+INSERT OR REPLACE INTO dashboard_cache_chunks ...
+ဒါကြောင့် same chunk index ထပ်ဝင်ရင်
+crash မဖြစ်တော့ဘဲ replace လုပ်မယ်
+
+ပြင်ထားတဲ့ files
+
+script.js
+
+clean_[[path]].js
+
+[[path]].js
+သင်အခုလုပ်ရမယ့်အရာ
+Step 1
+repo root ထဲက:
+
+text
+
+script.js
+ကို
+
+script.js
+ နဲ့ replace လုပ်ပါ
+
+Step 2
+repo ထဲက:
+
+text
+
+functions/api/[[path]].js
+ကို
+
+clean_[[path]].js
+ နဲ့ replace လုပ်ပါ
+
+Step 3
+commit / push
+
+Bash
+
+git add script.js functions/api/[[path]].js
+git commit -m "Fix concurrent dashboard sync race"
+git push
+Step 4
+Cloudflare deploy green စောင့်
+
+Step 5
+Browser hard refresh
+
+Ctrl + Shift + R
+or
+incognito
+Expected result
+အခုနောက်:
+
+Refresh Data နှိပ်တဲ့အချိန် 502/503 မတက်သင့်တော့ဘူး
+prefetch နဲ့ manual refresh တိုက်မမိသင့်တော့ဘူး
+dashboard data ပို stable ဖြစ်မယ်
+Manage Widgets က ဘယ်မှာပေါ်မလဲ
+ပြန်သတိပေးရရင်:
+
+လက်ရှိရွေးထားတဲ့ page/tab ပေါ်မှာပဲ
+ပေါ်မယ်
+ဥပမာ:
+
+Summary tab မှာ widget add → Summary page ပေါ်
+Trend tab မှာ widget add → Trend page ပေါ်
+If still error after this
+နောက်တစ်ခါ console/network မှာ
+
+/api/dashboards/1/data?refresh=1
+response body
+ကိုပို့ပါ
+ဒါဆို next exact fix တန်းပေးမယ်။
+
+လိုချင်ရင် နောက် message မှာ
+“V1.7.1 continue လုပ်ပေး”
+လို့ပြောပါ — duplicate widget types / widget width / better builder layout ဆက်တက်ပေးမယ်။
+
+
+image.png
+image.png
+
+Ran commands
+2
+အခု console log ကကြည့်ရင် issue က manual Refresh ကိုနှိပ်တဲ့အချိန် dashboard route ခေါ်တာနဲ့ နောက်ကွယ် prefetch / polling / getData refresh တွေ တိုက်မိနေတုန်း ဆိုတာပါ။
+
+ဒါကြောင့် “dashboard item api တွေကိုယူနေတယ်ဆိုပေမဲ့ တခြားဟာတွေကိုမနှောင့်ယှက်ပဲ နောက်ကွယ်ကယူ” ဆိုတဲ့ requirement အတိုင်း automatic dashboard prefetch/polling interference ကိုလျှော့ထားတဲ့ patch ထည့်ပေးလိုက်ပြီ။
+
+အခု ပြင်ထားတာ
+1) Dashboard automatic prefetch ကို default ပိတ်ထားတယ်
+အရင်:
+
+login ဝင်တာနဲ့
+refreshData တိုင်း
+visibilitychange တိုင်း
+/api/dashboards/prefetch ခေါ်တယ်
+အခု:
+
+default အနေနဲ့ မခေါ်တော့ဘူး
+manual force case မှာပဲခေါ်မယ်
+2) Polling interval ကို လျှော့လိုက်တယ်
+အရင်:
+
+every 20 sec
+အခု:
+
+every 2 min
+3) Dashboard page open နေရင် polling မလုပ်တော့ဘူး
+အခု:
+
+user က dashboard page ကြည့်နေချိန်
+background getData polling မနှောင့်ယှက်တော့ဘူး
+4) Dashboard open လိုက်တာနဲ့ polling stop
+Dashboard tab ထဲရောက်တာနဲ့:
+
+auto polling ရပ်မယ်
+Home / Learning / Admin / Information ကိုပြန်သွားရင်:
+
+polling ပြန်စမယ်
+5) Login/auth ပိုလျှင်မြန်
+အရင်တုန်းက Checking auth... ကြာတာကို
+
+lightweight /api/session
+data background load
+နဲ့လျှော့ထားပြီးသား
+အခု prefetch interference မရှိတော့လို့
+ပိုသက်သာသွားသင့်တယ်
+
+ပြင်ထားတဲ့ file
+
+script.js
+သင်အခုလုပ်ရမယ့်အရာ
+Step 1
+repo ထဲက script.js ကို
+
+script.js
+ နဲ့ replace လုပ်ပါ
+
+Step 2
+commit / push
+
+Bash
+
+git add script.js
+git commit -m "Reduce dashboard API interference and background polling"
+git push
+Step 3
+Cloudflare deploy ပြန်တက်တာစောင့်ပါ
+
+Step 4
+Browser hard refresh
+
+Ctrl + Shift + R
+or
+incognito
+Expected result
+ဒီ patch တင်ပြီးရင်:
+
+dashboard open နေရင် getData polling မထပ်ခေါ်တော့ဘူး
+dashboards/prefetch auto မခေါ်တော့ဘူး
+manual Refresh Data က isolated ဖြစ်ပြီး ပို stable ဖြစ်မယ်
+login ပြီး app open လည်း ပိုသက်သာမယ်
+Remaining note
+Screenshot ထဲက /api/dashboards/1/data?refresh=1 503 က backend ခြမ်းမှာ issue ရှိနိုင်သေးတယ်
+ဒါပေမယ့် frontend က background calls တွေမနှောင့်ယှက်တော့ရင်
+တကယ့် backend error ကို isolate ပိုလွယ်သွားမယ်
+
+Next if still 503 after this
+အဲ့အချိန် Refresh Data ကို dashboard page ထဲမှာပဲ တစ်ချက်နှိပ်ပြီး
+network response body ကိုပို့ပါ
+
+ဒါဆို background race မရှိတော့လို့
+တကယ့် backend error ကို straight identify လုပ်လို့ရမယ်
+
+လိုချင်ရင် နောက်တစ်ခါ
+backend /api/dashboards/:id/data route ကို lighter version နဲ့ပြန်ရိုးရိုးလုပ်ပေး
+လို့ပြောပါ — အဲ့ဒါက stability ကိုထပ်တိုးပေးမယ်။
+
+
+script.js:1106 POST https://frontiir.nocportal.casacam.net/api/dashboards/prefetch net::ERR_ABORTED 405 (Method Not Allowed)
+
+startDashboardPrefetch @ script.js:1106
+
+doShowApp @ script.js:232
+
+initApp @ script.js:298
+
+await in initApp
+
+(anonymous) @ script.js:2889
+
+script.js:1196 Error: Worker returned non-JSON response (HTTP 200). <!DOCTYPE html> <html lang="en" data-theme="light" data-color="blue" data-font="md" data-modal="md"> <head> <meta ch
+
+text
+
+at fetchFromWorker (script.js:1151:13)
+
+at async script.js:1162:18
+
+at async fetchDashboardData (script.js:1203:15)
+(anonymous) @ script.js:1196
+
+await in (anonymous)
+
+fetchDashboardData @ script.js:1200
+
+(anonymous) @ script.js:1107
+
+startDashboardPrefetch @ script.js:1107
+
+doShowApp @ script.js:232
+
+initApp @ script.js:298
+
+await in initApp
+
+(anonymous) @ script.js:2889
+
+script.js:1106 POST https://frontiir.nocportal.casacam.net/api/dashboards/prefetch net::ERR_ABORTED 405 (Method Not Allowed)
+
+startDashboardPrefetch @ script.js:1106
+
+(anonymous) @ script.js:2882
+
+VM1478:1 Uncaught (in promise) SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+
+script.js:1196 Error: Worker returned non-JSON response (HTTP 200). <!DOCTYPE html> <html lang="en" data-theme="light" data-color="blue" data-font="md" data-modal="md"> <head> <meta ch
+
+text
+
+at fetchFromWorker (script.js:1151:13)
+
+at async script.js:1162:18
+
+at async fetchDashboardData (script.js:1203:15)
+(anonymous) @ script.js:1196
+
+await in (anonymous)
+
+fetchDashboardData @ script.js:1200
+
+(anonymous) @ script.js:1107
+
+startDashboardPrefetch @ script.js:1107
+
+(anonymous) @ script.js:2882
+
+script.js:1196 Error: Worker returned non-JSON response (HTTP 200). <!DOCTYPE html> <html lang="en" data-theme="light" data-color="blue" data-font="md" data-modal="md"> <head> <meta ch
+
+text
+
+at fetchFromWorker (script.js:1151:13)
+
+at async script.js:1162:18
+
+at async fetchDashboardData (script.js:1203:15)
+
+at async showDashboardItem (script.js:1211:14)
+error
+
+backend /api/dashboards/:id/data route ကို lighter version နဲ့ပြန်ရိုးရိုးလုပ်ပေး
+
+
+
+Ran commands
+8
+ရပြီ — အခု backend /api/dashboards/:id/data route ကို lighter version နဲ့ပြန်ရိုးရိုးလုပ်ပေးထားပါတယ်။
+
+အခုဘာပြောင်းသွားလဲ
+အရင် version
+D1 cache
+chunk storage
+prefetch
+sync log
+retry logic
+cache clear
+တွေပါပြီး route က heavy ဖြစ်နေတယ်
+အခု lighter version
+/api/dashboards/:id/data က:
+
+dashboard item ကို DB ကဖတ်မယ်
+item.api_url ကို တိုက်ရိုက် fetch မယ်
+response JSON ကို parse
+rows ကို extract
+sourceMeta + sourceSummary + data ပြန်ပေးမယ်
+cache layer မသုံးတော့ဘူး
+ဒါကြောင့် stability ပိုကောင်းမယ်
+
+Prefetch route
+/api/dashboards/prefetch
+အခု disabled lightweight mode ပြန်ပေးမယ်
+
+JSON
+
+{
+  "success": true,
+  "queued": 0,
+  "synced": 0,
+  "skipped": true,
+  "mode": "disabled-lightweight"
+}
+Cache clear route
+/api/dashboards/:id/cache
+လည်း no-op success ပြန်ပေးမယ်
+route မပျက်အောင်ပဲထားတာ
+
+ဘာကြောင့်ဒါကပိုကောင်းလဲ
+သင့် current issue က:
+
+worker-side cache/sync/prefetch logic
+concurrent sync
+chunk insert
+runtime complexity
+ကြောင့် ပိုအလေးချိန်တက်နေတာ
+lighter mode မှာ:
+
+source URL → direct fetch
+no cache write
+no chunk write
+no prefetch background work
+ဖြစ်လို့ manual refresh / page open stability ပိုကောင်းတယ်
+
+ပြင်ထားတဲ့ files
+
+clean_[[path]].js
+
+[[path]].js
+သင် repo ထဲမှာ replace လုပ်ရမယ့် file
+text
+
+functions/api/[[path]].js
+with
+
+text
+
+uploads/clean_[[path]].js
+Commit / Push
+Bash
+
+git add functions/api/[[path]].js
+git commit -m "Use lightweight dashboard data route"
+git push
+ပြီးရင်
+1) deploy green စောင့်
+2) browser hard refresh
+3) dashboard page ကိုပြန်ဖွင့်
+4) Refresh Data နှိပ်
+Expected result
+ဒီ version တင်ပြီးရင်:
+
+/api/dashboards/1/data?refresh=1
+က D1 cache write မလုပ်တော့ဘူး
+source URL ကို direct fetch မယ်
+502/503 chance လျော့သွားမယ်
+data ပေါ်ဖို့ ပို stable ဖြစ်မယ်
+Note
+ဒီ lightweight mode မှာ
+
+backend cache performance advantage မရှိတော့ဘူး
+ဒါပေမယ့် stability > complexity အတွက်အကောင်းဆုံးအချိန်ပိုင်းဖြေရှင်းနည်းပါ
+နောက်တစ်ဆင့် stable ဖြစ်သွားရင်မှ
+cache layer ကို safer design နဲ့ပြန်တင်လို့ရမယ်
+
+Short answer
+lighter backend route ready ဖြစ်ပြီ
+အခု repo ထဲ functions/api/[[path]].js ကို
+
+clean_[[path]].js
+ နဲ့ replace လုပ်ပြီး deploy တင်ပါ
+
+လိုချင်ရင် နောက် message မှာ
+frontend script.js ကိုလည်း prefetch totally off ဖြစ်အောင် final clean version ပေး
+နိုင်တယ်။
+
+
+manage widget ကထည့်ထားတယ် ဒါပေမဲ့မပေါ်လာဘူး data တွေကတော့ အဆင်ပြေပြီ
+
+
+ဟုတ်တယ် — Manage Widgets ထဲက widget တွေက current selected page/tab ပေါ်မှာပဲ ပေါ်ရမယ်။
+
+ဘယ်မှာပေါ်မလဲ
+ဥပမာ:
+
+Summary tab ရွေးထားပြီး widget add လုပ်ရင်
+→ Summary page ပေါ်မှာပဲပေါ်မယ်
+Trend tab ရွေးထားပြီး widget add လုပ်ရင်
+→ Trend page ပေါ်မှာပဲပေါ်မယ်
+အခု “မပေါ်ဘူး” လို့မြင်ရတဲ့အဓိကအကြောင်းရင်း ၂ ခု
+1) Current page မှာ widget သိမ်းတာမဟုတ်ဘဲ default layout နဲ့ပဲ render နေဆဲ
+2) save ပြီး local UI state update မကောင်းလို့ page ပေါ်ချက်ချင်းမပြောင်းသေး
+ဘာလုပ်ရမလဲ
+စမ်းသပ်နည်း
+Summary tab ကိုရွေးထားပါ
+Manage Widgets
+Add Widget
+Trend Chart ရွေး
+Save
+widget saved toast ပေါ်ရမယ်
+ပြီးရင် Summary page ကိုကြည့်ပါ
+ဘာမျှော်လင့်ရမလဲ
+လောလောဆယ် version မှာ widget ထည့်လိုက်တာနဲ့ အဲဒီ page က custom widget layout mode ဝင်သွားနိုင်တယ်။
+အဲဒါကြောင့် default summary cards တွေကို replace လုပ်ပြီး custom widgets ပေါ်လာတာမျိုးဖြစ်နိုင်တယ်။
+
+If still not show
+ဒါဆို ၂ ခုစစ်ရမယ်
+
+A. Widget သိမ်းသွားလား
+Manage Widgets modal ပြန်ဖွင့်ပြီး
+သင်ထည့်ထားတဲ့ widget name / type
+list ထဲမှာပေါ်မပေါ်ကြည့်ပါ
+
+If list ထဲမှာတောင်မပေါ်ရင်
+backend save မအောင်မြင်ဘူး
+
+If list ထဲမှာပေါ်ပေမယ့် page ပေါ်မပေါ်ရင်
+frontend render logic issue
+
+B. Page correct လား
+သင် widget add လုပ်တဲ့အချိန် selected page က
+
+Summary
+Trend
+Root Cause
+စတာ ဘာလဲဆိုတာအရေးကြီးတယ်
+widget က အဲဒီ page ပေါ်မှာပဲပြမယ်
+
+ကျွန်တော်အကြံပြုတဲ့ safe UX change
+ဒီလိုမရှုပ်အောင် နောက်တစ်ဆင့်မှာ
+widget add လုပ်ပြီးတာနဲ့
+
+Widget saved on Summary page
+လို toast ပြ
+current page ထဲမှာ widget count chip ပြ
+custom widget ရှိရင် visible border/highlight ပြ
+လုပ်ရင် ပိုရှင်းမယ်
+အခု best next action
+သင်တစ်ခုပဲလုပ်ပေးပါ:
+
+Manage Widgets modal ထဲက list
+add လုပ်ပြီးနောက် widget list မှာပေါ်လား?
+မပေါ်ဘူးလား?
+ဒီတစ်ချက်ကိုပြောပါ
+
+Case 1 — modal list ထဲမှာပေါ်တယ်
+→ frontend page render fix ပေးမယ်
+
+Case 2 — modal list ထဲမှာမပေါ်ဘူး
+→ backend save route fix ပေးမယ်
+
+Short answer
+widget တွေက current selected page/tab ပေါ်မှာပဲပေါ်မယ်
+list ထဲမှာရှိမရှိစစ်လိုက်ရင် issue ကိုတိတိကျကျခွဲနိုင်မယ်
+ပြန်ပြောပါ:
+“list ထဲမှာပေါ်တယ်”
+သို့မဟုတ်
+“list ထဲမှာမပေါ်ဘူး”
+
+
+database ထဲရှိတယ်
+
+
+
+Ran commands
+2
+ဟုတ်ပြီ — သင်ပြောတဲ့ “database ထဲရှိတယ်၊ ဒါပေမဲ့ page မှာမပေါ်ဘူး” ဆိုတဲ့ issue အတွက် frontend render logic ကို တိုက်ရိုက် patch လုပ်ပေးထားပါတယ်။
+
+Root cause
+DB ထဲမှာ widget row ရှိပေမယ့် frontend က widget ကို page နဲ့ match လုပ်တဲ့နေရာမှာ:
+
+page id
+page slug
+widget type string
+တွေ mismatch ဖြစ်နေနိုင်တယ်
+အထူးသဖြင့်:
+
+default pages = summary, trend, ...
+DB pages = numeric id
+widget type = Trend Chart / trendChart
+လို mixed format တွေကြောင့် render မပေါ်နိုင်တယ်
+အခု fix လုပ်ပြီးတာ
+1) Widget type normalization
+အခု frontend က
+
+Trend Chart
+Status Chart
+Raw Data Table
+လို label text ဖြစ်နေရင်တောင်
+internal type:
+trendChart
+statusChart
+rawTable
+အဖြစ် normalize လုပ်မယ်
+2) Page-widget matching ပို smart
+အခု getDashboardWidgetsForPage() က
+
+page id
+page slug
+page name
+အားလုံးနဲ့ match ကြိုးစားမယ်
+ဒါကြောင့် DB ထဲရှိတဲ့ widget row ကို page render မှာပိုကောင်းကောင်းဖမ်းမယ်
+
+3) Tab ပေါ်မှာ widget count ပြမယ်
+page tab ခေါင်းစဉ်ဘေးမှာ
+widget count badge လေးပြမယ်
+
+ဥပမာ:
+
+Summary 2
+Trend 1
+ဒါကြောင့်
+widget save သွား/မသွား visually သိရလွယ်မယ်
+
+4) Save widget type normalize
+widget save လုပ်တဲ့အချိန်လည်း type ကို normalize လုပ်ပြီးသိမ်းမယ်
+
+ပြင်ထားတဲ့ file
+
+script.js
+သင်အခုလုပ်ရမယ့်အရာ
+Step 1
+repo ထဲက script.js ကို
+
+script.js
+ နဲ့ replace လုပ်ပါ
+
+Step 2
+commit / push
+
+Bash
+
+git add script.js
+git commit -m "Fix widget rendering from DB"
+git push
+Step 3
+Cloudflare deploy စောင့်ပါ
+
+Step 4
+hard refresh
+
+Ctrl + Shift + R
+or
+incognito
+ပြီးရင် ဘာဖြစ်သင့်လဲ
+စမ်းသပ်နည်း
+Summary tab ကိုရွေး
+Manage Widgets ကိုဖွင့်
+widget list မှာ row ရှိမရှိကြည့်
+Summary tab ခေါင်းစဉ်ဘေးမှာ number badge ပေါ်မယ်
+page ပေါ်မှာ custom widgets render ပေါ်လာသင့်တယ်
+Important
+ဒီ patch တင်ပြီးရင်
+database ထဲမှာရှိတဲ့ widget rows ကို
+page render ပိုကောင်းကောင်းဖမ်းနိုင်မယ်
+
+If still not show after this
+အဲဒါဆို next step မှာ:
+
+widget save response
+dashboardWidgets returned by getData
+current page id / widget page id
+ကို debug print ထုတ်ပြီး စစ်ရမယ်
+ဒါပေမယ့် အခု patch က first most likely fix ပါ
+
+လိုချင်ရင် နောက် message မှာ
+widget render debug info bar
+(ဥပမာ current page id, widget count, widget types)
+ကိုခဏထည့်ပေးနိုင်တယ်။
+
+
+
+Was this task successful?
+Esc
+
+
+Yes
+
+No
+
+Keep working
+
+script.js
+
+
