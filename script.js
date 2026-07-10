@@ -235,10 +235,8 @@ function doShowApp(){
 
 function updateAdminUI(){
   // Admin-only elements
-  ['adminBtn','mobileAdminBtn','manageDashboardPageBtn','dashboardViewSettingsBtn','clearDashboardCacheBtn'].forEach(id=>{
-    const e=el(id);if(e)isAdmin()?e.classList.remove('hidden'):e.classList.add('hidden');
-  });
-  ['manageDashboardPagesBtn','manageDashboardWidgetsBtn'].forEach(id=>{ const e=el(id); if(e) e.classList.add('hidden'); });
+  ['adminBtn','mobileAdminBtn'].forEach(id=>{ const e=el(id); if(e) isAdmin()?e.classList.remove('hidden'):e.classList.add('hidden'); });
+  ['manageDashboardPageBtn','dashboardViewSettingsBtn','clearDashboardCacheBtn','manageDashboardPagesBtn','manageDashboardWidgetsBtn','refreshDashboardBtn'].forEach(id=>{ const e=el(id); if(e) e.classList.add('hidden'); });
 
   // Dashboard visibility — leader+ only
   ['dashboardBtnWrap','mobileDashboardSection','refreshDashboardBtn'].forEach(id=>{
@@ -367,13 +365,6 @@ function navigateTo(page){
     if(!isAdmin())return;el('adminPage').classList.remove('hidden');showAdminTab('users');
   } else if(page==='dashboard'){
     el('dashboardPage').classList.remove('hidden');
-    if(currentDashboardId){
-      const item=appData.dashboardItems.find(d=>d.id===currentDashboardId);
-      if(item){ currentDashboardItem=item; renderCurrentDashboard(); }
-      else renderDashboardEmpty('Select a dashboard item from the Dashboard menu');
-    } else {
-      renderDashboardEmpty('Select a dashboard item from the Dashboard menu');
-    }
   }
   document.querySelectorAll(`[data-page="${page}"]`).forEach(b=>b.classList.add('active'));
 }
@@ -1276,20 +1267,37 @@ async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}=
 
 async function showDashboardItem(id,name='Dashboard'){
   if(!isLeader()) return showToast('Leader or above required','error');
-  currentDashboardId=id; currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'}; currentDashboardPayload=null; currentDashboardRows=[]; dashboardAutoRetryDone=false; initializeDashboardPage();
-  stopPolling();
-  document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden')); el('dashboardPage').classList.remove('hidden'); document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active')); document.querySelectorAll('[data-page="dashboard"]').forEach(b=>b.classList.add('active')); if(el('dashboardDropdown')) el('dashboardDropdown').classList.add('hidden'); renderDashboardPageTabs(); renderDashboardLoading(currentDashboardItem);
-  const data=await fetchDashboardData(id,{silent:false,onProgress:updateDashboardLoadingUI}); if(currentDashboardId!==id) return;
-  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the dashboard payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=hydrateDashboardRows(extractDashboardRows(data)); currentDashboardFilterOptionsCache=computeDashboardFilterOptions(currentDashboardRows); clearDashboardDerivedCaches(); updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Building tabs, filters, and table state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the page...','indeterminate'); renderCurrentDashboard(); }
-  else { renderDashboardEmpty('Unable to load dashboard data. Please check the API URL or worker route.'); }
+  currentDashboardId=id;
+  currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'};
+  document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
+  el('dashboardPage').classList.remove('hidden');
+  document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('[data-page="dashboard"]').forEach(b=>b.classList.add('active'));
+  if(el('dashboardDropdown')) el('dashboardDropdown').classList.add('hidden');
+  const frame=el('dashboardReferenceFrame');
+  if(frame){
+    const q=new URLSearchParams({
+      dashboardId:String(id),
+      dashboardName:currentDashboardItem.name||name||'Dashboard',
+      api:getDashboardApi(currentDashboardItem)
+    });
+    frame.src=`dashboard_reference.html?${q.toString()}`;
+  }
 }
+
 async function refreshCurrentDashboard(force=false){
-  if(!currentDashboardId||!currentDashboardItem) return showToast('Select a dashboard item first','info');
-  renderDashboardLoading(currentDashboardItem);
-  const data=await fetchDashboardData(currentDashboardId,{force:!!force,silent:false,onProgress:updateDashboardLoadingUI});
-  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the refreshed payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=hydrateDashboardRows(extractDashboardRows(data)); currentDashboardFilterOptionsCache=computeDashboardFilterOptions(currentDashboardRows); clearDashboardDerivedCaches(); updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Updating filters and page state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the refreshed page...','indeterminate'); renderCurrentDashboard(); }
-  else { renderDashboardEmpty('Refresh failed. Please check the API source.'); }
+  const frame=el('dashboardReferenceFrame');
+  if(frame && frame.src){
+    try{
+      const u=new URL(frame.src, window.location.href);
+      if(force) u.searchParams.set('ts', String(Date.now()));
+      frame.src=u.toString();
+    }catch{
+      frame.src=frame.src;
+    }
+  }
 }
+
 function initializeDashboardFilters(item,payload,rows,preserve=false){
   const settings=getDashboardSettings(item,payload);
   currentDashboardFilters = { groupBy: preserve ? (currentDashboardFilters.groupBy||'all') : 'all', subPeriod: preserve ? (currentDashboardFilters.subPeriod||'all') : 'all', site: preserve ? currentDashboardFilters.site : '', township: preserve ? currentDashboardFilters.township : '', queue: preserve ? currentDashboardFilters.queue : '', fromDate: '', toDate: '' };
