@@ -1892,8 +1892,110 @@
 let GAS_WEB_APP_URL = "";
 try { GAS_WEB_APP_URL = localStorage.getItem('noc_gas_api_url') || ""; } catch(e) {}
 
+const DASH_EMBED = (() => {
+  const q = new URLSearchParams(window.location.search);
+  return {
+    enabled: !!q.get('dashboardId'),
+    dashboardId: q.get('dashboardId') || '',
+    dashboardName: q.get('dashboardName') || 'Dashboard',
+    sourceApi: q.get('api') || ''
+  };
+})();
+
+function refSheetValuesToObjects(values){
+  if(!Array.isArray(values) || values.length < 2) return [];
+  const headers=(values[0]||[]).map(h=>String(h ?? '').trim());
+  return values.slice(1).filter(row=>Array.isArray(row) && row.some(cell=>String(cell ?? '').trim()!==''))
+    .map(row=>{
+      const obj={};
+      headers.forEach((header,idx)=>{ obj[header || ('Column_' + (idx+1))] = row[idx] ?? ''; });
+      return obj;
+    });
+}
+function refExtractRows(payload){
+  const isObjArray = (arr) => Array.isArray(arr) && (!arr.length || typeof arr[0] === 'object');
+  const isMatrix = (arr) => Array.isArray(arr) && arr.length >= 2 && Array.isArray(arr[0]) && Array.isArray(arr[1]);
+  const walk = (node, depth=0) => {
+    if(depth > 6 || node == null) return [];
+    if(isObjArray(node)) return node;
+    if(isMatrix(node)) return refSheetValuesToObjects(node);
+    if(typeof node !== 'object') return [];
+    if(isMatrix(node.values)) return refSheetValuesToObjects(node.values);
+    const pref=['rows','data','result','items','records','payload','values'];
+    for(const key of pref){
+      if(node[key] !== undefined){
+        const hit = walk(node[key], depth+1);
+        if(hit.length || Array.isArray(node[key])) return hit;
+      }
+    }
+    for(const key of Object.keys(node)){
+      const hit = walk(node[key], depth+1);
+      if(hit.length) return hit;
+    }
+    return [];
+  };
+  return walk(payload);
+}
+async function fetchDashboardEmbedData(forceReload){
+  const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/data' + (forceReload ? '?refresh=1' : '');
+  const res = await fetch(url, { credentials: 'same-origin' });
+  const txt = await res.text();
+  let json = {};
+  try { json = txt ? JSON.parse(txt) : {}; } catch(e) { throw new Error('Dashboard API returned non-JSON response.'); }
+  if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+  const raw = json.data || json;
+  const rows = refExtractRows(raw);
+  const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(raw?.sourceMeta?.headers) ? raw.sourceMeta.headers : []);
+  return {
+    success: true,
+    tabName: DASH_EMBED.dashboardName,
+    headers,
+    rawData: rows,
+    isPivot: false,
+    sourceMeta: json.sourceMeta || raw?.sourceMeta || null,
+    rowCount: json.rowCount || rows.length || 0
+  };
+}
+
 async function apiCall(action, params = {}) {
   return new Promise((resolve, reject) => {
+    if (DASH_EMBED.enabled) {
+      if (action === 'getTabNames') {
+        resolve([DASH_EMBED.dashboardName]);
+        return;
+      }
+      if (action === 'getTabData') {
+        fetchDashboardEmbedData(params && params.forceReload).then(resolve).catch(reject);
+        return;
+      }
+      if (action === 'getStartupBundle') {
+        fetchDashboardEmbedData(false).then(tabData => {
+          resolve({
+            tabNames: [DASH_EMBED.dashboardName],
+            tabData: tabData,
+            appState: { success: true, stateJson: localStorage.getItem('noc_universal_state') || null }
+          });
+        }).catch(reject);
+        return;
+      }
+      if (action === 'saveAppState') {
+        try { localStorage.setItem('noc_universal_state', params.stateJson || ''); } catch(e) {}
+        resolve({ success: true, mode: 'local-embed-state' });
+        return;
+      }
+      if (action === 'loadAppState') {
+        let simState = null;
+        try { simState = localStorage.getItem('noc_universal_state'); } catch(e) {}
+        resolve({ success: true, stateJson: simState || null });
+        return;
+      }
+      if (action === 'clearCache') {
+        resolve({ success: true, skipped: true, mode: 'embed' });
+        return;
+      }
+      resolve({ success: true, skipped: true, action, mode: 'embed' });
+      return;
+    }
     if (typeof google !== 'undefined' && google.script && google.script.run) {
       console.log('Real-Time Sheet DB Call [' + action + '] with params:', params);
       let runner = google.script.run
@@ -3117,7 +3219,7 @@ function fetchTab(n, forceReload){
     return;
   }
   
-  apiCall('getTabData', {tab: n}).then(d => {
+  apiCall('getTabData', {tab: n, forceReload: !!forceReload}).then(d => {
     console.log('Tab data received:', d);
     if (!d) throw new Error('No data received from API');
     if (!d.headers) d.headers = [];
