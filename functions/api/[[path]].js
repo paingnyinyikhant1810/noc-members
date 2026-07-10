@@ -341,6 +341,62 @@ export const onRequest = async (context) => {
   }
 
   // ════════════════════════════════════════════════════════════════════════════
+  //  DASHBOARD ITEMS CRUD — dedicated endpoints for admin
+  // ════════════════════════════════════════════════════════════════════════════
+  if (path === "dashboardItems" && method === "POST") {
+    if (!isAdmin) return err("Admin only", 403);
+    await ensureDashboardTables();
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const name = String(body.name || '').trim();
+    const apiUrl = String(body.api_url || body.apiUrl || '').trim();
+    const icon = String(body.icon || 'fa-chart-line').trim() || 'fa-chart-line';
+    const slug = String(body.slug || body.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!name || !apiUrl) return err('name and api_url are required', 400);
+    const maxRow = await env.DB.prepare("SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM dashboard_items").first();
+    const nextSort = (maxRow?.max_sort ?? -1) + 1;
+    const inserted = await env.DB.prepare(`
+      INSERT INTO dashboard_items (name, slug, icon, api_url, min_role_required, is_active, sort_order, updated_at)
+      VALUES (?, ?, ?, ?, 'leader', 1, ?, datetime('now'))
+    `).bind(name, slug, icon, apiUrl, nextSort).run();
+    await env.DB.prepare(`
+      INSERT INTO dashboard_item_settings (dashboard_item_id, settings_json, updated_at)
+      VALUES (?, ?, datetime('now'))
+    `).bind(inserted.meta?.last_row_id, JSON.stringify(cloneDashDefaults())).run();
+    return ok({ success:true, id: inserted.meta?.last_row_id }, 201);
+  }
+
+  const dashboardItemMatch = path.match(/^dashboardItems\/(\d+)$/);
+  if (dashboardItemMatch && method === "PUT") {
+    if (!isAdmin) return err("Admin only", 403);
+    await ensureDashboardTables();
+    const dashId = parseInt(dashboardItemMatch[1], 10);
+    const existing = await env.DB.prepare("SELECT * FROM dashboard_items WHERE id=?").bind(dashId).first();
+    if (!existing) return err("Dashboard item not found", 404);
+    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const name = String(body.name || existing.name || '').trim();
+    const apiUrl = String(body.api_url || body.apiUrl || existing.api_url || '').trim();
+    const icon = String(body.icon || existing.icon || 'fa-chart-line').trim() || 'fa-chart-line';
+    const slug = String(body.slug || body.name || name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!name || !apiUrl) return err('name and api_url are required', 400);
+    await env.DB.prepare(`
+      UPDATE dashboard_items
+         SET name=?, slug=?, icon=?, api_url=?, min_role_required='leader', updated_at=datetime('now')
+       WHERE id=?
+    `).bind(name, slug, icon, apiUrl, dashId).run();
+    return ok({ success:true, id: dashId });
+  }
+  if (dashboardItemMatch && method === "DELETE") {
+    if (!isAdmin) return err("Admin only", 403);
+    await ensureDashboardTables();
+    const dashId = parseInt(dashboardItemMatch[1], 10);
+    await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(dashId).run();
+    await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(dashId).run();
+    await env.DB.prepare("DELETE FROM dashboard_sync_logs WHERE dashboard_item_id=?").bind(dashId).run();
+    await env.DB.prepare("DELETE FROM dashboard_items WHERE id=?").bind(dashId).run();
+    return ok({ success:true });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
   //  DASHBOARDS — item list, caching, per-item settings
   // ════════════════════════════════════════════════════════════════════════════
   if (path === "dashboards/sort" && method === "POST") {
