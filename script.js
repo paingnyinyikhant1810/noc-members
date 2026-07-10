@@ -1343,45 +1343,38 @@ function renderCurrentDashboard(){
   }
   initializeDashboardPage(); renderDashboardPageTabs(); renderDashboardModeBar(); const filteredRows=getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); const currentPage=getCurrentDashboardPage(); if(!filteredRows.length && !(currentDashboardMode==='duplicate' || currentDashboardMode==='overtime')){ renderDashboardEmpty('No data matched the selected filters. Try changing Site / Township / Queue or date grouping.'); return; } renderDashboardData(currentDashboardItem,currentDashboardPayload,filteredRows,currentDashboardFilters);
 }
-function buildCompareStats(rows, groupBy){
-  const byBucket={};
+function buildTrendSeries(rows, groupBy='day'){
+  const mp={};
+  const eff=effectiveGroupBy(groupBy);
   rows.forEach(row=>{
-    const meta=row.__noc||{};
-    if(!meta.created) return;
-    const bucket=formatTimeBucket(meta.created,groupBy);
-    if(!byBucket[bucket]) byBucket[bucket]={ bucket, total:0, closed:0, open:0 };
-    byBucket[bucket].total++;
-    if((meta.statusKey||'').includes('closed')||(meta.statusKey||'').includes('resolved')) byBucket[bucket].closed++;
-    else byBucket[bucket].open++;
+    const created=row?.__noc?.created;
+    if(!created) return;
+    incMap(mp, formatTimeBucket(created, eff));
   });
-  const series=Object.values(byBucket).sort((a,b)=>a.bucket.localeCompare(b.bucket)).map(item=>({ ...item, label:formatBucketLabel(item.bucket,groupBy) }));
-  const current=series[series.length-1]||null;
-  const previous=series[series.length-2]||null;
-  const delta=(current&&previous)?current.total-previous.total:0;
-  const deltaPct=(current&&previous&&previous.total)?((delta/previous.total)*100):null;
-  return { series, current, previous, delta, deltaPct };
+  return sortTrendMap(mp);
+}
+function buildCpeModelCounts(rows){
+  const mp={};
+  rows.forEach(row=>{ incMap(mp, row?.__noc?.cpeModel || 'Unknown'); });
+  return sortMap(mp);
 }
 function buildDuplicateStats(rows){
   const repeatMap={}, siteMap={}, townshipMap={}, problemMap={};
-  rows.forEach(row=>{
-    const meta=row.__noc||{};
-    if(meta.repeatKey) incMap(repeatMap, meta.repeatKey);
-  });
-  const repeatedKeys=new Set(Object.entries(repeatMap).filter(([,v])=>v>1).map(([k])=>k));
-  const repeatedRows=rows.filter(row=>repeatedKeys.has((row.__noc||{}).repeatKey||''));
+  rows.forEach(row=>{ const key=row?.__noc?.repeatKey||''; if(key) incMap(repeatMap,key); });
+  const repeatEntries=sortMap(repeatMap).filter(([,v])=>v>1);
+  const repeatedKeys=new Set(repeatEntries.map(([k])=>k));
+  const repeatedRows=rows.filter(row=>repeatedKeys.has(row?.__noc?.repeatKey||''));
   repeatedRows.forEach(row=>{
     const meta=row.__noc||{};
     if(meta.site) incMap(siteMap, meta.site);
     if(meta.township) incMap(townshipMap, meta.township);
     if(meta.problem) incMap(problemMap, meta.problem);
   });
-  const repeatEntries=Object.entries(repeatMap).filter(([,v])=>v>1).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
   return {
-    repeatedRows,
     repeatEntries,
     repeatEntities: repeatEntries.length,
     repeatTickets: repeatedRows.length,
-    avgRepeat: repeatEntries.length ? repeatedRows.length/repeatEntries.length : 0,
+    avgRepeat: repeatEntries.length ? repeatedRows.length / repeatEntries.length : 0,
     topSites: sortMap(siteMap),
     topTownships: sortMap(townshipMap),
     topProblems: sortMap(problemMap),
@@ -1391,7 +1384,7 @@ function buildOvertimeStats(rows,item){
   const threshold=getDashboardSla(item);
   const bucketMap={}, siteMap={}, rootMap={};
   const overtimeRows=rows.filter(row=>{
-    const hrs=(row.__noc||{}).resolutionHours;
+    const hrs=row?.__noc?.resolutionHours;
     return hrs!=null && hrs>threshold;
   });
   overtimeRows.forEach(row=>{
@@ -1408,7 +1401,6 @@ function buildOvertimeStats(rows,item){
   const maxOver=overtimeRows.length ? Math.max(...overtimeRows.map(r=>(r.__noc||{}).resolutionHours||0)) : 0;
   const resolvedRows=rows.filter(r=>(r.__noc||{}).resolutionHours!=null).length;
   return {
-    overtimeRows,
     overtimeCount:overtimeRows.length,
     overtimePct:resolvedRows ? (overtimeRows.length/resolvedRows)*100 : 0,
     avgOver,
@@ -1419,6 +1411,38 @@ function buildOvertimeStats(rows,item){
     threshold,
   };
 }
+function buildDashboardStats(rows,item,groupBy='all'){
+  const statusCount={}, issueCount={}, siteCount={}, rootCount={}, queueCount={}, townshipCount={};
+  let resolvedCount=0,totalResolutionHours=0,closedCount=0,openCount=0;
+  rows.forEach(row=>{
+    const meta=row.__noc||{};
+    const status=meta.status||'Unknown';
+    incMap(statusCount,status);
+    if((meta.statusKey||'').includes('closed')||(meta.statusKey||'').includes('resolved')) closedCount++; else openCount++;
+    incMap(issueCount,meta.problem||'Unknown');
+    incMap(siteCount,meta.site||'Unknown');
+    incMap(rootCount,meta.root||'Unknown');
+    incMap(queueCount,meta.queue||'Unknown');
+    incMap(townshipCount,meta.township||'Unknown');
+    if(meta.resolutionHours!=null){ totalResolutionHours+=meta.resolutionHours; resolvedCount++; }
+  });
+  const totalRows=rows.length;
+  return {
+    totalRows,
+    closedCount,
+    openCount,
+    resolvedCount,
+    avgResolutionHours: resolvedCount ? totalResolutionHours/resolvedCount : 0,
+    trendSeries: buildTrendSeries(rows, groupBy),
+    topCpeModels: buildCpeModelCounts(rows),
+    topProblems: sortMap(issueCount),
+    topSites: sortMap(siteCount),
+    topRootCauses: sortMap(rootCount),
+    topQueues: sortMap(queueCount),
+    topTownships: sortMap(townshipCount),
+    statusSeries: sortMap(statusCount),
+  };
+}
 function renderInsightCard(title,value,sub,deltaText='',tone='info'){
   const toneIcon={ info:'fa-circle-info', success:'fa-arrow-trend-up', danger:'fa-triangle-exclamation', warning:'fa-clock' }[tone]||'fa-circle-info';
   return `<div class="dash-card dash-card--kpi"><div class="dash-head"><div><div class="dash-eyebrow">Mode</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">${escHtml(sub)}</div></div><div class="dash-icon-badge"><i class="fas ${toneIcon}"></i></div></div><div class="kpi-value">${escHtml(String(value))}</div><div class="kpi-note">${escHtml(deltaText||'Insight view')}</div></div>`;
@@ -1426,49 +1450,48 @@ function renderInsightCard(title,value,sub,deltaText='',tone='info'){
 function renderDashboardData(item,payload,rows,filters){
   destroyDashboardCharts();
   clearDashboardLoadPulse();
-  const settings=getDashboardSettings(item,payload);
   const currentPage=getCurrentDashboardPage();
   const pageSlug=currentPage.slug;
-  const stats=(shouldUseSourceSummary(filters) && payload?.sourceSummary) ? sourceSummaryToStats(payload.sourceSummary, filters.groupBy) : getDashboardStats(rows,item,filters.groupBy,pageSlug);
+  const stats=(shouldUseSourceSummary(filters) && payload?.sourceSummary)
+    ? sourceSummaryToStats(payload.sourceSummary, effectiveGroupBy(filters.groupBy))
+    : buildDashboardStats(rows,item,filters.groupBy);
+  const duplicateStats=buildDuplicateStats(rows);
+  const overtimeStats=buildOvertimeStats(rows,item);
   const meta=buildDashboardMeta(payload,item,rows.length,filters,currentDashboardRows.length,currentPage.name);
   const metaEl=el('dashboardMeta');
   if(metaEl){ metaEl.classList.toggle('hidden',!meta.length); metaEl.innerHTML=meta.map(m=>`<span class="meta-chip"><i class="fas ${m.icon}"></i> ${escHtml(m.text)}</span>`).join(''); }
   el('dashboardTitleText').textContent=item.name||'Dashboard';
-  const cards=[];
 
+  const cards=[];
   if(pageSlug==='summary'){
-    const dup=buildDuplicateStats(rows);
-    const ov=buildOvertimeStats(rows,item);
     cards.push(renderInsightCard('Total Tickets', fmtInt(stats.totalRows), `${currentTimeframeLabel(filters)} ticket count`, `${fmtInt(stats.closedCount)} closed / ${fmtInt(stats.openCount)} open`, 'info'));
     cards.push(renderChartCard('Total Ticket Number', `${currentTimeframeLabel(filters)} view`, 'fa-chart-line', 'dashTrendCanvas', 'trend'));
     cards.push(renderChartCard("CPE Model's Complaint Counts", 'Complaint counts by CPE model / type', 'fa-microchip', 'dashCpeCanvas', 'wide'));
     cards.push(renderChartCard('Duplicate Tickets', 'Repeated complaint services overview', 'fa-copy', 'dashDupRepeatCanvas', 'wide'));
-    cards.push(renderChartCard('OverTime Graph', `Resolution over ${ov.threshold}h`, 'fa-clock', 'dashOvtBucketCanvas', 'wide'));
+    cards.push(renderChartCard('OverTime Graph', `Resolution over ${overtimeStats.threshold}h`, 'fa-clock', 'dashOvtBucketCanvas', 'wide'));
   } else if(pageSlug==='duplicate'){
-    const dup=buildDuplicateStats(rows);
-    cards.push(renderInsightCard('Repeat Services', fmtInt(dup.repeatEntities), 'Unique Local Service ID / CPE with multiple complaints', `${fmtInt(dup.repeatTickets)} repeated tickets`, 'warning'));
-    cards.push(renderInsightCard('Repeat Tickets', fmtInt(dup.repeatTickets), 'Tickets tied to repeated services', dup.avgRepeat ? `${dup.avgRepeat.toFixed(1)} avg repeats` : 'No repeated services', 'info'));
+    cards.push(renderInsightCard('Repeat Services', fmtInt(duplicateStats.repeatEntities), 'Unique Local Service ID / CPE with multiple complaints', `${fmtInt(duplicateStats.repeatTickets)} repeated tickets`, 'warning'));
+    cards.push(renderInsightCard('Repeat Tickets', fmtInt(duplicateStats.repeatTickets), 'Tickets tied to repeated services', duplicateStats.avgRepeat ? `${duplicateStats.avgRepeat.toFixed(1)} avg repeats` : 'No repeated services', 'info'));
     cards.push(renderChartCard('Top Repeated Services','Highest repeat complaint services','fa-copy','dashDupRepeatCanvas','wide'));
     cards.push(renderChartCard('Repeat by Site','Sites with repeated complaints','fa-network-wired','dashDupSiteCanvas','wide'));
+    cards.push(renderChartCard('Repeat by Township','Townships with repeated complaints','fa-location-dot','dashDupTownshipCanvas','wide'));
   } else if(pageSlug==='overtime'){
-    const ov=buildOvertimeStats(rows,item);
-    cards.push(renderInsightCard('Overtime Tickets', fmtInt(ov.overtimeCount), `Resolution > ${ov.threshold}h`, `${ov.overtimePct.toFixed(1)}% of resolved tickets`, 'danger'));
-    cards.push(renderInsightCard('Avg Overtime', formatHours(ov.avgOver), 'Average resolution time of overtime tickets', ov.overtimeCount ? `Max ${formatHours(ov.maxOver)}` : 'No overtime rows', 'warning'));
-    cards.push(renderChartCard('Overtime Buckets',`Distribution of tickets over ${ov.threshold}h`,'fa-clock','dashOvtBucketCanvas','bars'));
+    cards.push(renderInsightCard('Overtime Tickets', fmtInt(overtimeStats.overtimeCount), `Resolution > ${overtimeStats.threshold}h`, `${overtimeStats.overtimePct.toFixed(1)}% of resolved tickets`, 'danger'));
+    cards.push(renderInsightCard('Avg Overtime', formatHours(overtimeStats.avgOver), 'Average resolution time of overtime tickets', overtimeStats.overtimeCount ? `Max ${formatHours(overtimeStats.maxOver)}` : 'No overtime rows', 'warning'));
+    cards.push(renderChartCard('Overtime Buckets',`Distribution of tickets over ${overtimeStats.threshold}h`,'fa-clock','dashOvtBucketCanvas','bars'));
     cards.push(renderChartCard('Overtime by Site','Sites with most overtime tickets','fa-network-wired','dashOvtSiteCanvas','wide'));
+    cards.push(renderChartCard('Overtime Root Causes','Root causes among overtime tickets','fa-bug','dashOvtRootCanvas','wide'));
   } else if(pageSlug==='pivot'){
     cards.push(`<div class="dash-empty"><i class="fas fa-table-cells-large"></i><h3>Pivot Tab</h3><p>Pivot analytics tab is reserved. We can connect your next pivot function here.</p></div>`);
   } else if(pageSlug==='create-graph'){
     cards.push(`<div class="dash-empty"><i class="fas fa-chart-pie"></i><h3>Create Graph</h3><p>Use this tab for your future custom graph builder / filter graph flow.</p></div>`);
   }
 
-  const safeCards=cards.filter(Boolean);
-  el('dashboardContainer').innerHTML=safeCards.length ? `<div class="dashboard-board">${safeCards.join('')}</div>` : `<div class="dash-empty"><i class="fas fa-eye-slash"></i><h3>No widgets</h3><p>This tab is empty right now.</p></div>`;
+  el('dashboardContainer').innerHTML=cards.length ? `<div class="dashboard-board">${cards.join('')}</div>` : `<div class="dash-empty"><i class="fas fa-eye-slash"></i><h3>No analytics</h3><p>No dashboard cards available for this tab.</p></div>`;
   const token = dashboardRenderToken;
   dashboardRenderRaf = requestAnimationFrame(()=>{
     if(token !== dashboardRenderToken) return;
-    const modeData = pageSlug==='duplicate' ? buildDuplicateStats(rows) : pageSlug==='overtime' ? buildOvertimeStats(rows,item) : null;
-    renderDashboardCharts(stats,settings,filters,modeData,pageSlug);
+    renderDashboardCharts(stats,filters,currentPage.slug,duplicateStats,overtimeStats);
     dashboardRenderRaf = null;
   });
 }
@@ -1654,28 +1677,32 @@ function downloadBlob(content, filename, mime){
   a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
-function renderDashboardCharts(stats,settings,filters,modeData=null,pageSlug='total-tickets'){
+function renderDashboardCharts(stats,filters,pageSlug='summary',duplicateStats=null,overtimeStats=null){
   if(typeof Chart==='undefined'){ document.querySelectorAll('.dash-chart-empty').forEach(box=>{ box.classList.remove('hidden'); box.innerHTML='Chart.js did not load in preview. It will work on your deployed Cloudflare Pages site.'; }); return; }
-  Chart.defaults.font.family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"; Chart.defaults.color=getComputedStyle(document.documentElement).getPropertyValue('--text2').trim()||'#64748b';
+  Chart.defaults.font.family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+  Chart.defaults.color=getComputedStyle(document.documentElement).getPropertyValue('--text2').trim()||'#64748b';
+
   if(pageSlug==='summary'){
     if(el('dashTrendCanvas')){
       if(filters.groupBy==='all' && (!filters.subPeriod || filters.subPeriod==='all')){
         createDashboardChart('dashTrendCanvas', buildCategoryChartConfig('bar', [['Total Tickets', stats.totalRows]], 'Total Ticket Number'));
+      } else if(filters.subPeriod && filters.subPeriod!=='all'){
+        createDashboardChart('dashTrendCanvas', buildCategoryChartConfig('bar', [[currentTimeframeLabel(filters), stats.totalRows]], 'Total Ticket Number'));
       } else {
-        createDashboardChart('dashTrendCanvas', buildTrendChartConfig(stats.trendSeries.slice(-Math.max(12,settings.limits.trendPoints)), 'line', effectiveGroupBy(filters.groupBy)));
+        createDashboardChart('dashTrendCanvas', buildTrendChartConfig(stats.trendSeries.slice(-Math.max(12, 10)), 'line', effectiveGroupBy(filters.groupBy)));
       }
     }
     if(el('dashCpeCanvas')) createDashboardChart('dashCpeCanvas', buildCategoryChartConfig('bar', stats.topCpeModels.slice(0,12), "CPE Model's Complaint Counts"));
-    const dup=buildDuplicateStats(currentFilteredDashboardRows());
-    if(el('dashDupRepeatCanvas')) createDashboardChart('dashDupRepeatCanvas', buildCategoryChartConfig('bar', dup.repeatEntries.slice(0,10), 'Duplicate Tickets'));
-    const ov=buildOvertimeStats(currentFilteredDashboardRows(), currentDashboardItem);
-    if(el('dashOvtBucketCanvas')) createDashboardChart('dashOvtBucketCanvas', buildCategoryChartConfig('bar', ov.bucketSeries.slice(0,8), 'OverTime Graph'));
-  } else if(pageSlug==='duplicate' && modeData){
-    if(el('dashDupRepeatCanvas')) createDashboardChart('dashDupRepeatCanvas', buildCategoryChartConfig('bar', modeData.repeatEntries.slice(0,10), 'Repeated Services'));
-    if(el('dashDupSiteCanvas')) createDashboardChart('dashDupSiteCanvas', buildCategoryChartConfig('bar', modeData.topSites.slice(0,8), 'Repeat by Site'));
-  } else if(pageSlug==='overtime' && modeData){
-    if(el('dashOvtBucketCanvas')) createDashboardChart('dashOvtBucketCanvas', buildCategoryChartConfig('bar', modeData.bucketSeries.slice(0,8), 'Overtime Buckets'));
-    if(el('dashOvtSiteCanvas')) createDashboardChart('dashOvtSiteCanvas', buildCategoryChartConfig('bar', modeData.topSites.slice(0,8), 'Overtime by Site'));
+    if(el('dashDupRepeatCanvas')) createDashboardChart('dashDupRepeatCanvas', buildCategoryChartConfig('bar', duplicateStats.repeatEntries.slice(0,10), 'Duplicate Tickets'));
+    if(el('dashOvtBucketCanvas')) createDashboardChart('dashOvtBucketCanvas', buildCategoryChartConfig('bar', overtimeStats.bucketSeries.slice(0,8), 'OverTime Graph'));
+  } else if(pageSlug==='duplicate'){
+    if(el('dashDupRepeatCanvas')) createDashboardChart('dashDupRepeatCanvas', buildCategoryChartConfig('bar', duplicateStats.repeatEntries.slice(0,10), 'Top Repeated Services'));
+    if(el('dashDupSiteCanvas')) createDashboardChart('dashDupSiteCanvas', buildCategoryChartConfig('bar', duplicateStats.topSites.slice(0,8), 'Repeat by Site'));
+    if(el('dashDupTownshipCanvas')) createDashboardChart('dashDupTownshipCanvas', buildCategoryChartConfig('bar', duplicateStats.topTownships.slice(0,8), 'Repeat by Township'));
+  } else if(pageSlug==='overtime'){
+    if(el('dashOvtBucketCanvas')) createDashboardChart('dashOvtBucketCanvas', buildCategoryChartConfig('bar', overtimeStats.bucketSeries.slice(0,8), 'Overtime Buckets'));
+    if(el('dashOvtSiteCanvas')) createDashboardChart('dashOvtSiteCanvas', buildCategoryChartConfig('bar', overtimeStats.topSites.slice(0,8), 'Overtime by Site'));
+    if(el('dashOvtRootCanvas')) createDashboardChart('dashOvtRootCanvas', buildCategoryChartConfig('bar', overtimeStats.topRoots.slice(0,8), 'Overtime Root Causes'));
   }
 }
 function createDashboardChart(canvasId, config){ const canvas=el(canvasId), empty=el(`${canvasId}_empty`); if(!canvas) return; const labels=config?.data?.labels||[]; if(!labels.length){ if(empty){ empty.classList.remove('hidden'); empty.textContent='No data for current filter.'; } return; } if(empty){ empty.classList.add('hidden'); empty.textContent=''; } try{ const existing=window.Chart && Chart.getChart(canvas); if(existing) existing.destroy(); }catch{} const chart=new Chart(canvas.getContext('2d'), config); dashboardChartInstances.push(chart); }
