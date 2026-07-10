@@ -764,7 +764,7 @@ function currentTimeframeLabel(filters){
   return DASHBOARD_GROUP_UI_LABELS[filters.groupBy] || 'Total';
 }
 function getDashboardFilterCacheSignature(rows,filters){
-  return [rows?.length||0,filters.site,filters.township,filters.queue,filters.fromDate,filters.toDate].join('|');
+  return [rows?.length||0,filters.groupBy,filters.subPeriod,filters.site,filters.township,filters.queue,filters.fromDate,filters.toDate].join('|');
 }
 function getFilteredDashboardRows(rows=currentDashboardRows, filters=currentDashboardFilters){
   if(rows===currentDashboardRows){
@@ -1309,8 +1309,8 @@ function renderDashboardFilterControls(){
   bar.innerHTML=`<div class="dash-filter-left"><span class="dash-filter-title">Date Group</span><div class="dash-seg">${['all','day','week','month','year'].map(g=>`<button class="dash-seg-btn ${currentDashboardFilters.groupBy===g?'active':''}" onclick="setDashboardGroupBy('${g}')">${DASHBOARD_GROUP_UI_LABELS[g]}</button>`).join('')}</div><select id="dashboardFilter_subPeriod" class="dash-fctrl dash-fctrl--date" onchange="onDashboardFilterChange()"><option value="all">${subPeriodDefaultLabel(currentDashboardFilters.groupBy)}</option>${periodOptions.map(opt=>`<option value="${escAttr(opt.value)}" ${currentDashboardFilters.subPeriod===opt.value?'selected':''}>${escHtml(opt.label)}</option>`).join('')}</select></div><div class="dash-filter-right"><span class="dash-filter-count">Showing ${filteredCount.toLocaleString()} / ${currentDashboardRows.length.toLocaleString()} rows</span>${renderDashboardFilterSelect('site','Site Code',options.site,currentDashboardFilters.site)}${renderDashboardFilterSelect('township','Township',options.township,currentDashboardFilters.township)}${renderDashboardFilterSelect('queue','Queue',options.queue,currentDashboardFilters.queue)}<button onclick="resetDashboardFilters()" class="btn-secondary btn-sm"><i class="fas fa-filter-circle-xmark"></i> Reset</button></div>`;
 }
 function renderDashboardFilterSelect(key,label,options,selected){ return `<select id="dashboardFilter_${key}" class="dash-fctrl" onchange="onDashboardFilterChange()"><option value="">All ${escHtml(label)}</option>${options.map(opt=>`<option value="${escAttr(opt)}" ${selected===opt?'selected':''}>${escHtml(opt)}</option>`).join('')}</select>`; }
-function onDashboardFilterChange(){ currentDashboardFilters.site=el('dashboardFilter_site')?.value||''; currentDashboardFilters.township=el('dashboardFilter_township')?.value||''; currentDashboardFilters.queue=el('dashboardFilter_queue')?.value||''; currentDashboardFilters.subPeriod=el('dashboardFilter_subPeriod')?.value||'all'; currentDashboardTableState.page=1; currentDashboardFilterCacheKey=''; renderDashboardFilterControls(); renderCurrentDashboard(); }
-function setDashboardGroupBy(groupBy){ currentDashboardFilters.groupBy=groupBy; currentDashboardFilters.subPeriod='all'; renderDashboardFilterControls(); renderCurrentDashboard(); }
+function onDashboardFilterChange(){ currentDashboardFilters.site=el('dashboardFilter_site')?.value||''; currentDashboardFilters.township=el('dashboardFilter_township')?.value||''; currentDashboardFilters.queue=el('dashboardFilter_queue')?.value||''; currentDashboardFilters.subPeriod=el('dashboardFilter_subPeriod')?.value||'all'; currentDashboardTableState.page=1; clearDashboardDerivedCaches(); renderDashboardFilterControls(); renderCurrentDashboard(); }
+function setDashboardGroupBy(groupBy){ currentDashboardFilters.groupBy=groupBy; currentDashboardFilters.subPeriod='all'; clearDashboardDerivedCaches(); renderDashboardFilterControls(); renderCurrentDashboard(); }
 function resetDashboardFilters(){ currentDashboardFilters={ groupBy:'all', subPeriod:'all', site:'', township:'', queue:'', fromDate:'', toDate:'' }; currentDashboardTableState = { ...currentDashboardTableState, search:'', page:1 }; currentDashboardFilterCacheKey=''; currentDashboardFilteredRowsCache=[]; renderDashboardFilterControls(); renderCurrentDashboard(); }
 function filterDashboardRows(rows,filters){
   const eff=effectiveGroupBy(filters.groupBy);
@@ -1530,7 +1530,7 @@ function buildDashboardStats(rows,item,groupBy='day', mode='all'){
   const needQueue = ['all','trend','site'].includes(mode);
   const needTownship = ['all','site'].includes(mode);
   const needRepeat = ['all','summary','customer'].includes(mode);
-  const needTrend = ['all','trend'].includes(mode);
+  const needTrend = ['all','trend','summary'].includes(mode);
   const needResolution = ['all','summary'].includes(mode);
 
   const statusCount={}, issueCount={}, siteCount={}, rootCount={}, queueCount={}, townshipCount={}, repeatCount={}, trendCount={}, cpeCount={};
