@@ -932,7 +932,7 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 .dash-fetch-sub { font-size:.78rem; color:var(--text2); margin-top:.2rem; max-width:42rem; }
 .dash-fetch-meter { min-width:170px; display:flex; align-items:center; gap:.75rem; }
 .dash-fetch-track { flex:1; height:10px; border-radius:999px; background:var(--surface2); overflow:hidden; }
-.dash-fetch-fill { height:100%; border-radius:999px; background:linear-gradient(90deg,var(--accent),#8b5cf6); transition:width .35s ease; }
+.dash-fetch-fill { height:100%; border-radius:999px; background:linear-gradient(90deg,var(--accent),var(--accent-h)); transition:width .35s ease; }
 .dash-fetch-pct { font-size:.8rem; font-weight:800; color:var(--accent-text); min-width:42px; text-align:right; }
 .dash-mgr-loading {
   display:grid; gap:.75rem; padding:.25rem 0;
