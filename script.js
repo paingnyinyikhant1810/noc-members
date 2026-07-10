@@ -1427,11 +1427,14 @@ function renderDashboardData(item,payload,rows,filters){
   el('dashboardTitleText').textContent=item.name||'Dashboard';
   const cards=[];
 
-  if(pageSlug==='total-tickets'){
+  if(pageSlug==='summary'){
+    const dup=buildDuplicateStats(rows);
+    const ov=buildOvertimeStats(rows,item);
     cards.push(renderInsightCard('Total Tickets', fmtInt(stats.totalRows), `Grouped by ${DASHBOARD_GROUP_LABELS[filters.groupBy]}`, `${fmtInt(stats.closedCount)} closed / ${fmtInt(stats.openCount)} open`, 'info'));
     cards.push(renderChartCard('Total Ticket Number', `Trend by ${DASHBOARD_GROUP_LABELS[filters.groupBy].toLowerCase()} (day/week/month/year selector above)`, 'fa-chart-line', 'dashTrendCanvas', 'trend'));
-  } else if(pageSlug==='cpe-models'){
     cards.push(renderChartCard("CPE Model's Complaint Counts", 'Complaint counts by CPE model / type', 'fa-microchip', 'dashCpeCanvas', 'wide'));
+    cards.push(renderChartCard('Duplicate Tickets', 'Repeated complaint services overview', 'fa-copy', 'dashDupRepeatCanvas', 'wide'));
+    cards.push(renderChartCard('OverTime Graph', `Resolution over ${ov.threshold}h`, 'fa-clock', 'dashOvtBucketCanvas', 'wide'));
   } else if(pageSlug==='duplicate'){
     const dup=buildDuplicateStats(rows);
     cards.push(renderInsightCard('Repeat Services', fmtInt(dup.repeatEntities), 'Unique Local Service ID / CPE with multiple complaints', `${fmtInt(dup.repeatTickets)} repeated tickets`, 'warning'));
@@ -1645,10 +1648,13 @@ function downloadBlob(content, filename, mime){
 function renderDashboardCharts(stats,settings,filters,modeData=null,pageSlug='total-tickets'){
   if(typeof Chart==='undefined'){ document.querySelectorAll('.dash-chart-empty').forEach(box=>{ box.classList.remove('hidden'); box.innerHTML='Chart.js did not load in preview. It will work on your deployed Cloudflare Pages site.'; }); return; }
   Chart.defaults.font.family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"; Chart.defaults.color=getComputedStyle(document.documentElement).getPropertyValue('--text2').trim()||'#64748b';
-  if(pageSlug==='total-tickets'){
+  if(pageSlug==='summary'){
     if(el('dashTrendCanvas')) createDashboardChart('dashTrendCanvas', buildTrendChartConfig(stats.trendSeries.slice(-Math.max(12,settings.limits.trendPoints)), 'line', filters.groupBy));
-  } else if(pageSlug==='cpe-models'){
     if(el('dashCpeCanvas')) createDashboardChart('dashCpeCanvas', buildCategoryChartConfig('bar', stats.topCpeModels.slice(0,12), "CPE Model's Complaint Counts"));
+    const dup=buildDuplicateStats(currentFilteredDashboardRows());
+    if(el('dashDupRepeatCanvas')) createDashboardChart('dashDupRepeatCanvas', buildCategoryChartConfig('bar', dup.repeatEntries.slice(0,10), 'Duplicate Tickets'));
+    const ov=buildOvertimeStats(currentFilteredDashboardRows(), currentDashboardItem);
+    if(el('dashOvtBucketCanvas')) createDashboardChart('dashOvtBucketCanvas', buildCategoryChartConfig('bar', ov.bucketSeries.slice(0,8), 'OverTime Graph'));
   } else if(pageSlug==='duplicate' && modeData){
     if(el('dashDupRepeatCanvas')) createDashboardChart('dashDupRepeatCanvas', buildCategoryChartConfig('bar', modeData.repeatEntries.slice(0,10), 'Repeated Services'));
     if(el('dashDupSiteCanvas')) createDashboardChart('dashDupSiteCanvas', buildCategoryChartConfig('bar', modeData.topSites.slice(0,8), 'Repeat by Site'));
