@@ -149,14 +149,32 @@ export const onRequest = async (context) => {
     return base;
   };
 
+  const sheetValuesToObjects = (values) => {
+    if (!Array.isArray(values) || values.length < 2) return [];
+    const headers = (values[0] || []).map((h) => String(h ?? '').trim());
+    return values
+      .slice(1)
+      .filter((row) => Array.isArray(row) && row.some((cell) => String(cell ?? '').trim() !== ''))
+      .map((row) => {
+        const obj = {};
+        headers.forEach((header, idx) => {
+          obj[header || `Column_${idx + 1}`] = row[idx] ?? '';
+        });
+        return obj;
+      });
+  };
+
   const extractDashboardRows = (payload) => {
     const isRowArray = (arr) => Array.isArray(arr) && (!arr.length || typeof arr[0] === 'object');
+    const isSheetMatrix = (arr) => Array.isArray(arr) && arr.length >= 2 && Array.isArray(arr[0]) && Array.isArray(arr[1]);
     const findRows = (node, depth = 0) => {
       if (depth > 6 || node == null) return [];
       if (isRowArray(node)) return node;
+      if (isSheetMatrix(node)) return sheetValuesToObjects(node);
       if (typeof node !== 'object') return [];
+      if (isSheetMatrix(node.values)) return sheetValuesToObjects(node.values);
 
-      const preferred = ['rows', 'data', 'result', 'items', 'records', 'payload'];
+      const preferred = ['rows', 'data', 'result', 'items', 'records', 'payload', 'values'];
       for (const key of preferred) {
         if (node[key] !== undefined) {
           const hit = findRows(node[key], depth + 1);
@@ -251,14 +269,17 @@ export const onRequest = async (context) => {
 
   const buildStoredDashboardPayload = (rawPayload) => {
     const rows = extractDashboardRows(rawPayload);
+    const matrixHeaders = Array.isArray(rawPayload?.values?.[0]) ? rawPayload.values[0] : null;
     return {
       rows,
       generatedAt: rawPayload?.generatedAt || rawPayload?.generated_at || new Date().toISOString(),
       sourceMeta: {
         success: rawPayload?.success,
         sheet: rawPayload?.sheet || null,
+        range: rawPayload?.range || null,
+        majorDimension: rawPayload?.majorDimension || null,
         rowCount: rows.length,
-        headers: Array.isArray(rawPayload?.headers) ? rawPayload.headers : null,
+        headers: Array.isArray(rawPayload?.headers) ? rawPayload.headers : matrixHeaders,
       }
     }; 
   };
