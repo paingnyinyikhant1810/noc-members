@@ -507,13 +507,23 @@ function clearDashboardLoadPulse(){
 function startDashboardLoadPulse(){
   // no-op: dashboard progress now follows real loading phases
 }
-function updateDashboardLoadingUI(pct, title='', sub=''){
+function updateDashboardLoadingUI(pct, title='', sub='', mode='determinate'){
   const bar=el('dashboardLoadingBar');
   const txt=el('dashboardLoadingPct');
   const ttl=el('dashboardLoadingTitle');
   const msg=el('dashboardLoadingSub');
-  if(bar) bar.style.width=`${Math.max(0,Math.min(100,Math.round(pct||0)))}%`;
-  if(txt) txt.textContent=`${Math.max(0,Math.min(100,Math.round(pct||0)))}%`;
+  const track=el('dashboardLoadingTrack');
+  if(bar){
+    if(mode==='determinate'){
+      bar.classList.remove('dash-fetch-fill--indeterminate');
+      bar.style.width=`${Math.max(0,Math.min(100,Math.round(pct||0)))}%`;
+    } else {
+      bar.classList.add('dash-fetch-fill--indeterminate');
+      bar.style.width='38%';
+    }
+  }
+  if(track) track.classList.toggle('dash-fetch-track--active', mode!=='determinate');
+  if(txt) txt.textContent = mode==='determinate' ? `${Math.max(0,Math.min(100,Math.round(pct||0)))}%` : 'Syncing…';
   if(ttl && title) ttl.innerHTML=title;
   if(msg && sub) msg.innerHTML=sub;
 }
@@ -815,14 +825,14 @@ async function showDashboardItem(id,name='Dashboard'){
   currentDashboardId=id; currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'}; currentDashboardPayload=null; currentDashboardRows=[]; dashboardAutoRetryDone=false; initializeDashboardPage();
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden')); el('dashboardPage').classList.remove('hidden'); document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active')); document.querySelectorAll('[data-page="dashboard"]').forEach(b=>b.classList.add('active')); if(el('dashboardDropdown')) el('dashboardDropdown').classList.add('hidden'); renderDashboardPageTabs(); renderDashboardLoading(currentDashboardItem);
   const data=await fetchDashboardData(id,{silent:false,onProgress:updateDashboardLoadingUI}); if(currentDashboardId!==id) return;
-  if(data){ updateDashboardLoadingUI(82,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the dashboard payload...'); currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); updateDashboardLoadingUI(90,'<i class="fas fa-filter"></i> Preparing filters','Building tabs, filters, and table state...'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(97,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the page...'); renderCurrentDashboard(); }
+  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the dashboard payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Building tabs, filters, and table state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the page...','indeterminate'); renderCurrentDashboard(); }
   else { renderDashboardEmpty('Unable to load dashboard data. Please check the API URL or worker route.'); }
 }
 async function refreshCurrentDashboard(force=false){
   if(!currentDashboardId||!currentDashboardItem) return showToast('Select a dashboard item first','info');
   renderDashboardLoading(currentDashboardItem);
   const data=await fetchDashboardData(currentDashboardId,{force:!!force,silent:false,onProgress:updateDashboardLoadingUI});
-  if(data){ updateDashboardLoadingUI(82,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the refreshed payload...'); currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); updateDashboardLoadingUI(90,'<i class="fas fa-filter"></i> Preparing filters','Updating filters and page state...'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(97,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the refreshed page...'); renderCurrentDashboard(); }
+  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the refreshed payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=extractDashboardRows(data); updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Updating filters and page state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the refreshed page...','indeterminate'); renderCurrentDashboard(); }
   else { renderDashboardEmpty('Refresh failed. Please check the API source.'); }
 }
 function initializeDashboardFilters(item,payload,rows,preserve=false){
@@ -857,8 +867,8 @@ function filterDashboardRows(rows,filters){
 }
 function renderDashboardLoading(item={}){
   destroyDashboardCharts(); clearDashboardLoadPulse(); if(el('dashboardTitleText')) el('dashboardTitleText').textContent=item.name||'Dashboard'; const meta=el('dashboardMeta'); if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; } const bar=el('dashboardFilterBar'); if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; } const tabs=el('dashboardPageTabs'); if(tabs){ tabs.classList.add('hidden'); tabs.innerHTML=''; }
-  el('dashboardContainer').innerHTML=`<div class="dash-fetch-banner"><div class="dash-fetch-copy"><div id="dashboardLoadingTitle" class="dash-fetch-title"><i class="fas fa-rotate fa-spin"></i> Fetching dashboard data</div><div id="dashboardLoadingSub" class="dash-fetch-sub">Loading API data, preparing filters, and building charts for <strong>${escHtml(item.name||'Dashboard')}</strong>.</div></div><div class="dash-fetch-meter"><div class="dash-fetch-track"><div id="dashboardLoadingBar" class="dash-fetch-fill" style="width:8%"></div></div><span id="dashboardLoadingPct" class="dash-fetch-pct">8%</span></div></div><div class="dashboard-skeleton"><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel wide"></div><div class="dash-skel tall"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div></div>`;
-  updateDashboardLoadingUI(8,'<i class="fas fa-rotate fa-spin"></i> Requesting dashboard data',`Connecting to API and cache for <strong>${escHtml(item.name||'Dashboard')}</strong>.`);
+  el('dashboardContainer').innerHTML=`<div class="dash-fetch-banner"><div class="dash-fetch-copy"><div id="dashboardLoadingTitle" class="dash-fetch-title"><i class="fas fa-rotate fa-spin"></i> Fetching dashboard data</div><div id="dashboardLoadingSub" class="dash-fetch-sub">Loading API data, preparing filters, and building charts for <strong>${escHtml(item.name||'Dashboard')}</strong>.</div></div><div class="dash-fetch-meter"><div id="dashboardLoadingTrack" class="dash-fetch-track"><div id="dashboardLoadingBar" class="dash-fetch-fill" style="width:0%"></div></div><span id="dashboardLoadingPct" class="dash-fetch-pct">Syncing…</span></div></div><div class="dashboard-skeleton"><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel wide"></div><div class="dash-skel tall"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div><div class="dash-skel"></div></div>`;
+  updateDashboardLoadingUI(0,'<i class="fas fa-rotate fa-spin"></i> Requesting dashboard data',`Connecting to API and cache for <strong>${escHtml(item.name||'Dashboard')}</strong>.`,'indeterminate');
 }
 function renderDashboardEmpty(message='No dashboard item selected'){ destroyDashboardCharts(); clearDashboardLoadPulse(); const meta=el('dashboardMeta'); if(meta){ meta.classList.add('hidden'); meta.innerHTML=''; } const bar=el('dashboardFilterBar'); if(bar){ bar.classList.add('hidden'); bar.innerHTML=''; } const tabs=el('dashboardPageTabs'); if(tabs){ tabs.classList.add('hidden'); tabs.innerHTML=''; } el('dashboardContainer').innerHTML=`<div class="dash-empty"><i class="fas fa-chart-pie"></i><h3>Dashboard Preview</h3><p>${escHtml(message)}</p></div>`; }
 function renderCurrentDashboard(){
@@ -867,7 +877,7 @@ function renderCurrentDashboard(){
     if(!dashboardAutoRetryDone){
       dashboardAutoRetryDone=true;
       renderDashboardLoading(currentDashboardItem);
-      updateDashboardLoadingUI(12,'<i class="fas fa-rotate fa-spin"></i> Re-syncing empty dashboard','No rows were cached, so the dashboard is requesting a fresh sync automatically.');
+      updateDashboardLoadingUI(0,'<i class="fas fa-rotate fa-spin"></i> Re-syncing empty dashboard','No rows were cached, so the dashboard is requesting a fresh sync automatically.','indeterminate');
       refreshCurrentDashboard(true);
       return;
     }
