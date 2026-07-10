@@ -153,7 +153,7 @@ async function refreshData(silent=false){
     if(!el('informationPage').classList.contains('hidden')&&currentInfoCategory)renderInfoCards();
     if(!el('dashboardPage').classList.contains('hidden')&&currentDashboardId){
       const activeDash=appData.dashboardItems.find(d=>d.id===currentDashboardId);
-      if(activeDash&&dashboardCache[currentDashboardId]) renderDashboardData(activeDash,dashboardCache[currentDashboardId]);
+      if(activeDash){ currentDashboardItem=activeDash; if(currentDashboardPayload) renderCurrentDashboard(); }
     }
     if(!el('adminPage').classList.contains('hidden')&&isAdmin()){renderUsers();}
     renderMobileInfoMenu();renderInfoDropdown();
@@ -356,7 +356,7 @@ function navigateTo(page){
     el('dashboardPage').classList.remove('hidden');
     if(currentDashboardId){
       const item=appData.dashboardItems.find(d=>d.id===currentDashboardId);
-      if(item&&dashboardCache[currentDashboardId]) renderDashboardData(item,dashboardCache[currentDashboardId]);
+      if(item){ currentDashboardItem=item; renderCurrentDashboard(); }
       else renderDashboardEmpty('Select a dashboard item from the Dashboard menu');
     } else {
       renderDashboardEmpty('Select a dashboard item from the Dashboard menu');
