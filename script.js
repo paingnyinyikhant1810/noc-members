@@ -27,6 +27,7 @@ let currentDashboardRows = [];
 let currentDashboardFilterOptionsCache = { site:[], township:[], queue:[] };
 let currentDashboardFilteredRowsCache = [];
 let currentDashboardFilterCacheKey = '';
+let dashboardStatsCache = new Map();
 let currentDashboardFilters = { groupBy:'day', site:'', township:'', queue:'', fromDate:'', toDate:'' };
 let currentDashboardPageId = null;
 let currentDashboardTableState = { search:'', page:1, pageSize:20 };
@@ -622,6 +623,15 @@ function getDashboardPagesForItem(dashboardItemId){
 function iconForPageSlug(slug){ return DEFAULT_DASHBOARD_PAGES.find(p=>p.slug===slug)?.icon||'fa-layer-group'; }
 function currentFilteredDashboardRows(){ return getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); }
 function currentDashboardUrlHost(){ try{ return new URL(getDashboardApi(currentDashboardItem||{})).host; }catch{ return ''; } }
+function clearDashboardDerivedCaches(){
+  currentDashboardFilterCacheKey='';
+  currentDashboardFilteredRowsCache=[];
+  dashboardStatsCache.clear();
+}
+function getDashboardStatsCacheKey(rows,item,groupBy,mode){
+  const base = rows===currentDashboardFilteredRowsCache ? currentDashboardFilterCacheKey : `${rows.length}|${groupBy}|${mode}`;
+  return `${item?.id||'0'}|${groupBy}|${mode}|${base}`;
+}
 function hydrateDashboardRows(rows){
   return (rows||[]).map(row=>{
     if(row && row.__noc) return row;
@@ -1012,14 +1022,14 @@ async function showDashboardItem(id,name='Dashboard'){
   currentDashboardId=id; currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'}; currentDashboardPayload=null; currentDashboardRows=[]; dashboardAutoRetryDone=false; initializeDashboardPage();
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden')); el('dashboardPage').classList.remove('hidden'); document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active')); document.querySelectorAll('[data-page="dashboard"]').forEach(b=>b.classList.add('active')); if(el('dashboardDropdown')) el('dashboardDropdown').classList.add('hidden'); renderDashboardPageTabs(); renderDashboardLoading(currentDashboardItem);
   const data=await fetchDashboardData(id,{silent:false,onProgress:updateDashboardLoadingUI}); if(currentDashboardId!==id) return;
-  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the dashboard payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=hydrateDashboardRows(extractDashboardRows(data)); currentDashboardFilterOptionsCache=computeDashboardFilterOptions(currentDashboardRows); currentDashboardFilterCacheKey=''; currentDashboardFilteredRowsCache=[]; updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Building tabs, filters, and table state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the page...','indeterminate'); renderCurrentDashboard(); }
+  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the dashboard payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=hydrateDashboardRows(extractDashboardRows(data)); currentDashboardFilterOptionsCache=computeDashboardFilterOptions(currentDashboardRows); clearDashboardDerivedCaches(); updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Building tabs, filters, and table state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the page...','indeterminate'); renderCurrentDashboard(); }
   else { renderDashboardEmpty('Unable to load dashboard data. Please check the API URL or worker route.'); }
 }
 async function refreshCurrentDashboard(force=false){
   if(!currentDashboardId||!currentDashboardItem) return showToast('Select a dashboard item first','info');
   renderDashboardLoading(currentDashboardItem);
   const data=await fetchDashboardData(currentDashboardId,{force:!!force,silent:false,onProgress:updateDashboardLoadingUI});
-  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the refreshed payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=hydrateDashboardRows(extractDashboardRows(data)); currentDashboardFilterOptionsCache=computeDashboardFilterOptions(currentDashboardRows); currentDashboardFilterCacheKey=''; currentDashboardFilteredRowsCache=[]; updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Updating filters and page state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the refreshed page...','indeterminate'); renderCurrentDashboard(); }
+  if(data){ updateDashboardLoadingUI(0,'<i class="fas fa-database"></i> Extracting rows','Reading rows from the refreshed payload...','indeterminate'); currentDashboardPayload=data; currentDashboardRows=hydrateDashboardRows(extractDashboardRows(data)); currentDashboardFilterOptionsCache=computeDashboardFilterOptions(currentDashboardRows); clearDashboardDerivedCaches(); updateDashboardLoadingUI(0,'<i class="fas fa-filter"></i> Preparing filters','Updating filters and page state...','indeterminate'); initializeDashboardFilters(currentDashboardItem,data,currentDashboardRows,true); initializeDashboardPage(); renderDashboardFilterControls(); renderDashboardPageTabs(); updateDashboardLoadingUI(0,'<i class="fas fa-chart-pie"></i> Rendering dashboard','Drawing charts and finalizing the refreshed page...','indeterminate'); renderCurrentDashboard(); }
   else { renderDashboardEmpty('Refresh failed. Please check the API source.'); }
 }
 function initializeDashboardFilters(item,payload,rows,preserve=false){
@@ -1027,8 +1037,7 @@ function initializeDashboardFilters(item,payload,rows,preserve=false){
   currentDashboardFilters = { groupBy: preserve ? (currentDashboardFilters.groupBy||settings.defaultGrouping||'day') : (settings.defaultGrouping||'day'), site: preserve ? currentDashboardFilters.site : '', township: preserve ? currentDashboardFilters.township : '', queue: preserve ? currentDashboardFilters.queue : '', fromDate: preserve ? currentDashboardFilters.fromDate : '', toDate: preserve ? currentDashboardFilters.toDate : '' };
   currentDashboardTableState = { ...currentDashboardTableState, search:'', page:1 };
   const options=getDashboardFilterOptions(rows); ['site','township','queue'].forEach(key=>{ if(currentDashboardFilters[key] && !options[key].includes(currentDashboardFilters[key])) currentDashboardFilters[key]=''; });
-  currentDashboardFilterCacheKey='';
-  currentDashboardFilteredRowsCache=[];
+  clearDashboardDerivedCaches();
 }
 function getDashboardFilterOptions(rows){
   if(rows===currentDashboardRows && currentDashboardFilterOptionsCache.site) return currentDashboardFilterOptionsCache;
@@ -1077,8 +1086,8 @@ function renderCurrentDashboard(){
   initializeDashboardPage(); renderDashboardPageTabs(); const filteredRows=getFilteredDashboardRows(currentDashboardRows,currentDashboardFilters); const currentPage=getCurrentDashboardPage(); if(!filteredRows.length && currentPage.slug!=='raw-data'){ renderDashboardEmpty('No data matched the selected filters. Try changing Site / Township / Queue or date grouping.'); return; } renderDashboardData(currentDashboardItem,currentDashboardPayload,filteredRows,currentDashboardFilters);
 }
 function renderDashboardData(item,payload,rows,filters){
-  destroyDashboardCharts(); clearDashboardLoadPulse(); const settings=getDashboardSettings(item,payload); const stats=buildDashboardStats(rows,item,filters.groupBy); const currentPage=getCurrentDashboardPage(); const meta=buildDashboardMeta(payload,item,rows.length,filters,currentDashboardRows.length,currentPage.name); const metaEl=el('dashboardMeta'); if(metaEl){ metaEl.classList.toggle('hidden',!meta.length); metaEl.innerHTML=meta.map(m=>`<span class="meta-chip"><i class="fas ${m.icon}"></i> ${escHtml(m.text)}</span>`).join(''); } el('dashboardTitleText').textContent=item.name||'Dashboard';
-  const pageSlug=currentPage.slug; const cards=[];
+  destroyDashboardCharts(); clearDashboardLoadPulse(); const settings=getDashboardSettings(item,payload); const currentPage=getCurrentDashboardPage(); const pageSlug=currentPage.slug; const stats = pageSlug==='raw-data' ? null : getDashboardStats(rows,item,filters.groupBy,pageSlug); const meta=buildDashboardMeta(payload,item,rows.length,filters,currentDashboardRows.length,currentPage.name); const metaEl=el('dashboardMeta'); if(metaEl){ metaEl.classList.toggle('hidden',!meta.length); metaEl.innerHTML=meta.map(m=>`<span class="meta-chip"><i class="fas ${m.icon}"></i> ${escHtml(m.text)}</span>`).join(''); } el('dashboardTitleText').textContent=item.name||'Dashboard';
+  const cards=[];
   if(pageSlug==='summary'){
     if(settings.showCards.totalTickets) cards.push(renderKpiCard('Total Tickets',stats.totalRows,'fa-ticket','Filtered rows',`${stats.closedCount} closed / ${stats.openCount} open`));
     if(settings.showCards.avgResolve) cards.push(renderKpiCard('Avg Resolve Time',formatHours(stats.avgResolutionHours),'fa-clock','Resolved tickets only',`${stats.resolvedCount} resolved`));
@@ -1137,20 +1146,69 @@ function extractDashboardRows(payload){
   };
   return findRows(payload);
 }
-function buildDashboardStats(rows,item,groupBy='day'){
+function buildDashboardStats(rows,item,groupBy='day', mode='all'){
+  const needStatus = ['all','summary','trend'].includes(mode);
+  const needIssue = ['all','summary','root-cause','customer'].includes(mode);
+  const needSite = ['all','site'].includes(mode);
+  const needRoot = ['all','root-cause'].includes(mode);
+  const needQueue = ['all','trend','site'].includes(mode);
+  const needTownship = ['all','site'].includes(mode);
+  const needRepeat = ['all','summary','customer'].includes(mode);
+  const needTrend = ['all','trend'].includes(mode);
+  const needResolution = ['all','summary'].includes(mode);
+
   const statusCount={}, issueCount={}, siteCount={}, rootCount={}, queueCount={}, townshipCount={}, repeatCount={}, trendCount={};
   let resolvedCount=0,totalResolutionHours=0,overtimeCount=0,closedCount=0,openCount=0;
   const overtimeHours=getDashboardSla(item);
+
   rows.forEach(row=>{
     const meta=row.__noc||{};
-    const status=meta.status||'Unknown'; incMap(statusCount,status); if((meta.statusKey||'').includes('closed')||(meta.statusKey||'').includes('resolved')) closedCount++; else openCount++;
-    incMap(issueCount,meta.problem||'Unknown'); incMap(siteCount,meta.site||'Unknown'); incMap(rootCount,meta.root||'Unknown'); incMap(queueCount,meta.queue||'Unknown'); incMap(townshipCount,meta.township||'Unknown');
-    if(meta.repeatKey) incMap(repeatCount,meta.repeatKey);
-    if(meta.created) incMap(trendCount,formatTimeBucket(meta.created,groupBy));
-    if(meta.resolutionHours!=null){ totalResolutionHours+=meta.resolutionHours; resolvedCount++; if(meta.resolutionHours>overtimeHours) overtimeCount++; }
+    if(needStatus || needResolution){
+      const status=meta.status||'Unknown';
+      if(needStatus) incMap(statusCount,status);
+      if((meta.statusKey||'').includes('closed')||(meta.statusKey||'').includes('resolved')) closedCount++; else openCount++;
+    }
+    if(needIssue) incMap(issueCount,meta.problem||'Unknown');
+    if(needSite) incMap(siteCount,meta.site||'Unknown');
+    if(needRoot) incMap(rootCount,meta.root||'Unknown');
+    if(needQueue) incMap(queueCount,meta.queue||'Unknown');
+    if(needTownship) incMap(townshipCount,meta.township||'Unknown');
+    if(needRepeat && meta.repeatKey) incMap(repeatCount,meta.repeatKey);
+    if(needTrend && meta.created) incMap(trendCount,formatTimeBucket(meta.created,groupBy));
+    if(needResolution && meta.resolutionHours!=null){
+      totalResolutionHours+=meta.resolutionHours;
+      resolvedCount++;
+      if(meta.resolutionHours>overtimeHours) overtimeCount++;
+    }
   });
-  const totalRows=rows.length; const repeatEntries=sortMap(repeatCount).filter(([,v])=>v>1);
-  return { totalRows, closedCount, openCount, resolvedCount, avgResolutionHours: resolvedCount ? totalResolutionHours/resolvedCount : 0, overtimeCount, closedRate: totalRows ? closedCount/totalRows*100 : 0, repeatCustomers: repeatEntries.length, topProblems: sortMap(issueCount), topSites: sortMap(siteCount), topRootCauses: sortMap(rootCount), topQueues: sortMap(queueCount), topTownships: sortMap(townshipCount), trendSeries: sortTrendMap(trendCount), statusSeries: sortMap(statusCount), repeatEntries };
+
+  const totalRows=rows.length;
+  const repeatEntries=needRepeat ? sortMap(repeatCount).filter(([,v])=>v>1) : [];
+  return {
+    totalRows,
+    closedCount,
+    openCount,
+    resolvedCount,
+    avgResolutionHours: resolvedCount ? totalResolutionHours/resolvedCount : 0,
+    overtimeCount,
+    closedRate: totalRows ? closedCount/totalRows*100 : 0,
+    repeatCustomers: repeatEntries.length,
+    topProblems: needIssue ? sortMap(issueCount) : [],
+    topSites: needSite ? sortMap(siteCount) : [],
+    topRootCauses: needRoot ? sortMap(rootCount) : [],
+    topQueues: needQueue ? sortMap(queueCount) : [],
+    topTownships: needTownship ? sortMap(townshipCount) : [],
+    trendSeries: needTrend ? sortTrendMap(trendCount) : [],
+    statusSeries: needStatus ? sortMap(statusCount) : [],
+    repeatEntries,
+  };
+}
+function getDashboardStats(rows,item,groupBy,mode){
+  const key=getDashboardStatsCacheKey(rows,item,groupBy,mode);
+  if(dashboardStatsCache.has(key)) return dashboardStatsCache.get(key);
+  const stats=buildDashboardStats(rows,item,groupBy,mode);
+  dashboardStatsCache.set(key, stats);
+  return stats;
 }
 function renderKpiCard(title,value,icon,sub,note){ return `<div class="dash-card dash-card--kpi"><div class="dash-head"><div><div class="dash-eyebrow">Summary</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">${escHtml(sub)}</div></div><div class="dash-icon-badge"><i class="fas ${icon}"></i></div></div><div class="kpi-value">${escHtml(String(value))}</div><div class="kpi-note"><i class="fas fa-wave-square"></i> ${escHtml(note)}</div></div>`; }
 function renderDonutCard(title,pct,icon,sub){ const safe=Math.max(0,Math.min(100,Number(pct)||0)); return `<div class="dash-card dash-card--donut"><div class="dash-head"><div><div class="dash-eyebrow">KPI</div><div class="dash-title">${escHtml(title)}</div><div class="dash-sub">${escHtml(sub)}</div></div><div class="dash-icon-badge"><i class="fas ${icon}"></i></div></div><div class="donut-wrap"><div style="position:relative"><div class="donut-ring" style="--pct:${safe}"></div><div class="donut-center"><div class="donut-value">${safe}%</div><div class="donut-label">Closed</div></div></div><div class="dash-chip-row"><span class="dash-chip"><i class="fas fa-circle-check"></i> Real chart cards are below</span></div></div></div>`; }
