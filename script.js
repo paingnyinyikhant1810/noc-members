@@ -1118,6 +1118,11 @@ async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}=
       raw = await res.text();
     }
 
+    const contentType = res.headers.get('content-type') || '';
+    if(!contentType.includes('application/json')){
+      const snippet = String(raw||'').slice(0,120).replace(/\s+/g,' ').trim();
+      throw new Error(`Worker returned non-JSON response (HTTP ${res.status}). ${snippet}`);
+    }
     const data = raw ? JSON.parse(raw) : {};
     if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`);
     onProgress?.(0,'<i class="fas fa-box-open"></i> Response received','Parsing dashboard payload and preparing rows...','indeterminate');
