@@ -37,6 +37,8 @@ let dashboardFetchPromises = {};
 let dashboardPrefetchStarted = false;
 let dashboardChartInstances = [];
 let dashboardLoadPulseTimer = null;
+let dashboardRenderRaf = null;
+let dashboardRenderToken = 0;
 let dashDragSrc = null;
 
 const DEFAULT_DASHBOARD_SETTINGS = {
@@ -502,8 +504,14 @@ const DASHBOARD_GRAPH_OPTIONS = {
 };
 
 function destroyDashboardCharts(){
+  if(dashboardRenderRaf){ cancelAnimationFrame(dashboardRenderRaf); dashboardRenderRaf=null; }
+  dashboardRenderToken++;
   dashboardChartInstances.forEach(ch=>{ try{ ch.destroy(); }catch{} });
   dashboardChartInstances=[];
+  ['dashTrendCanvas','dashStatusCanvas','dashProblemCanvas','dashSiteCanvas','dashRootCanvas','dashRepeatCanvas','dashTownshipCanvas','dashQueueCanvas'].forEach(id=>{
+    const canvas=el(id);
+    try{ const existing=canvas && window.Chart && Chart.getChart(canvas); if(existing) existing.destroy(); }catch{}
+  });
 }
 function clearDashboardLoadPulse(){
   if(dashboardLoadPulseTimer){ clearInterval(dashboardLoadPulseTimer); dashboardLoadPulseTimer=null; }
@@ -1274,7 +1282,14 @@ function renderDashboardData(item,payload,rows,filters){
     cards.push(renderRawDataCard(rows));
   }
   el('dashboardContainer').innerHTML=cards.length ? `<div class="dashboard-board">${cards.join('')}</div>` : `<div class="dash-empty"><i class="fas fa-eye-slash"></i><h3>All cards are hidden</h3><p>Open Dashboard Settings and enable at least one card for this dashboard item.</p></div>`;
-  if(pageSlug!=='raw-data') requestAnimationFrame(()=>renderDashboardCharts(stats,settings,filters));
+  if(pageSlug!=='raw-data'){
+    const token = dashboardRenderToken;
+    dashboardRenderRaf = requestAnimationFrame(()=>{
+      if(token !== dashboardRenderToken) return;
+      renderDashboardCharts(stats,settings,filters);
+      dashboardRenderRaf = null;
+    });
+  }
 }
 function renderWidgetByType(widget, stats, settings, rows, filters){
   const type=widget.widget_type||widget.widgetType||'';
@@ -1468,7 +1483,7 @@ function renderDashboardCharts(stats,settings,filters){
   if(el('dashTownshipCanvas')){ createDashboardChart('dashTownshipCanvas', buildCategoryChartConfig(settings.graphTypes.siteChart, stats.topTownships.slice(0,Math.max(5,settings.limits.siteCount)), 'Township')); }
   if(el('dashQueueCanvas')){ createDashboardChart('dashQueueCanvas', buildCategoryChartConfig('bar', stats.topQueues.slice(0,6), 'Queue')); }
 }
-function createDashboardChart(canvasId, config){ const canvas=el(canvasId), empty=el(`${canvasId}_empty`); if(!canvas) return; const labels=config?.data?.labels||[]; if(!labels.length){ if(empty){ empty.classList.remove('hidden'); empty.textContent='No data for current filter.'; } return; } if(empty){ empty.classList.add('hidden'); empty.textContent=''; } const chart=new Chart(canvas.getContext('2d'), config); dashboardChartInstances.push(chart); }
+function createDashboardChart(canvasId, config){ const canvas=el(canvasId), empty=el(`${canvasId}_empty`); if(!canvas) return; const labels=config?.data?.labels||[]; if(!labels.length){ if(empty){ empty.classList.remove('hidden'); empty.textContent='No data for current filter.'; } return; } if(empty){ empty.classList.add('hidden'); empty.textContent=''; } try{ const existing=window.Chart && Chart.getChart(canvas); if(existing) existing.destroy(); }catch{} const chart=new Chart(canvas.getContext('2d'), config); dashboardChartInstances.push(chart); }
 function buildTrendChartConfig(series, graphType, groupBy){ const labels=series.map(x=>formatBucketLabel(x[0],groupBy)); const data=series.map(x=>x[1]); const isBar=graphType==='bar'; const isArea=graphType==='area'; return { type:isBar?'bar':'line', data:{ labels, datasets:[{ label:'Tickets', data, borderColor:'#6366f1', backgroundColor:isBar?'rgba(99,102,241,.72)':(isArea?'rgba(99,102,241,.18)':'rgba(99,102,241,.2)'), fill:!isBar, tension:.35, pointRadius:3, pointHoverRadius:4, borderWidth:3, borderRadius:10, maxBarThickness:34 }] }, options:buildChartOptions({ legend:false, indexAxis:'x' }) }; }
 function buildCategoryChartConfig(graphType, entries, label){ const labels=entries.map(x=>x[0]); const data=entries.map(x=>x[1]); const type=graphType==='hbar' ? 'bar' : graphType; const backgroundColor=labels.map((_,i)=>hexToRgba(DASHBOARD_COLOR_SET[i % DASHBOARD_COLOR_SET.length], type==='bar' ? .78 : .9)); const borderColor=labels.map((_,i)=>DASHBOARD_COLOR_SET[i % DASHBOARD_COLOR_SET.length]); return { type, data:{ labels, datasets:[{ label, data, backgroundColor, borderColor, borderWidth:2, borderRadius:type==='bar' ? 10 : 0, maxBarThickness:38 }] }, options:buildChartOptions({ legend:type!=='bar', indexAxis: graphType==='hbar' ? 'y' : 'x', showScales: !['doughnut','pie','polarArea'].includes(type) }) }; }
 function buildChartOptions({ legend=true, indexAxis='x', showScales=true }={}){ return { responsive:true, maintainAspectRatio:false, animation:false, indexAxis, plugins:{ legend:{ display:legend, position:'bottom', labels:{ usePointStyle:true, boxWidth:10, boxHeight:10, padding:16 } }, tooltip:{ mode:'index', intersect:false, animation:false } }, scales: showScales ? { x: indexAxis==='x' ? { grid:{ display:false }, ticks:{ maxRotation:0, autoSkip:true } } : { grid:{ display:false } }, y: indexAxis==='x' ? { beginAtZero:true, ticks:{ precision:0 }, grid:{ color:'rgba(148,163,184,.14)' } } : { beginAtZero:true, ticks:{ precision:0 }, grid:{ display:false } } } : {} }; }
