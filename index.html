@@ -216,6 +216,8 @@
             <h2 class="pg-title"><div class="pg-icon ic-purple"><i class="fas fa-chart-pie"></i></div><span id="dashboardTitleText">Dashboard</span></h2>
             <div class="btn-group">
                 <button id="refreshDashboardBtn" onclick="refreshCurrentDashboard(true)" class="hidden btn-secondary"><i class="fas fa-rotate"></i> Refresh Data</button>
+                <button id="clearDashboardCacheBtn" onclick="clearCurrentDashboardCache()" class="hidden btn-secondary"><i class="fas fa-broom"></i> Clear Cache</button>
+                <button id="manageDashboardPagesBtn" onclick="openDashboardPageManagerModal()" class="hidden btn-secondary"><i class="fas fa-table-columns"></i> Manage Pages</button>
                 <button id="dashboardViewSettingsBtn" onclick="openDashboardSettingsModal()" class="hidden btn-secondary"><i class="fas fa-sliders-h"></i> Dashboard Settings</button>
                 <button id="manageDashboardPageBtn" onclick="openDashboardManagerModal()" class="hidden btn-primary"><i class="fas fa-cog"></i> Manage Dashboard</button>
             </div>
@@ -756,6 +758,50 @@
     </div>
 </div>
 
+
+<!-- ════════ DASHBOARD PAGE MANAGER ════════ -->
+<div id="dashboardPageManagerModal" class="hidden modal-bd">
+    <div class="modal-box modal-sm">
+        <div class="modal-hdr">
+            <h3 class="modal-title"><i class="fas fa-table-columns"></i> Manage Dashboard Pages</h3>
+            <button onclick="closeModal('dashboardPageManagerModal')" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="tab-tb" style="margin-bottom:.75rem">
+                <button onclick="openDashboardPageModal()" class="btn-primary btn-sm"><i class="fas fa-plus"></i> Add Page</button>
+            </div>
+            <div id="dashboardPageManagerList" class="cat-mgr-list"></div>
+        </div>
+        <div class="modal-ft"><button onclick="closeModal('dashboardPageManagerModal')" class="btn-primary">Done</button></div>
+    </div>
+</div>
+
+<!-- ════════ DASHBOARD PAGE MODAL ════════ -->
+<div id="dashboardPageModal" class="hidden modal-bd">
+    <div class="modal-box">
+        <div class="modal-hdr">
+            <h3 id="dashboardPageModalTitle" class="modal-title">Add Page</h3>
+            <button onclick="cancelDashboardPageModal()" class="modal-x"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="dashboardPageForm" class="modal-body">
+            <input type="hidden" id="dashboardPageId">
+            <div class="fg"><label class="flabel">Page Name</label><input type="text" id="dashboardPageName" class="finput" placeholder="e.g. Summary" required></div>
+            <div class="fg"><label class="flabel">Icon</label>
+                <select id="dashboardPageIcon" class="finput">
+                    <option value="fa-gauge-high">📊 Summary</option>
+                    <option value="fa-chart-line">📈 Trend</option>
+                    <option value="fa-bug">🐞 Root Cause</option>
+                    <option value="fa-network-wired">🌐 Site</option>
+                    <option value="fa-users">👥 Customer</option>
+                    <option value="fa-table">🧾 Raw Data</option>
+                    <option value="fa-layer-group">🗂 General</option>
+                </select>
+            </div>
+        </form>
+        <div class="modal-ft"><button onclick="cancelDashboardPageModal()" class="btn-secondary">Cancel</button><button onclick="saveDashboardPage()" class="btn-primary">Save Page</button></div>
+    </div>
+</div>
+
 <!-- ════════ CHANGE PASSWORD MODAL ════════ -->
 <div id="changePwdModal" class="hidden modal-bd">
     <div class="modal-box modal-sm">
@@ -828,6 +874,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="script.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a18e7a12aeef6bc4',t:'MTc4MzY3NTA2Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a18fdf28ee59ea90',t:'MTc4MzY4OTY4OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
