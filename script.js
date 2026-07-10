@@ -555,8 +555,9 @@ function getDashboardSettings(item,payload=null){
   return normalizeDashboardSettings(raw);
 }
 
-function openDashboardManagerModal(){
+async function openDashboardManagerModal(){
   if(!isAdmin()) return showToast('Admin only','error');
+  await refreshData(true);
   renderDashboardManagerList();
   el('dashboardManagerModal').classList.remove('hidden');
 }
@@ -646,28 +647,53 @@ async function saveDashboardItem(){
   const icon=el('dashboardItemIcon').value;
   const api_url=el('dashboardItemApi').value.trim();
   if(!name||!api_url) return showToast('Name and API URL are required','error');
-  const payload={ id:id?parseInt(id):null, name, slug:slugify(name), icon, api_url, min_role_required:'leader' };
-  if(await saveToApi('dashboard_items',payload)){
+  if(isProcessing){showToast('Please wait…','info');return;}
+  isProcessing=true;showLoading(true);updateProgress(20,'Saving dashboard...');
+  try{
+    const payload={ name, slug:slugify(name), icon, api_url, min_role_required:'leader' };
+    const res=await fetch(`${API_URL}/dashboardItems${id?`/${id}`:''}`,{
+      method:id?'PUT':'POST', headers:getHeaders(), body:JSON.stringify(payload)
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to save dashboard item');
+    updateProgress(60,'Refreshing...');
+    const refreshed=await refreshData(true);
+    if(!refreshed) throw new Error('Refresh after save failed');
+    updateProgress(100,'Saved!'); await delay(250); hideLoading();
     closeModal('dashboardItemModal');
-    openDashboardManagerModal();
+    await openDashboardManagerModal();
     dashboardPrefetchStarted=false;
     startDashboardPrefetch(true);
-  }
+    showToast('Dashboard item saved','success');
+  }catch(e){ hideLoading(); showToast(e.message); }
+  isProcessing=false;
 }
 async function deleteDashboardItemConfirm(id){
   if(!isAdmin()) return;
   if(!confirm('Delete this dashboard item?')) return;
-  await deleteFromApi('dashboard_items',id);
-  if(currentDashboardId===id){
-    currentDashboardId=null;
-    currentDashboardItem=null;
-    currentDashboardPayload=null;
-    currentDashboardRows=[];
-    renderDashboardEmpty('Dashboard item deleted');
-  }
-  renderDashboardManagerList();
-  renderDashboardDropdown();
-  renderMobileDashboardMenu();
+  if(isProcessing){showToast('Please wait…','info');return;}
+  isProcessing=true;showLoading(true);updateProgress(20,'Deleting dashboard...');
+  try{
+    const res=await fetch(`${API_URL}/dashboardItems/${id}`,{ method:'DELETE', headers:getHeaders() });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Failed to delete dashboard item');
+    updateProgress(60,'Refreshing...');
+    const refreshed=await refreshData(true);
+    if(!refreshed) throw new Error('Refresh after delete failed');
+    if(currentDashboardId===id){
+      currentDashboardId=null;
+      currentDashboardItem=null;
+      currentDashboardPayload=null;
+      currentDashboardRows=[];
+      renderDashboardEmpty('Dashboard item deleted');
+    }
+    renderDashboardManagerList();
+    renderDashboardDropdown();
+    renderMobileDashboardMenu();
+    updateProgress(100,'Deleted!'); await delay(220); hideLoading();
+    showToast('Dashboard item deleted','success');
+  }catch(e){ hideLoading(); showToast(e.message); }
+  isProcessing=false;
 }
 
 function openDashboardSettingsModal(){
@@ -1407,8 +1433,11 @@ async function saveToApi(table,data){
   if(isProcessing){showToast('Please wait…','info');return false;}
   isProcessing=true;showLoading(true);updateProgress(20,'Saving...');
   try{
-    await fetchAPI('',{method:'POST',body:JSON.stringify({action:'save',table,data})});
-    updateProgress(50,'Refreshing...');await refreshData(true);
+    const res=await fetchAPI('',{method:'POST',body:JSON.stringify({action:'save',table,data})});
+    if(!res||res.success===false) throw new Error(res?.error||'Save request failed');
+    updateProgress(50,'Refreshing...');
+    const refreshed=await refreshData(true);
+    if(!refreshed) throw new Error('Refresh after save failed');
     updateProgress(100,'Saved!');await delay(300);hideLoading();
     showToast('Saved successfully!','success');isProcessing=false;return true;
   }catch(e){hideLoading();showToast('Save failed: '+e.message);isProcessing=false;return false;}
@@ -1417,8 +1446,11 @@ async function deleteFromApi(table,id){
   if(isProcessing){showToast('Please wait…','info');return false;}
   isProcessing=true;showLoading(true);updateProgress(20,'Deleting...');
   try{
-    await fetchAPI('',{method:'POST',body:JSON.stringify({action:'delete',table,id})});
-    updateProgress(50,'Refreshing...');await refreshData(true);
+    const res=await fetchAPI('',{method:'POST',body:JSON.stringify({action:'delete',table,id})});
+    if(!res||res.success===false) throw new Error(res?.error||'Delete request failed');
+    updateProgress(50,'Refreshing...');
+    const refreshed=await refreshData(true);
+    if(!refreshed) throw new Error('Refresh after delete failed');
     updateProgress(100,'Deleted!');await delay(300);hideLoading();
     showToast('Deleted!','success');isProcessing=false;return true;
   }catch(e){hideLoading();showToast('Delete failed: '+e.message);isProcessing=false;return false;}
