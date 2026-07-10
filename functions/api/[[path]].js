@@ -103,6 +103,27 @@ export const onRequest = async (context) => {
 
   const cloneDashDefaults = () => JSON.parse(JSON.stringify(DEFAULT_DASHBOARD_SETTINGS));
 
+  const DEFAULT_DASHBOARD_PAGES = [
+    { slug:'summary', name:'Summary', icon:'fa-gauge-high' },
+    { slug:'trend', name:'Trend', icon:'fa-chart-line' },
+    { slug:'root-cause', name:'Root Cause', icon:'fa-bug' },
+    { slug:'site', name:'Site', icon:'fa-network-wired' },
+    { slug:'customer', name:'Customer', icon:'fa-users' },
+    { slug:'raw-data', name:'Raw Data', icon:'fa-table' },
+  ];
+
+  const ensureDefaultDashboardPages = async (dashboardItemId) => {
+    const existing = (await env.DB.prepare("SELECT id FROM dashboard_pages WHERE dashboard_item_id=? LIMIT 1").bind(dashboardItemId).all()).results ?? [];
+    if (existing.length) return;
+    for (let i = 0; i < DEFAULT_DASHBOARD_PAGES.length; i++) {
+      const page = DEFAULT_DASHBOARD_PAGES[i];
+      await env.DB.prepare(`
+        INSERT INTO dashboard_pages (dashboard_item_id, slug, name, icon, sort_order)
+        VALUES (?, ?, ?, ?, ?)
+      `).bind(dashboardItemId, page.slug, page.name, page.icon, i).run();
+    }
+  };
+
   const normalizeDashboardSettings = (raw) => {
     const base = cloneDashDefaults();
     const parsed = typeof raw === 'string' ? (safeJson(raw, {}) || {}) : (raw || {});
@@ -175,6 +196,24 @@ export const onRequest = async (context) => {
         settings_json TEXT NOT NULL,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_pages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dashboard_item_id INTEGER NOT NULL,
+        slug TEXT NOT NULL,
+        name TEXT NOT NULL,
+        icon TEXT DEFAULT 'fa-layer-group',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_widgets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dashboard_page_id INTEGER NOT NULL,
+        widget_type TEXT NOT NULL,
+        title TEXT,
+        settings_json TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
       `CREATE TABLE IF NOT EXISTS dashboard_sync_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         dashboard_item_id INTEGER NOT NULL,
@@ -186,6 +225,8 @@ export const onRequest = async (context) => {
       `CREATE INDEX IF NOT EXISTS idx_dashboard_items_sort ON dashboard_items(sort_order)`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_items_active ON dashboard_items(is_active)`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_cache_chunks_item ON dashboard_cache_chunks(dashboard_item_id, chunk_index)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_pages_item ON dashboard_pages(dashboard_item_id, sort_order)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_page ON dashboard_widgets(dashboard_page_id, sort_order)`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC)`
     ];
 
@@ -453,6 +494,7 @@ export const onRequest = async (context) => {
     }
 
     let dashRows = { results: [] };
+    let dashPageRows = { results: [] };
     if (uRank >= ROLE_RANK.leader) {
       try {
         dashRows = isAdmin
@@ -469,8 +511,12 @@ export const onRequest = async (context) => {
               WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)}
               ORDER BY di.sort_order ASC, di.id ASC
             `).all();
+        dashPageRows = isAdmin
+          ? await env.DB.prepare(`SELECT * FROM dashboard_pages ORDER BY dashboard_item_id ASC, sort_order ASC, id ASC`).all()
+          : await env.DB.prepare(`SELECT dp.* FROM dashboard_pages dp JOIN dashboard_items di ON di.id = dp.dashboard_item_id WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)} ORDER BY dp.dashboard_item_id ASC, dp.sort_order ASC, dp.id ASC`).all();
       } catch (_) {
         dashRows = { results: [] };
+        dashPageRows = { results: [] };
       }
     }
 
@@ -484,6 +530,7 @@ export const onRequest = async (context) => {
         ...r,
         settings: normalizeDashboardSettings(r.settings_json)
       })),
+      dashboardPages: dashPageRows.results ?? [],
       currentUser  : {
         id          : user.id,
         username    : user.username,
@@ -532,6 +579,7 @@ export const onRequest = async (context) => {
       INSERT INTO dashboard_item_settings (dashboard_item_id, settings_json, updated_at)
       VALUES (?, ?, datetime('now'))
     `).bind(inserted.meta?.last_row_id, JSON.stringify(cloneDashDefaults())).run();
+    await ensureDefaultDashboardPages(inserted.meta?.last_row_id);
 
     return ok({ success: true, id: inserted.meta?.last_row_id }, 201);
   }
@@ -575,6 +623,11 @@ export const onRequest = async (context) => {
     try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
 
     const dashId = parseInt(dashboardItemMatch[1], 10);
+    const pageRows = (await env.DB.prepare("SELECT id FROM dashboard_pages WHERE dashboard_item_id=?").bind(dashId).all()).results ?? [];
+    for (const row of pageRows) {
+      await env.DB.prepare("DELETE FROM dashboard_widgets WHERE dashboard_page_id=?").bind(row.id).run();
+    }
+    await env.DB.prepare("DELETE FROM dashboard_pages WHERE dashboard_item_id=?").bind(dashId).run();
     await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(dashId).run();
     await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(dashId).run();
     await env.DB.prepare("DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?").bind(dashId).run();
@@ -1136,6 +1189,11 @@ export const onRequest = async (context) => {
 
         if (table === "dashboard_items") {
           await ensureDashboardTables();
+          const pageRows = (await env.DB.prepare("SELECT id FROM dashboard_pages WHERE dashboard_item_id=?").bind(id).all()).results ?? [];
+          for (const row of pageRows) {
+            await env.DB.prepare("DELETE FROM dashboard_widgets WHERE dashboard_page_id=?").bind(row.id).run();
+          }
+          await env.DB.prepare("DELETE FROM dashboard_pages WHERE dashboard_item_id=?").bind(id).run();
           await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(id).run();
           await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(id).run();
           await env.DB.prepare("DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?").bind(id).run();
