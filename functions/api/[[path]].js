@@ -42,11 +42,15 @@ export const onRequest = async (context) => {
       ).bind(u, p).first();
 
       if (user) {
-        // Update last_seen timestamp on every authenticated request
-        await env.DB.prepare("UPDATE users SET last_seen = datetime('now') WHERE id = ?").bind(user.id).run();
+        // Best effort only — do not fail auth if last_seen column does not exist yet
+        try {
+          await env.DB.prepare("UPDATE users SET last_seen = datetime('now') WHERE id = ?").bind(user.id).run();
+        } catch (_) { /* ignore presence update errors */ }
       }
       return user;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   };
 
 
@@ -115,8 +119,8 @@ export const onRequest = async (context) => {
     return [];
   };
   const ensureDashboardTables = async () => {
-    await env.DB.exec(`
-      CREATE TABLE IF NOT EXISTS dashboard_items (
+    const stmts = [
+      `CREATE TABLE IF NOT EXISTS dashboard_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         slug TEXT NOT NULL UNIQUE,
@@ -128,8 +132,8 @@ export const onRequest = async (context) => {
         is_active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS dashboard_cache (
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_cache (
         dashboard_item_id INTEGER PRIMARY KEY,
         dashboard_name TEXT NOT NULL,
         source_url TEXT NOT NULL,
@@ -137,24 +141,27 @@ export const onRequest = async (context) => {
         row_count INTEGER NOT NULL DEFAULT 0,
         last_synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_error TEXT
-      );
-      CREATE TABLE IF NOT EXISTS dashboard_item_settings (
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_item_settings (
         dashboard_item_id INTEGER PRIMARY KEY,
         settings_json TEXT NOT NULL,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS dashboard_sync_logs (
+      )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_sync_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         dashboard_item_id INTEGER NOT NULL,
         sync_status TEXT NOT NULL,
         row_count INTEGER NOT NULL DEFAULT 0,
         message TEXT,
         synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS idx_dashboard_items_sort ON dashboard_items(sort_order);
-      CREATE INDEX IF NOT EXISTS idx_dashboard_items_active ON dashboard_items(is_active);
-      CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC);
-    `);
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_items_sort ON dashboard_items(sort_order)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_items_active ON dashboard_items(is_active)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC)`
+    ];
+    for (const sql of stmts) {
+      await env.DB.prepare(sql).run();
+    }
   };
   const getDashboardItem = async (id) => {
     await ensureDashboardTables();
@@ -217,7 +224,7 @@ export const onRequest = async (context) => {
   if (path === "presence/offline" && method === "POST") {
     const authUser = await getAuth();
     if (!authUser) return err("Unauthorized", 401);
-    await env.DB.prepare("UPDATE users SET last_seen = datetime('now', '-10 minutes') WHERE id = ?").bind(authUser.id).run();
+    try { await env.DB.prepare("UPDATE users SET last_seen = datetime('now', '-10 minutes') WHERE id = ?").bind(authUser.id).run(); } catch (_) { /* ignore */ }
     return ok({ success: true });
   }
 
@@ -241,7 +248,7 @@ export const onRequest = async (context) => {
   //  getData
   // ════════════════════════════════════════════════════════════════════════════
   if (path === "getData" && method === "GET") {
-    await ensureDashboardTables();
+    try { await ensureDashboardTables(); } catch (_) { /* keep app usable even if dashboard migration fails */ }
     const folderRows = isAdmin
       ? await env.DB.prepare("SELECT * FROM folders").all()
       : await env.DB.prepare(`SELECT * FROM folders WHERE ${rbacWhere('min_role_required', uRank)}`).all();
@@ -301,20 +308,24 @@ export const onRequest = async (context) => {
 
     let dashRows = { results: [] };
     if (uRank >= ROLE_RANK.leader) {
-      dashRows = isAdmin
-        ? await env.DB.prepare(`
-            SELECT di.*, dis.settings_json
-              FROM dashboard_items di
-              LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
-             ORDER BY di.sort_order ASC, di.id ASC
-          `).all()
-        : await env.DB.prepare(`
-            SELECT di.*, dis.settings_json
-              FROM dashboard_items di
-              LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
-             WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)}
-             ORDER BY di.sort_order ASC, di.id ASC
-          `).all();
+      try {
+        dashRows = isAdmin
+          ? await env.DB.prepare(`
+              SELECT di.*, dis.settings_json
+                FROM dashboard_items di
+                LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
+               ORDER BY di.sort_order ASC, di.id ASC
+            `).all()
+          : await env.DB.prepare(`
+              SELECT di.*, dis.settings_json
+                FROM dashboard_items di
+                LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
+               WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)}
+               ORDER BY di.sort_order ASC, di.id ASC
+            `).all();
+      } catch (_) {
+        dashRows = { results: [] };
+      }
     }
 
     return ok({
@@ -345,7 +356,7 @@ export const onRequest = async (context) => {
   // ════════════════════════════════════════════════════════════════════════════
   if (path === "dashboardItems" && method === "POST") {
     if (!isAdmin) return err("Admin only", 403);
-    await ensureDashboardTables();
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
     let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
     const name = String(body.name || '').trim();
     const apiUrl = String(body.api_url || body.apiUrl || '').trim();
@@ -368,7 +379,7 @@ export const onRequest = async (context) => {
   const dashboardItemMatch = path.match(/^dashboardItems\/(\d+)$/);
   if (dashboardItemMatch && method === "PUT") {
     if (!isAdmin) return err("Admin only", 403);
-    await ensureDashboardTables();
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
     const dashId = parseInt(dashboardItemMatch[1], 10);
     const existing = await env.DB.prepare("SELECT * FROM dashboard_items WHERE id=?").bind(dashId).first();
     if (!existing) return err("Dashboard item not found", 404);
@@ -387,7 +398,7 @@ export const onRequest = async (context) => {
   }
   if (dashboardItemMatch && method === "DELETE") {
     if (!isAdmin) return err("Admin only", 403);
-    await ensureDashboardTables();
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
     const dashId = parseInt(dashboardItemMatch[1], 10);
     await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(dashId).run();
     await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(dashId).run();
@@ -401,7 +412,7 @@ export const onRequest = async (context) => {
   // ════════════════════════════════════════════════════════════════════════════
   if (path === "dashboards/sort" && method === "POST") {
     if (!isAdmin) return err("Admin only", 403);
-    await ensureDashboardTables();
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
     let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
     const order = Array.isArray(body.order) ? body.order : [];
     if (!order.length) return err("order must be a non-empty array", 400);
@@ -416,7 +427,7 @@ export const onRequest = async (context) => {
 
   if (path === "dashboards/prefetch" && method === "POST") {
     if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
-    await ensureDashboardTables();
+    try { await ensureDashboardTables(); } catch (_) { return ok({ success: true, queued: 0, synced: 0 }); }
     const items = (await env.DB.prepare(`
       SELECT di.*, dis.settings_json
         FROM dashboard_items di
