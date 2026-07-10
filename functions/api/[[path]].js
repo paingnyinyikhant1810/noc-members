@@ -647,6 +647,9 @@ export const onRequest = async (context) => {
               WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)}
               ORDER BY di.sort_order ASC, di.id ASC
             `).all();
+        for (const item of (dashRows.results ?? [])) {
+          await ensureDefaultDashboardPages(item.id);
+        }
         dashPageRows = isAdmin
           ? await env.DB.prepare(`SELECT * FROM dashboard_pages ORDER BY dashboard_item_id ASC, sort_order ASC, id ASC`).all()
           : await env.DB.prepare(`SELECT dp.* FROM dashboard_pages dp JOIN dashboard_items di ON di.id = dp.dashboard_item_id WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)} ORDER BY dp.dashboard_item_id ASC, dp.sort_order ASC, dp.id ASC`).all();
