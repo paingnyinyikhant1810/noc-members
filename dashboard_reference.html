@@ -6962,14 +6962,7 @@ function rowsForTrendPeriod(gran,key){
 }
 function openTrendPeriodM(gran,key,label){
   let rows=rowsForTrendPeriod(gran,key);
-  document.getElementById("mFilt").textContent='Total Ticket Numbers · '+cap(gran)+' · '+label;
-  document.getElementById("mH").innerHTML=D.headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('');
-  document.getElementById("mB").innerHTML='';
-  MODAL_ROWS=rows;MODAL_COL='_trend_'+gran;MODAL_CAT=key;MODAL_RENDERED=0;
-  let _mc=document.getElementById("mC");if(_mc)_mc.textContent=rows.length+' tickets';
-  renderMoreRows();showRecordsModalOnTop();
-  let body=document.getElementById("mBody");body.scrollTop=0;
-  body.onscroll=()=>{if(MODAL_RENDERED<MODAL_ROWS.length && body.scrollTop+body.clientHeight>=body.scrollHeight-80)renderMoreRows();};
+  showRowsM(rows,'Total Ticket Numbers · '+cap(gran)+' · '+label);
 }
 function trendTableHtml(a) {
   let nonZero = [];
