@@ -5044,6 +5044,136 @@ body {
   }
 }
 
+
+/* ═══════════ FINAL RATIO + EXPANDED CALENDAR SEPARATION PATCH V24 ═══════════ */
+.ct.dashboard-stage {
+  gap: 14px !important;
+  padding: 0 16px 4px !important;
+}
+#card_trend_total .chart-xl {
+  height: 290px !important;
+}
+#card_cpe_complaints .row.g-3 {
+  grid-template-columns: minmax(0, 4fr) minmax(148px, .6fr) !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 4.3fr) minmax(136px, .52fr) !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 226px !important;
+  min-height: 226px !important;
+  max-height: 226px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 204px !important;
+  min-height: 204px !important;
+  max-height: 204px !important;
+}
+.expand-table-cpe th:first-child,
+.expand-table-cpe td:first-child {
+  width: 50% !important;
+}
+.expand-table-dup th:first-child,
+.expand-table-dup td:first-child {
+  width: 68% !important;
+}
+.expand-table-ot th:first-child,
+.expand-table-ot td:first-child {
+  width: 42% !important;
+}
+.expand-table-trend th:first-child,
+.expand-table-trend td:first-child {
+  width: 56% !important;
+}
+@media (max-width: 768px) {
+  #card_trend_total .chart-xl {
+    height: 232px !important;
+  }
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 178px !important;
+    min-height: 178px !important;
+    max-height: 178px !important;
+  }
+}
+
+/* ═══════════ FINAL RATIO + SEPARATE EXPAND DATE PATCH V25 ═══════════ */
+#card_cpe_complaints .row.g-3 {
+  grid-template-columns: minmax(0, 5fr) minmax(156px, .55fr) !important;
+  align-items: stretch !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 5.4fr) minmax(132px, .46fr) !important;
+  align-items: stretch !important;
+}
+#card_cpe_complaints .col-lg-5 > div {
+  width: 156px !important;
+  justify-self: end !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 132px !important;
+  justify-self: end !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 248px !important;
+  min-height: 248px !important;
+  max-height: 248px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 220px !important;
+  min-height: 220px !important;
+  max-height: 220px !important;
+}
+#card_trend_total .chart-xl {
+  height: 312px !important;
+}
+.expand-calendar-tray {
+  min-width: 290px !important;
+}
+.expand-calendar-range {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+.expand-sub-wrap {
+  margin-top: 8px !important;
+}
+.expand-sub-select {
+  width: 100% !important;
+}
+@media (max-width: 768px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .col-lg-5 > div {
+    width: 100% !important;
+  }
+}
+
 </style>
 
   </head>
@@ -6729,10 +6859,13 @@ function setRange(r){
       p.classList.toggle('on',p.dataset.r===r);
     }
   });
-  // exiting compare mode if changing range (filter keeps working with date range)
   if(COMPARE_MODE){COMPARE_MODE=false;document.getElementById("cmpTab").classList.remove('on');document.getElementById("cmpStrip").classList.remove('on');}
-  // Filter mode STAYS ACTIVE — date range applies on top of it
-  updateSubPeriodUI();applyFilter();
+  updateSubPeriodUI();
+  if(PERIOD_TRAY_OPEN && r!=='all'){
+    let sel=document.getElementById('spSel');
+    setTimeout(()=>{ if(sel){ try{ sel.focus(); }catch(e){} } }, 20);
+  }
+  applyFilter();
 }
 
 function toggleDateSortOrder() {
@@ -10934,7 +11067,7 @@ function applyOverTimeGraphSettingsFromModal(){
 
 /* ═══════════ ZOOM / EXPAND PAGE ═══════════ */
 let expandedChartInstance=null;
-let EXPANDED_PAGE_STATE={ zKey:'', chartType:'bar', rows:[], search:'', sortBy:'value', sortDir:'desc' };
+let EXPANDED_PAGE_STATE={ zKey:'', chartType:'bar', rows:[], search:'', sortBy:'value', sortDir:'desc', range:'all', subPeriod:'all', runtimeMeta:null };
 function closeExpandedChartPage(immediate){
   if(expandedChartInstance){ try{ expandedChartInstance.destroy(); }catch(e){} expandedChartInstance=null; }
   let old=document.getElementById('expandChartPage');
@@ -10970,6 +11103,8 @@ function expandedRowClick(zKey,index){
   }
   if(zKey==='cpe_complaints' || zd.type==='cpe_complaints') return openCpeModelModal(label);
   if(zKey==='trend_total'){
+    let runtime = EXPANDED_PAGE_STATE.runtimeMeta;
+    if(runtime && runtime.rows && runtime.rows[index]) return openTrendPeriodM(runtime.gran, runtime.rows[index].key, runtime.rows[index].label);
     let rawIndex=(zd.labels||[]).indexOf(label);
     if(rawIndex>=0) return openTrendPeriodM(TREND_GRAN, zd.keys[rawIndex], zd.labels[rawIndex]);
   }
@@ -11035,7 +11170,21 @@ function renderExpandedChart(){
   if(!zd) return;
   if(expandedChartInstance){ try{ expandedChartInstance.destroy(); }catch(e){} expandedChartInstance=null; }
   let gc=S.dark?'rgba(255,255,255,.08)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b';
-  let cfg=createExpandedChartData(zd, EXPANDED_PAGE_STATE.chartType||'bar');
+  let cfg;
+  if(EXPANDED_PAGE_STATE.zKey==='trend_total'){
+    let gran=getExpandedTotalGran();
+    let agg=aggregateTickets(gran, getExpandedDateFilteredRows());
+    let colors=(agg.labels||[]).map((_,i)=>P[i%P.length]);
+    EXPANDED_PAGE_STATE.rows=(agg.labels||[]).map((label,i)=>({ label, key:agg.keys[i], value:Number(agg.values[i]||0), color:colors[i], pct:(Number(agg.values[i]||0)&&agg.values.reduce((s,v)=>s+Number(v||0),0)>0)?((Number(agg.values[i]||0)/agg.values.reduce((s,v)=>s+Number(v||0),0))*100).toFixed(1):'0.0' }));
+    EXPANDED_PAGE_STATE.runtimeMeta={ gran, rows: EXPANDED_PAGE_STATE.rows.slice() };
+    cfg={
+      type:'bar',
+      data:{ labels: agg.displayLabels||wrapAxisLabels(agg.labels,12), datasets:[{ label: zd.title, data: agg.values||[], backgroundColor: colors, borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] }
+    };
+  }else{
+    cfg=createExpandedChartData(zd, EXPANDED_PAGE_STATE.chartType||'bar');
+    EXPANDED_PAGE_STATE.runtimeMeta=null;
+  }
   cfg.options={
     responsive:true,
     maintainAspectRatio:false,
@@ -11055,47 +11204,98 @@ function toggleExpandCalendar(forceState){
   tray.classList.toggle('open', open);
   btn.classList.toggle('act', open);
 }
+function getExpandedSubPeriodOptionsForRange(){
+  let originalRange = range, originalSub = subPeriod;
+  try {
+    range = EXPANDED_PAGE_STATE.range || 'all';
+    subPeriod = EXPANDED_PAGE_STATE.subPeriod || 'all';
+    return getSubPeriodOptionsForRange();
+  } finally {
+    range = originalRange;
+    subPeriod = originalSub;
+  }
+}
+function getExpandedDateFilteredRows(){
+  let baseRows=(D&&D.rawData)?D.rawData.slice():[];
+  let exRange=EXPANDED_PAGE_STATE.range || 'all';
+  let exSub=EXPANDED_PAGE_STATE.subPeriod || 'all';
+  if(exRange==='all' || !dateCol || D.isPivot) return baseRows;
+  return baseRows.filter(r=>{
+    let v=r[dateCol]; if(!v) return false;
+    let d=parseLocalDate(v); if(!d) return false;
+    if(exSub && exSub!=='all'){
+      if(exSub.startsWith('y_')) return d.getFullYear()===+exSub.split('_')[1];
+      if(exSub.startsWith('m_')){ let p=exSub.split('_'); return d.getFullYear()===+p[1] && d.getMonth()===+p[2]; }
+      if(exSub.startsWith('w_')){ let ws=parseLocalDate(exSub.substring(2)); let we=new Date(ws); we.setDate(we.getDate()+7); return d>=ws && d<we; }
+      if(exSub.startsWith('d_')) return toLocalDateStr(d)===exSub.substring(2);
+    }
+    let now=new Date(),sd;
+    if(exRange==='daily') sd=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    else if(exRange==='weekly') sd=getWeekStart(now);
+    else if(exRange==='monthly') sd=new Date(now.getFullYear(),now.getMonth(),1);
+    else if(exRange==='yearly') sd=new Date(now.getFullYear(),0,1);
+    return d>=sd;
+  });
+}
+function getExpandedTotalTrendGran(){
+  let exRange=EXPANDED_PAGE_STATE.range || 'all';
+  if(exRange==='yearly') return 'monthly';
+  if(exRange==='monthly') return 'weekly';
+  if(exRange==='weekly') return 'daily';
+  if(exRange==='daily') return 'daily';
+  return TREND_GRAN || 'weekly';
+}
 function syncExpandedCalendarUI(){
   let wrap=document.getElementById('expandSubWrap');
   let sel=document.getElementById('expandSubSel');
   let hint=document.getElementById('expandCalendarHint');
   let tray=document.getElementById('expandCalendarTray');
   if(!tray) return;
-  tray.querySelectorAll('[data-expand-range]').forEach(btn=>btn.classList.toggle('on', btn.getAttribute('data-expand-range')===range));
-  if(range==='all'||!dateCol||D.isPivot||allDates.length===0){
+  let exRange=EXPANDED_PAGE_STATE.range || 'all';
+  let exSub=EXPANDED_PAGE_STATE.subPeriod || 'all';
+  tray.querySelectorAll('[data-expand-range]').forEach(btn=>btn.classList.toggle('on', btn.getAttribute('data-expand-range')===exRange));
+  if(exRange==='all'||!dateCol||D.isPivot||allDates.length===0){
     if(wrap) wrap.style.display='none';
     if(hint) hint.style.display='flex';
     return;
   }
   if(wrap) wrap.style.display='flex';
   if(hint) hint.style.display='none';
-  let opts=getSubPeriodOptionsForRange();
+  let opts=getExpandedSubPeriodOptionsForRange();
   if(sel){
     sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.t}</option>`).join('');
-    sel.value = subPeriod && opts.some(o=>o.v===subPeriod) ? subPeriod : 'all';
+    sel.value = exSub && opts.some(o=>o.v===exSub) ? exSub : 'all';
   }
 }
 function setExpandedCalendarRange(r){
-  EXPAND_REOPEN_AFTER_FILTER = { zKey: EXPANDED_PAGE_STATE.zKey, chartType: EXPANDED_PAGE_STATE.chartType || 'bar' };
-  range=r; subPeriod='all';
-  closeExpandedChartPage(true);
-  applyFilter();
+  EXPANDED_PAGE_STATE.range=r;
+  EXPANDED_PAGE_STATE.subPeriod='all';
+  syncExpandedCalendarUI();
+  renderExpandedChart();
+  renderExpandedDataTable();
+  toggleExpandCalendar(true);
+  if(r!=='all'){
+    let sel=document.getElementById('expandSubSel');
+    setTimeout(()=>{ if(sel){ try{ sel.focus(); }catch(e){} } }, 20);
+  }
 }
 function onExpandedCalendarSubChange(){
   let sel=document.getElementById('expandSubSel');
   if(!sel) return;
-  EXPAND_REOPEN_AFTER_FILTER = { zKey: EXPANDED_PAGE_STATE.zKey, chartType: EXPANDED_PAGE_STATE.chartType || 'bar' };
-  subPeriod=sel.value;
-  closeExpandedChartPage(true);
-  applyFilter();
+  EXPANDED_PAGE_STATE.subPeriod=sel.value;
+  renderExpandedChart();
+  renderExpandedDataTable();
+  toggleExpandCalendar(true);
 }
 function openExpandedChartPage(zKey,chartType){
   let zd=CHART_META[zKey]; if(!zd) return;
   closeExpandedChartPage(true);
   let rows=getExpandedChartRows(zd);
   let total = Number(zd.total || rows.reduce((s,r)=>s+r.value,0) || 0);
-  EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows, search:'', sortBy:(zKey==='trend_total'?'natural':'value'), sortDir:(zKey==='trend_total'?'asc':'desc') };
-  let showCalendar = !!dateCol;
+  let defaultExpandedRange = (zKey==='trend_total') ? (range || 'all') : 'all';
+  let defaultExpandedSub = (zKey==='trend_total') ? (subPeriod || 'all') : 'all';
+  EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows, search:'', sortBy:(zKey==='trend_total'?'natural':'value'), sortDir:(zKey==='trend_total'?'asc':'desc'), range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
+  let showCalendar = !!dateCol && zKey==='trend_total';
   let page=document.createElement('div');
   page.id='expandChartPage';
   page.className='expand-page';
@@ -11441,5 +11641,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a198838538f1db73',t:'MTc4Mzc4MDMwNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
