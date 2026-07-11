@@ -5174,6 +5174,278 @@ body {
   }
 }
 
+
+/* ═══════════ IN-PORTAL EXPAND + 70/30 CARD RATIO PATCH V26 ═══════════ */
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 7fr) minmax(180px, 3fr) !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+#card_cpe_complaints .col-lg-5 > div,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 100% !important;
+  justify-self: stretch !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 228px !important;
+  min-height: 228px !important;
+  max-height: 228px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 206px !important;
+  min-height: 206px !important;
+  max-height: 206px !important;
+}
+#card_trend_total .chart-xl {
+  height: 286px !important;
+}
+
+.expand-page {
+  position: fixed !important;
+  inset: 58px 12px 12px 12px !important;
+  border-radius: 24px !important;
+  border: 1px solid rgba(226,232,240,.92) !important;
+  box-shadow: 0 22px 46px rgba(15,23,42,.14) !important;
+  overflow: hidden !important;
+  transform: translateY(10px) scale(.988) !important;
+}
+.expand-page.show {
+  transform: translateY(0) scale(1) !important;
+}
+.expand-page.closing {
+  transform: translateY(10px) scale(.988) !important;
+}
+.expand-shell {
+  max-width: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  padding: 12px 14px 14px !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.expand-topbar {
+  flex: 0 0 auto !important;
+  margin-bottom: 10px !important;
+}
+.expand-layout {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, .8fr) !important;
+  gap: 12px !important;
+}
+.expand-panel,
+.expand-chart-panel,
+.expand-data-panel {
+  min-height: 0 !important;
+}
+.expand-chart-box {
+  height: 100% !important;
+  min-height: 320px !important;
+}
+.expand-data-panel {
+  overflow: hidden !important;
+}
+.expand-table-wrap {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+.expand-table-cpe th:first-child,
+.expand-table-cpe td:first-child { width: 48% !important; }
+.expand-table-dup th:first-child,
+.expand-table-dup td:first-child { width: 70% !important; }
+.expand-table-ot th:first-child,
+.expand-table-ot td:first-child { width: 40% !important; }
+.expand-table-trend th:first-child,
+.expand-table-trend td:first-child { width: 56% !important; }
+
+@media (max-width: 980px) {
+  .expand-page {
+    inset: 52px 8px 8px 8px !important;
+    border-radius: 20px !important;
+  }
+  .expand-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-chart-box {
+    min-height: 260px !important;
+  }
+}
+@media (max-width: 768px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-page {
+    inset: 48px 6px 6px 6px !important;
+    border-radius: 18px !important;
+  }
+}
+
+
+/* ═══════════ PORTAL-INTEGRATED LAYOUT + 70/30 SPLIT PATCH V26 ═══════════ */
+.ct.dashboard-stage {
+  gap: 12px !important;
+  padding: 0 14px 4px !important;
+  margin: 0 !important;
+}
+#card_trend_total .enterprise-body,
+#card_cpe_complaints .cb,
+#card_dup_top_cust .cb,
+#card_ot_severity .cb {
+  padding: 8px 10px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 7fr) minmax(230px, 3fr) !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+}
+#card_cpe_complaints .col-lg-5 > div,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 100% !important;
+  justify-self: stretch !important;
+}
+#card_trend_total .chart-xl {
+  height: 274px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 232px !important;
+  min-height: 232px !important;
+  max-height: 232px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 210px !important;
+  min-height: 210px !important;
+  max-height: 210px !important;
+}
+
+.expand-page {
+  overflow: hidden !important;
+  inset: 56px 10px 10px 10px !important;
+  border-radius: 22px !important;
+  border: 1px solid rgba(226,232,240,.92) !important;
+  box-shadow: 0 18px 36px rgba(15,23,42,.14) !important;
+}
+.expand-shell {
+  height: 100% !important;
+  overflow: hidden !important;
+  max-width: none !important;
+  width: 100% !important;
+  padding: 12px 14px 14px !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.expand-topbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 3 !important;
+  padding-bottom: 10px !important;
+  margin-bottom: 10px !important;
+  background: linear-gradient(180deg, rgba(250,252,255,.96) 0%, rgba(250,252,255,.82) 100%) !important;
+  backdrop-filter: blur(12px) !important;
+}
+[data-theme="dark"] .expand-topbar {
+  background: linear-gradient(180deg, rgba(15,17,23,.96) 0%, rgba(15,17,23,.82) 100%) !important;
+}
+.expand-layout {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  grid-template-columns: minmax(0, 1.72fr) minmax(300px, .82fr) !important;
+  gap: 12px !important;
+}
+.expand-panel,
+.expand-chart-panel,
+.expand-data-panel {
+  min-height: 0 !important;
+}
+.expand-chart-box {
+  height: 100% !important;
+  min-height: 300px !important;
+}
+.expand-data-panel {
+  overflow: hidden !important;
+}
+.expand-table-wrap {
+  overflow: auto !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+.expand-table-cpe th:first-child,
+.expand-table-cpe td:first-child { width: 50% !important; }
+.expand-table-dup th:first-child,
+.expand-table-dup td:first-child { width: 68% !important; }
+.expand-table-ot th:first-child,
+.expand-table-ot td:first-child { width: 42% !important; }
+.expand-table-trend th:first-child,
+.expand-table-trend td:first-child { width: 56% !important; }
+
+#dModal {
+  position: fixed !important;
+  inset: 0 !important;
+}
+#dModal.show {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+#dModal .modal-dialog {
+  width: min(980px, calc(100vw - 28px)) !important;
+  max-width: 980px !important;
+  margin: 0 auto !important;
+}
+#dModal .modal-content {
+  max-height: min(78vh, 760px) !important;
+}
+#dModal .modal-body {
+  overflow: auto !important;
+}
+
+@media (max-width: 980px) {
+  .expand-page {
+    inset: 52px 8px 8px 8px !important;
+  }
+  .expand-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-chart-box {
+    min-height: 240px !important;
+  }
+}
+@media (max-width: 768px) {
+  .ct.dashboard-stage {
+    padding: 0 10px 2px !important;
+  }
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-page {
+    inset: 48px 6px 6px 6px !important;
+    border-radius: 18px !important;
+  }
+  .expand-chart-box {
+    min-height: 220px !important;
+  }
+}
+
 </style>
 
   </head>
@@ -11562,7 +11834,13 @@ function showRecordsModalOnTop(){
   dataModal.show();
   setTimeout(()=>{
     let modal=document.getElementById('dModal');
-    if(modal) modal.style.zIndex='6080';
+    if(modal){
+      modal.style.zIndex='6080';
+      modal.style.position='fixed';
+      modal.style.inset='0';
+    }
+    let dlg=modal ? modal.querySelector('.modal-dialog') : null;
+    if(dlg) dlg.style.margin='1rem auto';
     let backdrops=document.querySelectorAll('.modal-backdrop');
     if(backdrops.length){
       backdrops[backdrops.length-1].style.zIndex='6075';
