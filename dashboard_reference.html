@@ -5446,6 +5446,109 @@ body {
   }
 }
 
+
+/* ═══════════ FINAL 70/30 GRAPH-DATA BALANCE PATCH V27 ═══════════ */
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 7fr) minmax(220px, 3fr) !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+}
+#card_cpe_complaints .col-lg-7,
+#card_dup_top_cust .col-lg-7,
+#card_ot_severity .col-lg-7,
+#card_cpe_complaints .col-lg-5,
+#card_dup_top_cust .col-lg-5,
+#card_ot_severity .col-lg-5 {
+  width: auto !important;
+  max-width: none !important;
+  flex: unset !important;
+}
+#card_cpe_complaints .col-lg-5 > div,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 100% !important;
+  justify-self: stretch !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 238px !important;
+  min-height: 238px !important;
+  max-height: 238px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 216px !important;
+  min-height: 216px !important;
+  max-height: 216px !important;
+}
+#card_trend_total .chart-xl {
+  height: 300px !important;
+}
+@media (max-width: 980px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ═══════════ PORTAL OVERLAP / SMOOTH PANEL PATCH V28 ═══════════ */
+.hdr {
+  min-height: 46px !important;
+  padding: 10px 16px 10px !important;
+  margin: 0 0 6px 0 !important;
+}
+.hdr-r {
+  position: relative !important;
+  z-index: 60 !important;
+}
+.ct.dashboard-stage {
+  padding-top: 0 !important;
+}
+.expand-page {
+  inset: 108px 12px 12px 12px !important;
+  box-shadow: 0 20px 42px rgba(15,23,42,.12) !important;
+}
+.expand-topbar {
+  padding-top: 2px !important;
+}
+#dModal.show {
+  align-items: flex-start !important;
+  justify-content: center !important;
+  padding-top: 108px !important;
+  padding-bottom: 12px !important;
+}
+#dModal .modal-dialog {
+  margin: 0 auto !important;
+}
+#dModal .modal-content {
+  box-shadow: 0 16px 32px rgba(15,23,42,.16) !important;
+}
+@media (max-width: 980px) {
+  .expand-page {
+    inset: 104px 8px 8px 8px !important;
+  }
+  #dModal.show {
+    padding-top: 96px !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr {
+    min-height: 42px !important;
+    padding: 8px 12px 8px !important;
+  }
+  .expand-page {
+    inset: 96px 6px 6px 6px !important;
+  }
+  #dModal.show {
+    padding-top: 88px !important;
+  }
+}
+
 </style>
 
   </head>
@@ -11356,12 +11459,90 @@ document.addEventListener('click', function(ev){
     toggleExpandCalendar(false);
   }
 }, true);
-function getExpandedChartRows(zd){
+function rowsForTrendPeriodFromRows(gran,key,rows){
+  rows=rows||[];
+  if(!dateCol||!key)return [];
+  return rows.filter(r=>{
+    let d=parseLocalDate(r[dateCol]);if(!d)return false;
+    if(gran==='daily')return toLocalDateStr(d)===key;
+    if(gran==='weekly'){
+      let ws=parseLocalDate(key),we=new Date(ws);we.setDate(we.getDate()+7);
+      return d>=ws&&d<we;
+    }
+    if(gran==='monthly'){
+      let p=key.split('-');return d.getFullYear()===+p[0]&&(d.getMonth()+1)===+p[1];
+    }
+    return false;
+  });
+}
+function computeExpandedChartRowsByZKey(zKey, zd){
+  let baseRows=getExpandedDateFilteredRows();
+  if(zKey==='trend_total'){
+    let gran=getExpandedTotalTrendGran();
+    let agg=aggregateTickets(gran, baseRows);
+    let total=(agg.values||[]).reduce((s,v)=>s+Number(v||0),0);
+    return {
+      gran,
+      rows:(agg.labels||[]).map((label,i)=>({ label, key:agg.keys[i], value:Number(agg.values[i]||0), color:P[i%P.length], pct: total>0?((Number(agg.values[i]||0)/total)*100).toFixed(1):'0.0', records:rowsForTrendPeriodFromRows(gran, agg.keys[i], baseRows) })),
+      displayLabels: agg.displayLabels || [],
+      keys: agg.keys || []
+    };
+  }
+  if(zKey==='cpe_complaints' || (zd && zd.type==='cpe_complaints')){
+    const CPE_MODELS = ['BFFA', 'BFFG', 'LCF', 'LCC', 'SCP', 'FFG', 'FFA', 'CW', 'CC', 'CR', 'CG', 'CJ', 'CK', 'CP', 'CM', 'CF'];
+    let candidateCols=[];
+    if (D && D.headers) {
+      let kw = ['cpe', 'model', 'device', 'serial', 'asset', 'equipment', 'circuit', 'description', 'issue', 'summary', 'ticket', 'note'];
+      candidateCols = D.headers.filter(h => kw.some(k => h.toLowerCase().includes(k)));
+      if (!candidateCols.length) candidateCols = D.headers.slice();
+    }
+    let seen=new Set(), counts={}, tickets={};
+    CPE_MODELS.forEach(m=>{counts[m]=0;tickets[m]=[];});
+    const cpeRegex = new RegExp('(?:^|[^a-z0-9])(' + CPE_MODELS.join('|') + ')([0-9a-z_-]*)', 'i');
+    baseRows.forEach(r=>{
+      let foundCpe=null, foundModel=null;
+      for (let col of candidateCols) {
+        let val=r[col]; if(val==null) continue; let str=String(val).trim(); if(!str) continue;
+        let m=str.match(cpeRegex); if(m){ foundModel=m[1].toUpperCase(); let serial=m[2]?m[2].toUpperCase():''; foundCpe=foundModel+serial; break; }
+      }
+      if(!foundCpe && D && D.headers){
+        for(let col of D.headers){
+          if(candidateCols.includes(col)) continue;
+          let val=r[col]; if(val==null) continue; let str=String(val).trim(); if(!str) continue;
+          let m=str.match(cpeRegex); if(m){ foundModel=m[1].toUpperCase(); let serial=m[2]?m[2].toUpperCase():''; foundCpe=foundModel+serial; break; }
+        }
+      }
+      if(foundCpe && foundModel){ if(seen.has(foundCpe)) return; seen.add(foundCpe); counts[foundModel]++; tickets[foundModel].push(r); }
+    });
+    let active=CPE_MODELS.filter(m=>counts[m]>0).sort((a,b)=>counts[b]-counts[a]);
+    let limit=S.chartLimit||0; if(limit>0) active=active.slice(0,limit);
+    let total=active.reduce((s,m)=>s+counts[m],0);
+    return { rows:active.map((m,i)=>({label:m,key:m,value:counts[m],color:P[i%P.length],pct: total>0?((counts[m]/total)*100).toFixed(1):'0.0',records:tickets[m]})) };
+  }
+  if(zKey==='dup_top_cust'){
+    let cols=loadDuplicateColumnsForCurrentTab();
+    let dup=getDuplicateTicketsDataForCols(baseRows, cols.customerCol, cols.ticketCol);
+    let list=dup.duplicates.slice(); let limit=S.chartLimit||0; if(limit>0) list=list.slice(0,limit);
+    let total=dup.totalDupsCount||0;
+    return { rows:list.map((d,i)=>({label:d.customer,key:d.customer,value:d.tickets.length,color:P[i%P.length],pct: total>0?((d.tickets.length/total)*100).toFixed(1):'0.0',records:d.tickets})) };
+  }
+  if(zKey==='ot_severity' || (zd && zd.columnName==='_overtime')){
+    let cols=loadOverTimeColumnsForCurrentTab();
+    let ot=getOverTimeTicketsData(baseRows, cols.createdCol, cols.resolvedCol, false);
+    let tiers=['50%','70%','90%'];
+    let colors=[cssVar('--ac'), cssVar('--orange'), cssVar('--red')];
+    let total=ot.overTimeTickets.length||0;
+    return { rows:tiers.map((tier,i)=>({label:'Tier '+tier, key:tier, value:ot.counts[tier]||0, color:colors[i], pct: total>0?(((ot.counts[tier]||0)/total)*100).toFixed(1):'0.0', records:ot.overTimeTickets.filter(x=>x.tier===tier).map(x=>x.row)})) };
+  }
   let labels = Array.isArray(zd.pieLabels) && zd.pieLabels.length ? zd.pieLabels.slice() : (zd.labels||[]).slice();
   let values = Array.isArray(zd.pieValues) && zd.pieValues.length ? zd.pieValues.slice() : ((zd.datasets&&zd.datasets[0]&&Array.isArray(zd.datasets[0].data)) ? zd.datasets[0].data.map(v=>typeof v==='object'&&v!==null?Number(v.y||0):Number(v||0)) : []);
   let colors = Array.isArray(zd.pieColors) && zd.pieColors.length ? zd.pieColors.slice() : labels.map((_,i)=>P[i%P.length]);
   let total = Number(zd.total || values.reduce((s,v)=>s+(Number(v)||0),0) || 0);
-  return labels.map((label,i)=>({ label, value:Number(values[i]||0), color:colors[i%colors.length], pct: total>0?((Number(values[i]||0)/total)*100).toFixed(1):'0.0' }));
+  return { rows: labels.map((label,i)=>({ label, value:Number(values[i]||0), color:colors[i%colors.length], pct: total>0?((Number(values[i]||0)/total)*100).toFixed(1):'0.0' })) };
+}
+function getExpandedChartRows(zd){
+  let computed=computeExpandedChartRowsByZKey(EXPANDED_PAGE_STATE.zKey || (zd && zd.type) || '', zd);
+  return computed && computed.rows ? computed.rows : [];
 }
 function expandedRowClick(zKey,index){
   let rows = getFilteredExpandedRows();
@@ -11443,19 +11624,17 @@ function renderExpandedChart(){
   if(expandedChartInstance){ try{ expandedChartInstance.destroy(); }catch(e){} expandedChartInstance=null; }
   let gc=S.dark?'rgba(255,255,255,.08)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b';
   let cfg;
+  let computed=computeExpandedChartRowsByZKey(EXPANDED_PAGE_STATE.zKey, zd);
+  EXPANDED_PAGE_STATE.rows=(computed && computed.rows) ? computed.rows.slice() : [];
+  EXPANDED_PAGE_STATE.runtimeMeta=computed||null;
   if(EXPANDED_PAGE_STATE.zKey==='trend_total'){
-    let gran=getExpandedTotalGran();
-    let agg=aggregateTickets(gran, getExpandedDateFilteredRows());
-    let colors=(agg.labels||[]).map((_,i)=>P[i%P.length]);
-    EXPANDED_PAGE_STATE.rows=(agg.labels||[]).map((label,i)=>({ label, key:agg.keys[i], value:Number(agg.values[i]||0), color:colors[i], pct:(Number(agg.values[i]||0)&&agg.values.reduce((s,v)=>s+Number(v||0),0)>0)?((Number(agg.values[i]||0)/agg.values.reduce((s,v)=>s+Number(v||0),0))*100).toFixed(1):'0.0' }));
-    EXPANDED_PAGE_STATE.runtimeMeta={ gran, rows: EXPANDED_PAGE_STATE.rows.slice() };
+    let rows=EXPANDED_PAGE_STATE.rows;
     cfg={
       type:'bar',
-      data:{ labels: agg.displayLabels||wrapAxisLabels(agg.labels,12), datasets:[{ label: zd.title, data: agg.values||[], backgroundColor: colors, borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] }
+      data:{ labels:(computed && computed.displayLabels && computed.displayLabels.length) ? computed.displayLabels : wrapAxisLabels(rows.map(r=>r.label),12), datasets:[{ label: zd.title, data: rows.map(r=>r.value), backgroundColor: rows.map(r=>r.color), borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] }
     };
   }else{
     cfg=createExpandedChartData(zd, EXPANDED_PAGE_STATE.chartType||'bar');
-    EXPANDED_PAGE_STATE.runtimeMeta=null;
   }
   cfg.options={
     responsive:true,
@@ -11567,7 +11746,7 @@ function openExpandedChartPage(zKey,chartType){
   let defaultExpandedRange = (zKey==='trend_total') ? (range || 'all') : 'all';
   let defaultExpandedSub = (zKey==='trend_total') ? (subPeriod || 'all') : 'all';
   EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows, search:'', sortBy:(zKey==='trend_total'?'natural':'value'), sortDir:(zKey==='trend_total'?'asc':'desc'), range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
-  let showCalendar = !!dateCol && zKey==='trend_total';
+  let showCalendar = !!dateCol;
   let page=document.createElement('div');
   page.id='expandChartPage';
   page.className='expand-page';
@@ -11579,7 +11758,7 @@ function openExpandedChartPage(zKey,chartType){
         <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1><p>Lovely simple expanded view with chart + data summary</p></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
-        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${range==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${range==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${range==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${range==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${range==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div></div></div>` : ''}
+        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div></div></div>` : ''}
         <div class="expand-chip">${total.toLocaleString()} total</div>
       </div>
     </div>
