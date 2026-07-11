@@ -2757,7 +2757,7 @@ body {
   }
 }
 
-/* ═══════════ BOTTOM-RIGHT FLOATING PALETTE + TITLE REMOVAL + CLEAN 2x2 STAGGER PATCH V9 ═══════════ */
+/* ═══════════ RADIAL FLOATING PALETTE + STRAIGHT COMPACT FOUR CARD PATCH V10 ═══════════ */
 .hdr {
   padding: 0 !important;
   height: 0 !important;
@@ -2778,24 +2778,85 @@ body {
   right: 18px !important;
   bottom: 18px !important;
   top: auto !important;
-  width: auto !important;
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 10px !important;
-  padding: 10px !important;
-  border-radius: 24px !important;
-  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
-  background: rgba(255,255,255,.78) !important;
-  backdrop-filter: blur(16px) saturate(1.15) !important;
-  box-shadow: 0 24px 46px rgba(15,23,42,.16) !important;
-  z-index: 240 !important;
+  width: 56px !important;
+  height: 56px !important;
+  display: block !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  z-index: 260 !important;
+  transition: opacity .22s ease, transform .22s ease !important;
 }
-[data-theme="dark"] .hdr-r {
+.hdr-r.scroll-hide {
+  opacity: 0 !important;
+  transform: translateY(12px) scale(.94) !important;
+  pointer-events: none !important;
+}
+.palette-fab,
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 52px !important;
+  height: 52px !important;
+  border-radius: 18px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(255,255,255,.86) !important;
+  backdrop-filter: blur(16px) saturate(1.15) !important;
+  box-shadow: 0 18px 36px rgba(15,23,42,.16) !important;
+  color: var(--t1) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+}
+[data-theme="dark"] .palette-fab,
+[data-theme="dark"] .palette-action > .icon-btn,
+[data-theme="dark"] .palette-settings-btn {
   background: rgba(26,29,46,.84) !important;
 }
+.palette-fab {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+}
+.palette-fab .ic,
+.palette-action > .icon-btn .ic,
+.palette-settings-btn .ic {
+  width: 18px !important;
+  height: 18px !important;
+}
+.palette-fab.act {
+  background: linear-gradient(135deg, var(--ac), var(--ac2)) !important;
+  color: #fff !important;
+  border-color: var(--ac) !important;
+}
+.palette-action {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(0,0) scale(.82);
+  transition: transform .28s cubic-bezier(.22,1,.36,1), opacity .22s ease;
+}
+.hdr-r.open .palette-action {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+.hdr-r.open .period-launch-wrap {
+  transform: translate(-78px, -8px) scale(1);
+}
+.hdr-r.open .tools-launch-wrap {
+  transform: translate(-52px, -66px) scale(1);
+}
+.hdr-r.open .palette-settings-wrap {
+  transform: translate(-4px, -92px) scale(1);
+}
 .period-launch-wrap,
-.tools-launch-wrap {
-  position: relative;
+.tools-launch-wrap,
+.palette-settings-wrap {
   display: flex;
   align-items: center;
 }
@@ -2807,21 +2868,21 @@ body {
   transform-origin: bottom right !important;
 }
 .period-tray {
-  min-width: 420px !important;
+  min-width: 360px !important;
   padding: 12px !important;
   border-radius: 18px !important;
-  background: rgba(255,255,255,.82) !important;
+  background: rgba(255,255,255,.84) !important;
   backdrop-filter: blur(18px) saturate(1.12) !important;
-  box-shadow: 0 26px 52px rgba(15,23,42,.18) !important;
+  box-shadow: 0 24px 48px rgba(15,23,42,.18) !important;
   transform: translateX(10px) scale(.96) !important;
 }
 .tools-tray {
-  min-width: 200px !important;
+  min-width: 190px !important;
   padding: 10px !important;
   border-radius: 18px !important;
-  background: rgba(255,255,255,.82) !important;
+  background: rgba(255,255,255,.84) !important;
   backdrop-filter: blur(18px) saturate(1.12) !important;
-  box-shadow: 0 26px 52px rgba(15,23,42,.18) !important;
+  box-shadow: 0 24px 48px rgba(15,23,42,.18) !important;
   transform: translateX(10px) scale(.96) !important;
 }
 .period-tray.open,
@@ -2830,7 +2891,7 @@ body {
 }
 .period-tray-grid {
   display: grid !important;
-  grid-template-columns: minmax(0, 1.12fr) minmax(200px, .88fr) !important;
+  grid-template-columns: minmax(0, 1.08fr) minmax(180px, .92fr) !important;
   gap: 10px !important;
 }
 .tool-nav {
@@ -2839,27 +2900,27 @@ body {
   gap: 8px !important;
 }
 .tool-nav .tool-btn {
-  width: 40px !important;
-  height: 40px !important;
-  min-width: 40px !important;
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
 }
 body {
   background:
-    radial-gradient(circle at 14% 16%, rgba(99,102,241,.08), transparent 24%),
-    radial-gradient(circle at 82% 78%, rgba(59,130,246,.08), transparent 24%),
-    linear-gradient(180deg, #f7f9ff 0%, #eef3fb 100%) !important;
+    radial-gradient(circle at 14% 16%, rgba(99,102,241,.07), transparent 24%),
+    radial-gradient(circle at 82% 78%, rgba(59,130,246,.07), transparent 24%),
+    linear-gradient(180deg, #f8faff 0%, #eef3fb 100%) !important;
 }
 [data-theme="dark"] body {
   background:
-    radial-gradient(circle at 14% 16%, rgba(129,140,248,.10), transparent 24%),
-    radial-gradient(circle at 82% 78%, rgba(56,189,248,.09), transparent 24%),
+    radial-gradient(circle at 14% 16%, rgba(129,140,248,.09), transparent 24%),
+    radial-gradient(circle at 82% 78%, rgba(56,189,248,.08), transparent 24%),
     linear-gradient(180deg, #0f1117 0%, #151a27 100%) !important;
 }
 .ct.dashboard-stage {
   display: grid !important;
-  grid-template-columns: minmax(320px,1fr) minmax(320px,1fr) !important;
-  gap: 22px 24px !important;
-  padding: 18px 18px 110px !important;
+  grid-template-columns: repeat(2, minmax(320px,1fr)) !important;
+  gap: 18px 20px !important;
+  padding: 18px 18px 96px !important;
   align-items: start !important;
   position: relative;
 }
@@ -2872,18 +2933,18 @@ body {
   z-index: 0;
 }
 .ct.dashboard-stage::before {
-  width: 260px;
-  height: 260px;
-  left: -40px;
-  bottom: 80px;
-  background: radial-gradient(circle, rgba(99,102,241,.13) 0%, rgba(99,102,241,0) 72%);
-}
-.ct.dashboard-stage::after {
   width: 220px;
   height: 220px;
-  right: 12px;
-  top: 180px;
-  background: radial-gradient(circle, rgba(56,189,248,.12) 0%, rgba(56,189,248,0) 72%);
+  left: -28px;
+  bottom: 48px;
+  background: radial-gradient(circle, rgba(99,102,241,.12) 0%, rgba(99,102,241,0) 72%);
+}
+.ct.dashboard-stage::after {
+  width: 200px;
+  height: 200px;
+  right: 8px;
+  top: 120px;
+  background: radial-gradient(circle, rgba(56,189,248,.11) 0%, rgba(56,189,248,0) 72%);
 }
 .ct.dashboard-stage > * {
   position: relative;
@@ -2895,11 +2956,12 @@ body {
 #card_ot_severity {
   width: 100% !important;
   max-width: 100% !important;
-  border-radius: 24px !important;
+  border-radius: 22px !important;
   overflow: hidden !important;
-  background: rgba(255,255,255,.86) !important;
-  backdrop-filter: blur(16px) saturate(1.1) !important;
-  border: 1px solid rgba(219,229,241,.92) !important;
+  background: rgba(255,255,255,.88) !important;
+  backdrop-filter: blur(14px) saturate(1.08) !important;
+  border: 1px solid rgba(226,232,240,.92) !important;
+  transform: none !important;
 }
 [data-theme="dark"] #card_trend_total,
 [data-theme="dark"] #card_cpe_complaints,
@@ -2910,66 +2972,62 @@ body {
 #card_trend_total {
   grid-column: 1;
   grid-row: 1;
-  transform: translateY(6px) rotate(-1deg);
-  box-shadow: 0 24px 50px rgba(79,70,229,.12) !important;
+  box-shadow: 0 18px 34px rgba(79,70,229,.10) !important;
 }
 #card_cpe_complaints {
   grid-column: 2;
   grid-row: 1;
-  transform: translateY(-2px) rotate(.9deg);
-  box-shadow: 0 22px 46px rgba(16,185,129,.11) !important;
+  box-shadow: 0 18px 34px rgba(16,185,129,.09) !important;
 }
 #card_dup_top_cust {
   grid-column: 1;
   grid-row: 2;
-  transform: translateY(-4px) rotate(-1.1deg);
-  box-shadow: 0 20px 42px rgba(59,130,246,.11) !important;
+  box-shadow: 0 18px 34px rgba(59,130,246,.09) !important;
 }
 #card_ot_severity {
   grid-column: 2;
   grid-row: 2;
-  transform: translateY(12px) rotate(.9deg);
-  box-shadow: 0 24px 48px rgba(244,63,94,.11) !important;
+  box-shadow: 0 18px 34px rgba(244,63,94,.09) !important;
 }
 #card_trend_total .chart-xl {
-  height: 255px !important;
+  height: 230px !important;
 }
 #card_cpe_complaints .row.g-3,
 #card_dup_top_cust .row.g-3,
 #card_ot_severity .row.g-3 {
-  grid-template-columns: minmax(0, 3.1fr) minmax(132px, .38fr) !important;
+  grid-template-columns: minmax(0, 2.5fr) minmax(128px, .5fr) !important;
 }
 #card_cpe_complaints .chb {
-  height: 230px !important;
-  min-height: 230px !important;
-}
-#card_cpe_complaints .col-lg-5 > div {
-  height: 230px !important;
-  min-height: 230px !important;
-  max-height: 230px !important;
-}
-#card_dup_top_cust .chb,
-#card_ot_severity .chb {
   height: 210px !important;
   min-height: 210px !important;
 }
-#card_dup_top_cust .col-lg-5 > div,
-#card_ot_severity .col-lg-5 > div {
+#card_cpe_complaints .col-lg-5 > div {
   height: 210px !important;
   min-height: 210px !important;
   max-height: 210px !important;
+}
+#card_dup_top_cust .chb,
+#card_ot_severity .chb {
+  height: 190px !important;
+  min-height: 190px !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  height: 190px !important;
+  min-height: 190px !important;
+  max-height: 190px !important;
 }
 #card_trend_total .enterprise-head,
 #card_cpe_complaints .chd,
 #card_dup_top_cust .chd,
 #card_ot_severity .chd {
-  padding: 12px 15px !important;
+  padding: 11px 14px !important;
 }
 #card_trend_total .enterprise-title h2,
 #card_cpe_complaints .chd h3,
 #card_dup_top_cust .chd h3,
 #card_ot_severity .chd h3 {
-  font-size: 16px !important;
+  font-size: 15px !important;
 }
 #card_trend_main,
 #card_dup_trend,
@@ -2979,7 +3037,7 @@ body {
 @media (max-width: 1100px) {
   .ct.dashboard-stage {
     grid-template-columns: 1fr !important;
-    padding-bottom: 96px !important;
+    padding-bottom: 88px !important;
   }
   #card_trend_total,
   #card_cpe_complaints,
@@ -2987,19 +3045,21 @@ body {
   #card_ot_severity {
     grid-column: auto !important;
     grid-row: auto !important;
-    transform: none !important;
-  }
-  .period-tray,
-  .tools-tray {
-    right: calc(100% + 10px) !important;
   }
 }
 @media (max-width: 768px) {
   .hdr-r {
     right: 10px !important;
     bottom: 10px !important;
-    padding: 8px !important;
-    border-radius: 18px !important;
+    width: 52px !important;
+    height: 52px !important;
+  }
+  .palette-fab,
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 48px !important;
+    height: 48px !important;
+    border-radius: 16px !important;
   }
   .tool-btn::after,
   .tool-btn::before {
@@ -3009,17 +3069,17 @@ body {
   .tools-tray {
     right: 0 !important;
     bottom: calc(100% + 12px) !important;
-    min-width: min(90vw, 310px) !important;
+    min-width: min(90vw, 300px) !important;
   }
   .period-tray-grid {
     grid-template-columns: 1fr !important;
   }
   .ct.dashboard-stage {
-    padding: 12px 12px 92px !important;
-    gap: 18px !important;
+    padding: 12px 12px 84px !important;
+    gap: 16px !important;
   }
   #card_trend_total .chart-xl {
-    height: 220px !important;
+    height: 205px !important;
   }
   #card_cpe_complaints .chb,
   #card_cpe_complaints .col-lg-5 > div,
@@ -3027,9 +3087,9 @@ body {
   #card_dup_top_cust .col-lg-5 > div,
   #card_ot_severity .chb,
   #card_ot_severity .col-lg-5 > div {
-    height: 180px !important;
-    min-height: 180px !important;
-    max-height: 180px !important;
+    height: 168px !important;
+    min-height: 168px !important;
+    max-height: 168px !important;
   }
 }
 
@@ -3087,7 +3147,7 @@ body {
     <div class="hdr-s" id="subLbl" style="display:none;"></div>
   </div>
   <div class="hdr-r" style="display:flex; flex-direction:row; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; width:auto;">
-    <div class="period-launch-wrap" id="periodLaunchWrap">
+    <div class="palette-action period-launch-wrap" id="periodLaunchWrap">
       <button class="icon-btn period-toggle-btn" id="periodToggleBtn" title="Date Range" onclick="togglePeriodTray()"><svg class="ic"><use href="#i-calendar"/></svg></button>
       <div class="period-tray" id="periodTray">
         <div class="period-tray-head"><svg class="ic ic-sm"><use href="#i-calendar"/></svg> Date View</div>
@@ -3113,7 +3173,7 @@ body {
         </div>
       </div>
     </div>
-    <div class="tools-launch-wrap" id="toolsLaunchWrap">
+    <div class="palette-action tools-launch-wrap" id="toolsLaunchWrap">
       <button class="icon-btn tools-toggle-btn" id="toolsToggleBtn" title="Tools" onclick="toggleToolsTray()"><svg class="ic"><use href="#i-grid"/></svg></button>
       <div class="tools-tray" id="toolsTray">
         <div class="tools-tray-head"><svg class="ic ic-sm"><use href="#i-grid"/></svg> Tools</div>
@@ -3124,9 +3184,12 @@ body {
         </div>
       </div>
     </div>
-    <div style="display:flex; align-items:center; gap:8px;">
-      <button class="icon-btn" id="setBtn" title="Settings" onclick="openSettings()"><svg class="ic"><use href="#i-settings"/></svg></button>
+    <div class="palette-action palette-settings-wrap">
+      <button class="icon-btn palette-settings-btn" id="setBtn" title="Settings" onclick="openSettings()"><svg class="ic"><use href="#i-settings"/></svg></button>
     </div>
+    <button class="palette-fab" id="paletteFab" type="button" onclick="togglePaletteMenu()" title="Dashboard Controls">
+      <svg class="ic"><use href="#i-grid"/></svg>
+    </button>
   </div>
 </header>
 
@@ -4785,10 +4848,25 @@ function updateSubPeriodUI(){
 function onSubPeriodChange(){subPeriod=document.getElementById("spSel").value;applyFilter(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 let PERIOD_TRAY_OPEN=false;
 let TOOLS_TRAY_OPEN=false;
+let PALETTE_OPEN=false;
+let PALETTE_SCROLL_TIMER=null;
+function togglePaletteMenu(forceState){
+  let dock=document.querySelector('.hdr-r');
+  let fab=document.getElementById('paletteFab');
+  if(!dock||!fab)return;
+  PALETTE_OPEN = typeof forceState === 'boolean' ? forceState : !PALETTE_OPEN;
+  dock.classList.toggle('open', PALETTE_OPEN);
+  fab.classList.toggle('act', PALETTE_OPEN);
+  if(!PALETTE_OPEN){
+    togglePeriodTray(false);
+    toggleToolsTray(false);
+  }
+}
 function togglePeriodTray(forceState){
   let tray=document.getElementById('periodTray');
   let btn=document.getElementById('periodToggleBtn');
   if(!tray||!btn)return;
+  togglePaletteMenu(true);
   PERIOD_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !PERIOD_TRAY_OPEN;
   tray.classList.toggle('open', PERIOD_TRAY_OPEN);
   btn.classList.toggle('act', PERIOD_TRAY_OPEN);
@@ -4798,6 +4876,7 @@ function toggleToolsTray(forceState){
   let tray=document.getElementById('toolsTray');
   let btn=document.getElementById('toolsToggleBtn');
   if(!tray||!btn)return;
+  togglePaletteMenu(true);
   TOOLS_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !TOOLS_TRAY_OPEN;
   tray.classList.toggle('open', TOOLS_TRAY_OPEN);
   btn.classList.toggle('act', TOOLS_TRAY_OPEN);
@@ -4806,9 +4885,19 @@ function toggleToolsTray(forceState){
 document.addEventListener('click', function(ev){
   let wrap=document.getElementById('periodLaunchWrap');
   let tWrap=document.getElementById('toolsLaunchWrap');
+  let dock=document.querySelector('.hdr-r');
   if(PERIOD_TRAY_OPEN && wrap && !wrap.contains(ev.target)) togglePeriodTray(false);
   if(TOOLS_TRAY_OPEN && tWrap && !tWrap.contains(ev.target)) toggleToolsTray(false);
+  if(PALETTE_OPEN && dock && !dock.contains(ev.target)) togglePaletteMenu(false);
 }, true);
+window.addEventListener('scroll', function(){
+  let dock=document.querySelector('.hdr-r');
+  if(!dock) return;
+  dock.classList.add('scroll-hide');
+  togglePaletteMenu(false);
+  if(PALETTE_SCROLL_TIMER) clearTimeout(PALETTE_SCROLL_TIMER);
+  PALETTE_SCROLL_TIMER=setTimeout(()=>{ let d=document.querySelector('.hdr-r'); if(d) d.classList.remove('scroll-hide'); }, 180);
+}, { passive:true });
 function getWeekStart(d){let dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay());dt.setHours(0,0,0,0);return dt;}
 function getWeekNumber(d){let s=new Date(d.getFullYear(),0,1);return Math.ceil(((d-s)/86400000+s.getDay()+1)/7);}
 
