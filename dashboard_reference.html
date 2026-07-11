@@ -3955,27 +3955,30 @@ body {
   padding: 0 16px 2px !important;
 }
 #card_trend_total .chart-xl {
-  height: 320px !important;
+  height: 300px !important;
 }
-#card_cpe_complaints .row.g-3,
+#card_cpe_complaints .row.g-3 {
+  grid-template-columns: minmax(0, 2.7fr) minmax(164px, .82fr) !important;
+  gap: 10px !important;
+}
 #card_dup_top_cust .row.g-3,
 #card_ot_severity .row.g-3 {
-  grid-template-columns: minmax(0, 2.9fr) minmax(132px, .58fr) !important;
+  grid-template-columns: minmax(0, 3.15fr) minmax(128px, .48fr) !important;
   gap: 10px !important;
 }
 #card_cpe_complaints .chb,
 #card_cpe_complaints .col-lg-5 > div {
-  height: 250px !important;
-  min-height: 250px !important;
-  max-height: 250px !important;
+  height: 240px !important;
+  min-height: 240px !important;
+  max-height: 240px !important;
 }
 #card_dup_top_cust .chb,
 #card_dup_top_cust .col-lg-5 > div,
 #card_ot_severity .chb,
 #card_ot_severity .col-lg-5 > div {
-  height: 228px !important;
-  min-height: 228px !important;
-  max-height: 228px !important;
+  height: 210px !important;
+  min-height: 210px !important;
+  max-height: 210px !important;
 }
 #card_trend_total .enterprise-head,
 #card_cpe_complaints .chd,
@@ -4965,6 +4968,75 @@ body {
   border-color: rgba(226,232,240,.72) !important;
 }
 @media (max-width: 768px) {
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .col-lg-5 > div {
+    width: 100% !important;
+  }
+}
+
+/* ═══════════ FINAL PROPORTION + CATEGORY LIMIT PATCH V23 ═══════════ */
+.ct.dashboard-stage {
+  gap: 16px !important;
+  padding: 0 16px 4px !important;
+}
+#card_trend_total .chart-xl {
+  height: 280px !important;
+}
+#card_cpe_complaints .row.g-3 {
+  grid-template-columns: minmax(0, 2.55fr) minmax(168px, .82fr) !important;
+  gap: 10px !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 3.4fr) minmax(138px, .5fr) !important;
+  gap: 10px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 236px !important;
+  min-height: 236px !important;
+  max-height: 236px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 214px !important;
+  min-height: 214px !important;
+  max-height: 214px !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 138px !important;
+  justify-self: end !important;
+}
+#card_cpe_complaints .col-lg-5 > div {
+  width: 168px !important;
+  justify-self: end !important;
+}
+#card_cpe_complaints .tb,
+#card_dup_top_cust .tb,
+#card_ot_severity .tb {
+  font-size: 10px !important;
+}
+#card_cpe_complaints .tb thead th,
+#card_dup_top_cust .tb thead th,
+#card_ot_severity .tb thead th {
+  font-size: 8.5px !important;
+  padding: 7px 8px !important;
+}
+#card_cpe_complaints .tb td,
+#card_dup_top_cust .tb td,
+#card_ot_severity .tb td {
+  padding: 7px 8px !important;
+}
+@media (max-width: 768px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
   #card_cpe_complaints .col-lg-5 > div,
   #card_dup_top_cust .col-lg-5 > div,
   #card_ot_severity .col-lg-5 > div {
@@ -7012,6 +7084,8 @@ function renderCpeComplaintSection(){
   // Filter out models with 0 count, and sort by count descending
   let activeModels = CPE_MODELS.filter(m => modelCounts[m] > 0).sort((a, b) => modelCounts[b] - modelCounts[a]);
   if (!activeModels.length) return; // No CPE data found
+  let limit = S.chartLimit || 0;
+  if (limit > 0) activeModels = activeModels.slice(0, limit);
   
   let activeCounts = activeModels.map(m => modelCounts[m]);
   let totalUniqueCpe = activeCounts.reduce((sum, c) => sum + c, 0);
@@ -7125,55 +7199,59 @@ function openCpeModelModal(modelName) {
   let rows = meta.modelTickets[modelName];
   showRowsM(rows, 'CPE Model: ' + modelName + ' (' + rows.length + ' unique devices)');
 }
+function getExpandedTableColumnClass(zKey){
+  if(zKey==='cpe_complaints') return 'expand-table-cpe';
+  if(zKey==='dup_top_cust') return 'expand-table-dup';
+  if(zKey==='ot_severity') return 'expand-table-ot';
+  if(zKey==='trend_total') return 'expand-table-trend';
+  return 'expand-table-generic';
+}
 function aggregateTickets(gran,rows){
   rows=rows||D.rawData||[];
   if(!dateCol)return {labels:[],displayLabels:[],values:[],keys:[]};
-  let mp={}, dates=[];
+  let mp={};
   rows.forEach(r=>{
-    let d=parseLocalDate(r[dateCol]);if(!d)return;dates.push(d);
+    let d=parseLocalDate(r[dateCol]);if(!d)return;
     let k;
     if(gran==='daily')k=toLocalDateStr(d);
     else if(gran==='weekly')k=toLocalDateStr(getWeekStart(d));
     else k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
     mp[k]=(mp[k]||0)+1;
   });
-  let base = new Date(), periods = [];
-  if(gran==='daily'){
-    let oldest=dates.length?new Date(Math.min.apply(null,dates)):base;
-    let cur=new Date(base.getFullYear(),base.getMonth(),base.getDate());
-    for(let i=1;cur>=new Date(oldest.getFullYear(),oldest.getMonth(),oldest.getDate()) && i<=90;i++){
-      let key=toLocalDateStr(cur);
-      periods.push({key,label:'Day '+ordinalWord(i),sub:i===1?'Today':(i===2?'Yesterday':formatTrendSubLabel(gran,cur)),value:mp[key]||0});
-      cur.setDate(cur.getDate()-1);
+  let keys=Object.keys(mp);
+  if(!keys.length)return {labels:[],displayLabels:[],values:[],keys:[]};
+  let cmp=(a,b)=>{
+    if(gran==='daily'||gran==='weekly') return parseLocalDate(a)-parseLocalDate(b);
+    let ap=a.split('-'),bp=b.split('-');
+    return (+ap[0]-+bp[0]) || (+ap[1]-+bp[1]);
+  };
+  keys.sort(cmp);
+  if(S.dateSortOrder !== 'asc') keys.reverse();
+  let labels=[],displayLabels=[],values=[];
+  keys.forEach((key,idx)=>{
+    values.push(mp[key]||0);
+    if(gran==='daily'){
+      let d=parseLocalDate(key);
+      let badge='D'+(idx+1);
+      let sub=d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):key;
+      labels.push(badge+' · '+sub);
+      displayLabels.push([badge,sub]);
+    }else if(gran==='weekly'){
+      let sd=parseLocalDate(key),ed=new Date(sd);ed.setDate(ed.getDate()+6);
+      let badge='W'+(idx+1);
+      let sub=(sd&&ed)?(sd.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'–'+ed.toLocaleDateString('en-US',{month:'short',day:'numeric'})):key;
+      labels.push(badge+' · '+sub);
+      displayLabels.push([badge,sub]);
+    }else{
+      let p=key.split('-');
+      let d=new Date(+p[0],(+p[1])-1,1);
+      let badge='M'+(idx+1);
+      let sub=d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+      labels.push(badge+' · '+sub);
+      displayLabels.push([badge,sub]);
     }
-  }else if(gran==='weekly'){
-    let oldest=dates.length?getWeekStart(new Date(Math.min.apply(null,dates))):getWeekStart(base);
-    let cur=getWeekStart(base);
-    for(let i=1;cur>=oldest && i<=104;i++){
-      let key=toLocalDateStr(cur);
-      periods.push({key,label:'Week '+ordinalWord(i),sub:i===1?'Current Week':(i===2?'Previous Week':formatTrendSubLabel(gran,cur)),value:mp[key]||0});
-      cur.setDate(cur.getDate()-7);
-    }
-  }else{
-    let oldest=dates.length?new Date(Math.min.apply(null,dates)):base;
-    let cur=new Date(base.getFullYear(),base.getMonth(),1);
-    let old=new Date(oldest.getFullYear(),oldest.getMonth(),1);
-    for(let i=1;cur>=old && i<=60;i++){
-      let key=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0');
-      periods.push({key,label:'Month '+ordinalWord(i),sub:i===1?'Current Month':(i===2?'Previous Month':formatTrendSubLabel(gran,cur)),value:mp[key]||0});
-      cur.setMonth(cur.getMonth()-1);
-    }
-  }
-  if (S.dateSortOrder === 'asc') {
-    periods.reverse();
-  }
-  periods.forEach((p, idx) => {
-    let n = idx + 1;
-    if (gran === 'daily') p.label = 'D' + n;
-    else if (gran === 'weekly') p.label = 'W' + n;
-    else p.label = 'M' + n;
   });
-  return {labels:periods.map(x=>x.label+' · '+x.sub),displayLabels:periods.map(x=>[x.label,x.sub]),values:periods.map(x=>x.value),keys:periods.map(x=>x.key)};
+  return {labels,displayLabels,values,keys};
 }
 function rowsForTrendPeriod(gran,key){
   if(!dateCol||!key)return [];
@@ -7284,11 +7362,21 @@ function ticketsOverTimeTableHtml(t) {
   `;
 }
 
+function getEffectiveTotalTrendGran(requestedGran){
+  if(range==='yearly') return 'monthly';
+  if(range==='monthly') return 'weekly';
+  if(range==='weekly') return 'daily';
+  if(range==='daily') return 'daily';
+  return requestedGran || TREND_GRAN || 'weekly';
+}
 function renderTicketTrendSection(){
   let area=document.getElementById('main');
+  let showManual = range==='all';
+  let effectiveGran=getEffectiveTotalTrendGran(TREND_GRAN);
+  let granLabel = effectiveGran==='daily' ? 'Day by Day' : (effectiveGran==='weekly' ? 'Week by Week' : 'Month by Month');
   let card=document.createElement('div');card.className='enterprise-card';card.id='card_trend_total';card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
   if (typeof isHidden === 'function' && isHidden('trend_total')) card.style.display = 'none';
-  card.innerHTML=`<div class="enterprise-head"><div class="enterprise-title"><div class="badge-ico"><svg class="ic"><use href="#i-trend"/></svg></div><div><h2>Total Ticket Numbers</h2></div></div><div class="pill-tabs" id="ticketTrendTabs"><button class="${TREND_GRAN==='daily'?'on':''}" onclick="switchTicketTrend('daily')">Daily View</button><button class="${TREND_GRAN==='weekly'?'on':''}" onclick="switchTicketTrend('weekly')">Weekly View</button><button class="${TREND_GRAN==='monthly'?'on':''}" onclick="switchTicketTrend('monthly')">Monthly View</button></div></div><div class="enterprise-body"><div class="chart-xl" onclick="openZoom('trend_total','bar')" style="cursor:pointer; height:260px;"><canvas id="totalTicketTrendChart"></canvas></div></div>`;
+  card.innerHTML=`<div class="enterprise-head"><div class="enterprise-title"><div class="badge-ico"><svg class="ic"><use href="#i-trend"/></svg></div><div><h2>Total Ticket Numbers</h2></div></div>${showManual?`<div class="pill-tabs" id="ticketTrendTabs"><button class="${TREND_GRAN==='daily'?'on':''}" onclick="switchTicketTrend('daily')">Daily View</button><button class="${TREND_GRAN==='weekly'?'on':''}" onclick="switchTicketTrend('weekly')">Weekly View</button><button class="${TREND_GRAN==='monthly'?'on':''}" onclick="switchTicketTrend('monthly')">Monthly View</button></div>`:`<span class="c-tag" style="background:rgba(99,102,241,.10);color:var(--ac);border:1px solid rgba(99,102,241,.16);">${granLabel}</span>`}</div><div class="enterprise-body"><div class="chart-xl" onclick="openZoom('trend_total','bar')" style="cursor:pointer; height:260px;"><canvas id="totalTicketTrendChart"></canvas></div></div>`;
   area.appendChild(card);
   setTimeout(()=>buildTicketTrendChart(TREND_GRAN),20);
 }
@@ -7296,13 +7384,14 @@ function switchTicketTrend(gran){TREND_GRAN=gran;document.querySelectorAll('#tic
 function buildTicketTrendChart(gran){
   let canvas=document.getElementById('totalTicketTrendChart');if(!canvas)return;
   if(CH.totalTicketTrendChart){try{CH.totalTicketTrendChart.destroy();}catch(e){}}
+  let actualGran=getEffectiveTotalTrendGran(gran);
   let baseRows = (typeof currentTicketPool === 'function' ? currentTicketPool() : F);
-  let a=aggregateTickets(gran,baseRows);
+  let a=aggregateTickets(actualGran,baseRows);
   let gc=S.dark?'rgba(255,255,255,.07)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b',col=cssVar('--ac');
   let colors=a.labels.map((_,i)=>P[i%P.length]);
   
   CHART_META['trend_total'] = {
-    title: 'Total Ticket Numbers (' + gran.toUpperCase() + ' View)',
+    title: 'Total Ticket Numbers (' + actualGran.toUpperCase() + ' View)',
     labels: a.labels,
     keys: a.keys,
     shortLabels: a.labels,
@@ -7332,7 +7421,7 @@ function buildTicketTrendChart(gran){
       },
       scales:{
         y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:9,weight:'700'}}},
-        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:6.5,weight:'700'},autoSkip:false,maxRotation:48,minRotation:48,padding:2}}
+        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:6.8,weight:'700'},autoSkip:false,maxRotation:0,minRotation:0,padding:2}}
       },
       onClick:(e,els)=>{
         openZoom('trend_total', 'bar');
@@ -7943,7 +8032,8 @@ function renderTopCustomersCard(duplicates, totalDupsCount) {
   let bId = 'dupTopCustCanvas';
   let zKey = 'dup_top_cust';
   
-  let topDuplicates = duplicates.slice(0, 15);
+  let limit = S.chartLimit || 0;
+  let topDuplicates = limit > 0 ? duplicates.slice(0, limit) : duplicates.slice();
   let chartLabels = topDuplicates.map(d => d.customer);
   let chartValues = topDuplicates.map(d => d.tickets.length);
   
@@ -10909,6 +10999,11 @@ function renderExpandedDataTable(){
   let rows=getFilteredExpandedRows();
   body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(EXPANDED_PAGE_STATE.zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
   if(counter) counter.textContent = rows.length.toLocaleString() + ' rows';
+  let panel=document.querySelector('.expand-data-panel');
+  if(panel){
+    panel.classList.remove('expand-data-panel-cpe','expand-data-panel-dup','expand-data-panel-ot','expand-data-panel-trend','expand-data-panel-generic');
+    panel.classList.add('expand-data-panel-' + getExpandedTableColumnClass(EXPANDED_PAGE_STATE.zKey).replace('expand-table-',''));
+  }
 }
 function setExpandedSearch(val){
   EXPANDED_PAGE_STATE.search=val||'';
@@ -11018,7 +11113,7 @@ function openExpandedChartPage(zKey,chartType){
     </div>
     <div class="expand-layout">
       <div class="expand-panel expand-chart-panel"><div class="expand-chart-box"><canvas id="expandPageCanvas"></canvas></div></div>
-      <div class="expand-panel expand-data-panel"><div class="expand-data-head">Data Breakdown</div><div class="expand-table-wrap"><div id="expandRowsMeta" class="expand-rows-meta"></div><table class="expand-table"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody id="expandTableBody"></tbody></table></div></div>
+      <div class="expand-panel expand-data-panel"><div class="expand-data-head">Data Breakdown</div><div class="expand-table-wrap"><div id="expandRowsMeta" class="expand-rows-meta"></div><table class="expand-table ${getExpandedTableColumnClass(zKey)}"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody id="expandTableBody"></tbody></table></div></div>
     </div>
   </div>`;
   document.body.appendChild(page);
@@ -11346,5 +11441,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a198838538f1db73',t:'MTc4Mzc4MDMwNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
