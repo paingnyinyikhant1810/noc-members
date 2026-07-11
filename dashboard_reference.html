@@ -5899,6 +5899,76 @@ body {
   }
 }
 
+
+/* ═══════════ AXIS 90 + CUTE CALENDAR + NEAT POPUP TABLE PATCH V32 ═══════════ */
+.period-tray,
+.expand-calendar-tray {
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,251,255,.98) 100%) !important;
+  border: 1px solid rgba(226,232,240,.96) !important;
+  box-shadow: 0 14px 30px rgba(15,23,42,.10) !important;
+}
+.expand-calendar-tray {
+  min-width: 248px !important;
+  padding: 8px !important;
+}
+.expand-calendar-range {
+  gap: 5px !important;
+}
+.expand-range-btn {
+  min-width: 58px !important;
+  height: 28px !important;
+  border-radius: 999px !important;
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  background: #f8fafc !important;
+}
+.expand-range-btn.on {
+  background: rgba(99,102,241,.10) !important;
+  border-color: rgba(99,102,241,.16) !important;
+}
+.expand-calendar-hint {
+  min-height: 30px !important;
+  border-radius: 10px !important;
+  font-size: 9.5px !important;
+  padding: 6px 8px !important;
+}
+.expand-sub-select {
+  height: 30px !important;
+  border-radius: 10px !important;
+  font-size: 9.5px !important;
+}
+
+#dModal .mtt {
+  table-layout: auto !important;
+  width: max-content !important;
+  min-width: 100% !important;
+}
+#dModal .mtt thead th,
+#dModal .mtt td {
+  white-space: nowrap !important;
+}
+#dModal .mtt th:nth-child(1),
+#dModal .mtt td:nth-child(1) { min-width: 90px !important; }
+#dModal .mtt th:nth-child(2),
+#dModal .mtt td:nth-child(2) { min-width: 132px !important; }
+#dModal .mtt th:nth-child(3),
+#dModal .mtt td:nth-child(3) { min-width: 84px !important; }
+#dModal .mtt th:nth-child(4),
+#dModal .mtt td:nth-child(4),
+#dModal .mtt th:nth-child(5),
+#dModal .mtt td:nth-child(5) { min-width: 118px !important; }
+#dModal .mtt th:nth-child(n+6),
+#dModal .mtt td:nth-child(n+6) { min-width: 110px !important; }
+#dModal .mtt td {
+  font-size: 10.5px !important;
+  padding: 7px 10px !important;
+}
+#dModal .mtt thead th {
+  font-size: 8.5px !important;
+  padding: 8px 10px !important;
+}
+
 </style>
 
   </head>
@@ -8045,7 +8115,7 @@ function renderCpeComplaintSection(){
         },
         scales: {
           y: { beginAtZero: true, grid: { color: gc }, ticks: { color: tc, font: { family: 'Inter', size: 9, weight: '600' } } },
-          x: { grid: { display: false }, ticks: { color: tc, font: { family: 'Inter', size: 6.8, weight: '700' }, autoSkip:false, maxRotation:32, minRotation:32, padding:2 } }
+          x: { grid: { display: false }, ticks: { color: tc, font: { family: 'Inter', size: 6.6, weight: '700' }, autoSkip:false, maxRotation:90, minRotation:90, padding:2 } }
         }
       }
     });
@@ -8092,7 +8162,7 @@ function aggregateTickets(gran,rows){
       let d=parseLocalDate(key);
       let label=d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):key;
       labels.push(label);
-      displayLabels.push(wrapAxisLabel(label,10));
+      displayLabels.push(label);
     }else if(gran==='weekly'){
       let sd=parseLocalDate(key),ed=new Date(sd);ed.setDate(ed.getDate()+6);
       let label=(sd&&ed)?(sd.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+ed.toLocaleDateString('en-US',{month:'short',day:'numeric'})):key;
@@ -8262,7 +8332,7 @@ function buildTicketTrendChart(gran){
   CH.totalTicketTrendChart=createSafeChart(canvas,{
     type:'bar',
     data:{
-      labels:a.displayLabels||wrapAxisLabels(a.labels,10),
+      labels:a.labels,
       datasets:[{label:'Tickets',data:a.values,backgroundColor:colors.length?colors:col,borderRadius:10,borderSkipped:false,maxBarThickness:34,categoryPercentage:.72,barPercentage:.82}]
     },
     options:{
@@ -8276,7 +8346,7 @@ function buildTicketTrendChart(gran){
       },
       scales:{
         y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:9,weight:'700'}}},
-        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:6.8,weight:'700'},autoSkip:false,maxRotation:0,minRotation:0,padding:2}}
+        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:6.6,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
       },
       onClick:(e,els)=>{
         openZoom('trend_total', 'bar');
@@ -8511,7 +8581,7 @@ function mkChart(id,type,data,gc,tc,fullLabels,showLeg,clickCol){
       valueLabels:{display:true,fontSize:8},
       tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',titleFont:{size:10,family:'Inter',weight:'700'},bodyFont:{size:9,family:'Inter'},cornerRadius:6,padding:8,callbacks:{title:ctx=>fullLabels[ctx[0].dataIndex]||''}}
     }};
-  if(type==='bar')opts.scales={y:{grid:{color:gc},ticks:{font:{size:9,family:'Inter',weight:'600'},color:tc}},x:{grid:{display:false},ticks:{maxRotation:labelCount>8?42:0,minRotation:labelCount>8?42:0,autoSkip:false,font:{size:6.8,family:'Inter',weight:'600'},color:tc,padding:3}}};
+  if(type==='bar')opts.scales={y:{grid:{color:gc},ticks:{font:{size:9,family:'Inter',weight:'600'},color:tc}},x:{grid:{display:false},ticks:{maxRotation:90,minRotation:90,autoSkip:false,font:{size:6.6,family:'Inter',weight:'600'},color:tc,padding:2}}};
   if(type==='line')opts.scales={y:{grid:{color:gc},ticks:{font:{size:9,family:'Inter',weight:'600'},color:tc}},x:{grid:{color:gc},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:labelCount>14?7:9,font:{size:7,family:'Inter',weight:'600'},color:tc,padding:4}}};
   if(type==='doughnut')opts.cutout='52%';
   if(clickCol)opts.onClick=(e,el)=>{if(el&&el.length)scheduleOpenDataM(clickCol,fullLabels[el[0].index]);};
@@ -8892,7 +8962,7 @@ function renderTopCustomersCard(duplicates, totalDupsCount) {
   let chartLabels = topDuplicates.map(d => d.customer);
   let chartValues = topDuplicates.map(d => d.tickets.length);
   
-  let rowsHtml = duplicates.map((d, i) => {
+  let rowsHtml = topDuplicates.map((d, i) => {
     let pc = totalDupsCount > 0 ? ((d.tickets.length / totalDupsCount) * 100).toFixed(1) : 0;
     let fc = P[i % P.length];
     return `
@@ -8959,7 +9029,7 @@ function renderTopCustomersCard(duplicates, totalDupsCount) {
   bindDuplicateGraphContext(card);
   
   setTimeout(() => {
-    let short = wrapAxisLabels(chartLabels, 10);
+    let short = chartLabels.slice();
     let colors = chartLabels.map((_, i) => P[i % P.length]);
     let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
     let tc = S.dark ? '#94a3b8' : '#6b7280';
@@ -9112,6 +9182,7 @@ function showOverTimeTicketDetailsM(tierName) {
   let matches = data.overTimeTickets.filter(x => x.tier === tierName).map(x => x.row);
   showRowsM(matches, 'OverTime Severity: ' + getOverTimeTierLabel(tierName));
 }
+
 
 function renderOverTimeDashboard() {
   setTimeout(() => { if (typeof refreshAllAppSelects === 'function') refreshAllAppSelects(); }, 35);
@@ -11975,7 +12046,7 @@ function createExpandedChartData(zd, chartType){
   if(chartType==='line'){
     return { type:'line', data:{ labels: wrapAxisLabels(labels,12), datasets:[{ label: zd.title, data: values, borderColor: colors[0]||cssVar('--ac'), backgroundColor: (colors[0]||cssVar('--ac')) + '22', fill:true, tension:.32, pointRadius:3, pointHoverRadius:4, borderWidth:2.2 }] } };
   }
-  return { type:'bar', data:{ labels: wrapAxisLabels(labels,12), datasets:[{ label: zd.title, data: values, backgroundColor: colors, borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] } };
+  return { type:'bar', data:{ labels: labels, datasets:[{ label: zd.title, data: values, backgroundColor: colors, borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] } };
 }
 function renderExpandedChart(){
   let zd=CHART_META[EXPANDED_PAGE_STATE.zKey];
@@ -11990,7 +12061,7 @@ function renderExpandedChart(){
     let rows=EXPANDED_PAGE_STATE.rows;
     cfg={
       type:'bar',
-      data:{ labels:(computed && computed.displayLabels && computed.displayLabels.length) ? computed.displayLabels : wrapAxisLabels(rows.map(r=>r.label),12), datasets:[{ label: zd.title, data: rows.map(r=>r.value), backgroundColor: rows.map(r=>r.color), borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] }
+      data:{ labels: rows.map(r=>r.label), datasets:[{ label: zd.title, data: rows.map(r=>r.value), backgroundColor: rows.map(r=>r.color), borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] }
     };
   }else{
     cfg=createExpandedChartData(zd, EXPANDED_PAGE_STATE.chartType||'bar');
@@ -12000,7 +12071,7 @@ function renderExpandedChart(){
     maintainAspectRatio:false,
     animation:{duration:320},
     plugins:{ legend:{display:false}, valueLabels:{display:true,fontSize:10}, tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}} },
-    scales:{ y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'}}}, x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:9,weight:'700'},autoSkip:false,maxRotation:(EXPANDED_PAGE_STATE.chartType==='line'?18:22),minRotation:(EXPANDED_PAGE_STATE.chartType==='line'?18:22),padding:6}} },
+    scales:{ y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'}}}, x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:8,weight:'700'},autoSkip:false,maxRotation:(EXPANDED_PAGE_STATE.chartType==='line'?24:90),minRotation:(EXPANDED_PAGE_STATE.chartType==='line'?24:90),padding:4}} },
     onClick:(e,els)=>{ if(els&&els.length) expandedRowClick(EXPANDED_PAGE_STATE.zKey, els[0].index); },
     onHover:(e,els)=>{ e.native.target.style.cursor=els&&els.length?'pointer':'default'; }
   };
@@ -12457,5 +12528,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1990b7a2a859c6b',t:'MTc4Mzc4NTg3NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a19920c20d319c6b',t:'MTc4Mzc4Njc0Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
