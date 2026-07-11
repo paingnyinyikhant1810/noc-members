@@ -4744,6 +4744,82 @@ body {
 
 
 /* ═══════════ COMPACT EXPAND PAGE + CUTE RECORD MODAL PATCH V21 ═══════════ */
+.expand-calendar-wrap {
+  position: relative;
+}
+.expand-calendar-tray {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 280px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(226,232,240,.96);
+  background: rgba(255,255,255,.97);
+  box-shadow: 0 14px 28px rgba(15,23,42,.10);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px) scale(.98);
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 20;
+}
+.expand-calendar-tray.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+.expand-calendar-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.expand-range-btn {
+  min-width: 68px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: #f8fafc;
+  color: var(--t2);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.expand-range-btn.on {
+  background: rgba(99,102,241,.10);
+  color: var(--ac);
+  border-color: rgba(99,102,241,.16);
+}
+.expand-calendar-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  margin-top: 8px;
+  border-radius: 10px;
+  border: 1px dashed rgba(203,213,225,.92);
+  background: #fbfcff;
+  color: var(--t3);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: center;
+  padding: 8px 10px;
+}
+.expand-sub-wrap {
+  margin-top: 8px;
+}
+.expand-sub-select {
+  width: 100%;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: #f8fafc;
+  color: var(--t1);
+  padding: 0 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  outline: none;
+}
 .expand-shell {
   max-width: 1080px !important;
   padding: 12px 14px 16px !important;
@@ -4845,11 +4921,54 @@ body {
   .expand-layout {
     grid-template-columns: 1fr !important;
   }
+  .expand-calendar-tray {
+    right: auto;
+    left: 0;
+    min-width: min(86vw, 280px);
+  }
   .expand-chart-box {
     height: 250px !important;
   }
   .expand-table-wrap {
     max-height: 300px !important;
+  }
+}
+
+/* ═══════════ GRAPH-TYPE TABLE WIDTH + CUTE MODAL ROWS PATCH V22 ═══════════ */
+#card_cpe_complaints .row.g-3 {
+  grid-template-columns: minmax(0, 2.65fr) minmax(156px, .85fr) !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 3.1fr) minmax(126px, .5fr) !important;
+}
+#card_cpe_complaints .col-lg-5 > div {
+  width: 156px !important;
+  justify-self: end !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 126px !important;
+  justify-self: end !important;
+}
+#dModal .mtt tbody tr:nth-child(odd) {
+  background: rgba(99,102,241,.035);
+}
+#dModal .mtt tbody tr:nth-child(even) {
+  background: rgba(255,255,255,.72);
+}
+#dModal .mtt tbody tr:hover {
+  background: rgba(99,102,241,.08) !important;
+}
+#dModal .mtt td,
+#dModal .mtt th {
+  border-color: rgba(226,232,240,.72) !important;
+}
+@media (max-width: 768px) {
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .col-lg-5 > div {
+    width: 100% !important;
   }
 }
 
@@ -6550,18 +6669,9 @@ function toggleDateSortOrder() {
   updateSubPeriodUI();
 }
 
-function updateSubPeriodUI(){
-  let wrap=document.getElementById("spWrap"),sel=document.getElementById("spSel"),hint=document.getElementById('periodSelectionHint');
-  if(range==='all'||!dateCol||D.isPivot||allDates.length===0){
-    if(wrap) wrap.style.display='none';
-    if(hint) hint.style.display='flex';
-    return;
-  }
-  if(wrap) wrap.style.display='flex';
-  if(hint) hint.style.display='none';
+function getSubPeriodOptionsForRange(){
   let opts=[];
   let asc = S.dateSortOrder === 'asc';
-  
   if(range==='yearly'){
     let years=new Set();
     allDates.forEach(d=>years.add(d.getFullYear()));
@@ -6600,10 +6710,20 @@ function updateSubPeriodUI(){
     });
     opts.unshift({v:'all',t:'All Days'});
   }
+  return opts;
+}
+function updateSubPeriodUI(){
+  let wrap=document.getElementById("spWrap"),sel=document.getElementById("spSel"),hint=document.getElementById('periodSelectionHint');
+  if(range==='all'||!dateCol||D.isPivot||allDates.length===0){
+    if(wrap) wrap.style.display='none';
+    if(hint) hint.style.display='flex';
+    return;
+  }
+  if(wrap) wrap.style.display='flex';
+  if(hint) hint.style.display='none';
+  let opts=getSubPeriodOptionsForRange();
   sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.t}</option>`).join(''); if(typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects();
   sel.value = subPeriod && opts.some(o=>o.v===subPeriod) ? subPeriod : 'all';
-  
-  
 }
 function onSubPeriodChange(){subPeriod=document.getElementById("spSel").value;applyFilter(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 let PERIOD_TRAY_OPEN=false;
@@ -7053,7 +7173,7 @@ function aggregateTickets(gran,rows){
     else if (gran === 'weekly') p.label = 'W' + n;
     else p.label = 'M' + n;
   });
-  return {labels:periods.map(x=>x.label+' · '+x.sub),displayLabels:periods.map(x=>x.label),values:periods.map(x=>x.value),keys:periods.map(x=>x.key)};
+  return {labels:periods.map(x=>x.label+' · '+x.sub),displayLabels:periods.map(x=>[x.label,x.sub]),values:periods.map(x=>x.value),keys:periods.map(x=>x.key)};
 }
 function rowsForTrendPeriod(gran,key){
   if(!dateCol||!key)return [];
@@ -7253,6 +7373,7 @@ function hashKey(s){let h=0;for(let i=0;i<String(s).length;i++)h=((h<<5)-h)+Stri
 function escapeJs(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 
 /* ═══════════ RENDER ═══════════ */
+let EXPAND_REOPEN_AFTER_FILTER = null;
 function doRender(){
   renderSum();renderDR();killCH();CHART_META={};
   let mainEl=document.getElementById("main");
@@ -7281,6 +7402,11 @@ function doRender(){
   setTimeout(() => { 
     if (typeof refreshAllAppSelects === 'function') refreshAllAppSelects(); 
     if (typeof applyGraphOrderToDashboard === 'function') applyGraphOrderToDashboard();
+    if (EXPAND_REOPEN_AFTER_FILTER) {
+      let p = EXPAND_REOPEN_AFTER_FILTER;
+      EXPAND_REOPEN_AFTER_FILTER = null;
+      setTimeout(()=>openExpandedChartPage(p.zKey, p.chartType), 60);
+    }
   }, 45);
   hideL();
   if(COMPARE_MODE)refreshComparePicksUI();
@@ -10728,6 +10854,13 @@ function closeExpandedChartPage(immediate){
   old.classList.add('closing');
   setTimeout(()=>{ let el=document.getElementById('expandChartPage'); if(el) el.remove(); document.body.style.overflow=''; }, 180);
 }
+document.addEventListener('click', function(ev){
+  let tray=document.getElementById('expandCalendarTray');
+  let wrap=document.querySelector('.expand-calendar-wrap');
+  if(tray && wrap && tray.classList.contains('open') && !wrap.contains(ev.target)){
+    toggleExpandCalendar(false);
+  }
+}, true);
 function getExpandedChartRows(zd){
   let labels = Array.isArray(zd.pieLabels) && zd.pieLabels.length ? zd.pieLabels.slice() : (zd.labels||[]).slice();
   let values = Array.isArray(zd.pieValues) && zd.pieValues.length ? zd.pieValues.slice() : ((zd.datasets&&zd.datasets[0]&&Array.isArray(zd.datasets[0].data)) ? zd.datasets[0].data.map(v=>typeof v==='object'&&v!==null?Number(v.y||0):Number(v||0)) : []);
@@ -10819,12 +10952,55 @@ function renderExpandedChart(){
   };
   expandedChartInstance=createSafeChart(document.getElementById('expandPageCanvas'),cfg);
 }
+function toggleExpandCalendar(forceState){
+  let tray=document.getElementById('expandCalendarTray');
+  let btn=document.getElementById('expandCalendarBtn');
+  if(!tray||!btn) return;
+  let open = typeof forceState === 'boolean' ? forceState : !tray.classList.contains('open');
+  tray.classList.toggle('open', open);
+  btn.classList.toggle('act', open);
+}
+function syncExpandedCalendarUI(){
+  let wrap=document.getElementById('expandSubWrap');
+  let sel=document.getElementById('expandSubSel');
+  let hint=document.getElementById('expandCalendarHint');
+  let tray=document.getElementById('expandCalendarTray');
+  if(!tray) return;
+  tray.querySelectorAll('[data-expand-range]').forEach(btn=>btn.classList.toggle('on', btn.getAttribute('data-expand-range')===range));
+  if(range==='all'||!dateCol||D.isPivot||allDates.length===0){
+    if(wrap) wrap.style.display='none';
+    if(hint) hint.style.display='flex';
+    return;
+  }
+  if(wrap) wrap.style.display='flex';
+  if(hint) hint.style.display='none';
+  let opts=getSubPeriodOptionsForRange();
+  if(sel){
+    sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.t}</option>`).join('');
+    sel.value = subPeriod && opts.some(o=>o.v===subPeriod) ? subPeriod : 'all';
+  }
+}
+function setExpandedCalendarRange(r){
+  EXPAND_REOPEN_AFTER_FILTER = { zKey: EXPANDED_PAGE_STATE.zKey, chartType: EXPANDED_PAGE_STATE.chartType || 'bar' };
+  range=r; subPeriod='all';
+  closeExpandedChartPage(true);
+  applyFilter();
+}
+function onExpandedCalendarSubChange(){
+  let sel=document.getElementById('expandSubSel');
+  if(!sel) return;
+  EXPAND_REOPEN_AFTER_FILTER = { zKey: EXPANDED_PAGE_STATE.zKey, chartType: EXPANDED_PAGE_STATE.chartType || 'bar' };
+  subPeriod=sel.value;
+  closeExpandedChartPage(true);
+  applyFilter();
+}
 function openExpandedChartPage(zKey,chartType){
   let zd=CHART_META[zKey]; if(!zd) return;
   closeExpandedChartPage(true);
   let rows=getExpandedChartRows(zd);
   let total = Number(zd.total || rows.reduce((s,r)=>s+r.value,0) || 0);
   EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows, search:'', sortBy:(zKey==='trend_total'?'natural':'value'), sortDir:(zKey==='trend_total'?'asc':'desc') };
+  let showCalendar = !!dateCol;
   let page=document.createElement('div');
   page.id='expandChartPage';
   page.className='expand-page';
@@ -10835,7 +11011,10 @@ function openExpandedChartPage(zKey,chartType){
         <div class="expand-title-badge"><svg class="ic"><use href="#i-chart"/></svg></div>
         <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1><p>Lovely simple expanded view with chart + data summary</p></div>
       </div>
-      <div class="expand-chip">${total.toLocaleString()} total</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${range==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${range==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${range==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${range==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${range==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div></div></div>` : ''}
+        <div class="expand-chip">${total.toLocaleString()} total</div>
+      </div>
     </div>
     <div class="expand-layout">
       <div class="expand-panel expand-chart-panel"><div class="expand-chart-box"><canvas id="expandPageCanvas"></canvas></div></div>
@@ -10846,6 +11025,7 @@ function openExpandedChartPage(zKey,chartType){
   document.body.style.overflow='hidden';
   requestAnimationFrame(()=>{ let el=document.getElementById('expandChartPage'); if(el) el.classList.add('show'); });
   page.scrollTop=0;
+  syncExpandedCalendarUI();
   renderExpandedChart();
   renderExpandedDataTable();
 }
