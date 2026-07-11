@@ -2196,6 +2196,82 @@
   }
 }
 
+
+/* ═══════════ CALENDAR PERIOD TRAY ═══════════ */
+.period-launch-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.period-toggle-btn {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+}
+.period-tray {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 430px;
+  max-width: min(92vw, 860px);
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border));
+  background: linear-gradient(180deg, var(--bg2) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%);
+  box-shadow: 0 18px 38px rgba(15,23,42,.12);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px) scale(.98);
+  transform-origin: top right;
+  transition: opacity .22s ease, transform .22s ease;
+  z-index: 130;
+}
+.period-tray.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+.period-tray-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 10px;
+}
+.period-tray-row {
+  margin-top: 10px;
+}
+.period-tray #spWrap {
+  width: 100%;
+}
+.period-tray #spSel {
+  width: 100%;
+  max-width: 100%;
+  min-width: 240px;
+}
+.period-toggle-btn.act {
+  background: var(--ac) !important;
+  color: #fff !important;
+  border-color: var(--ac) !important;
+}
+@media (max-width: 768px) {
+  .period-tray {
+    right: -8px;
+    min-width: min(92vw, 360px);
+    padding: 10px;
+  }
+  .period-tray-tabs {
+    width: 100%;
+  }
+  .period-tray-tabs .tp-b {
+    flex: 1 1 calc(50% - 4px);
+  }
+}
+
 </style>
 
   </head>
@@ -2250,27 +2326,29 @@
     <div class="hdr-s" id="subLbl" style="display:none;"></div>
   </div>
   <div class="hdr-r" style="display:flex; flex-direction:row; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; width:auto;">
-    <!-- First Nav Bar: Periods (All, Daily, Weekly, Monthly, Yearly) -->
-    <div class="tp">
-      <button class="tp-b on" data-r="all" onclick="setRange('all')">All</button>
-      <button class="tp-b" data-r="daily" onclick="setRange('daily')">Daily</button>
-      <button class="tp-b" data-r="weekly" onclick="setRange('weekly')">Weekly</button>
-      <button class="tp-b" data-r="monthly" onclick="setRange('monthly')">Monthly</button>
-      <button class="tp-b" data-r="yearly" onclick="setRange('yearly')">Yearly</button>
+    <div class="period-launch-wrap" id="periodLaunchWrap">
+      <button class="icon-btn period-toggle-btn" id="periodToggleBtn" title="Date Range" onclick="togglePeriodTray()"><svg class="ic"><use href="#i-calendar"/></svg></button>
+      <div class="period-tray" id="periodTray">
+        <div class="period-tray-head"><svg class="ic ic-sm"><use href="#i-calendar"/></svg> Date View</div>
+        <div class="tp period-tray-tabs">
+          <button class="tp-b on" data-r="all" onclick="setRange('all')">All</button>
+          <button class="tp-b" data-r="daily" onclick="setRange('daily')">Daily</button>
+          <button class="tp-b" data-r="weekly" onclick="setRange('weekly')">Weekly</button>
+          <button class="tp-b" data-r="monthly" onclick="setRange('monthly')">Monthly</button>
+          <button class="tp-b" data-r="yearly" onclick="setRange('yearly')">Yearly</button>
+        </div>
+        <div class="period-tray-row">
+          <div class="sp-wrap" id="spWrap" style="display:none;align-items:center;gap:6px;">
+            <select class="sp-sel" id="spSel" onchange="onSubPeriodChange()"></select>
+          </div>
+        </div>
+      </div>
     </div>
-    <!-- Date Dropdown -->
-    <div class="sp-wrap" id="spWrap" style="display:none;align-items:center;gap:6px;">
-      <select class="sp-sel" id="spSel" onchange="onSubPeriodChange()"></select>
-    </div>
-    <!-- Second Nav Bar: Analytical Modes (Compare, Duplicate Tickets, OverTime, Pivot, Create Graph) -->
     <div class="tp">
       <button class="tp-b cmp" id="cmpTab" style="margin-left:0 !important;border-left:none !important;padding-left:12px !important;" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg> Compare <span class="cnt" id="cmpCnt">0</span></button>
-      <button class="tp-b dup" id="dupTab" onclick="toggleDuplicateMode()" title="Duplicate Tickets"><svg class="ic ic-sm"><use href="#i-ticket"/></svg> Duplicate Tickets</button>
-      <button class="tp-b ovr" id="ovrTab" onclick="toggleOverTimeMode()" title="OverTime Analytics"><svg class="ic ic-sm"><use href="#i-clock"/></svg> OverTime</button>
       <button class="tp-b pvt" id="pvtTab" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg> Pivot</button>
       <button class="tp-b flt" id="fltTab" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg> Create Graph</button>
     </div>
-    <!-- Settings -->
     <div style="display:flex; align-items:center; gap:8px;">
       <button class="icon-btn" id="setBtn" title="Settings" onclick="openSettings()"><svg class="ic"><use href="#i-settings"/></svg></button>
     </div>
@@ -3930,6 +4008,20 @@ function updateSubPeriodUI(){
   
 }
 function onSubPeriodChange(){subPeriod=document.getElementById("spSel").value;applyFilter(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+let PERIOD_TRAY_OPEN=false;
+function togglePeriodTray(forceState){
+  let tray=document.getElementById('periodTray');
+  let btn=document.getElementById('periodToggleBtn');
+  if(!tray||!btn)return;
+  PERIOD_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !PERIOD_TRAY_OPEN;
+  tray.classList.toggle('open', PERIOD_TRAY_OPEN);
+  btn.classList.toggle('act', PERIOD_TRAY_OPEN);
+}
+document.addEventListener('click', function(ev){
+  let wrap=document.getElementById('periodLaunchWrap');
+  if(!wrap)return;
+  if(PERIOD_TRAY_OPEN && !wrap.contains(ev.target)) togglePeriodTray(false);
+}, true);
 function getWeekStart(d){let dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay());dt.setHours(0,0,0,0);return dt;}
 function getWeekNumber(d){let s=new Date(d.getFullYear(),0,1);return Math.ceil(((d-s)/86400000+s.getDay()+1)/7);}
 
@@ -4054,16 +4146,68 @@ function buildTopKpiItems(totalRows){
     {ic:'i-chart',v:thisMonth.toLocaleString(),l:"This Month's Tickets",c:'var(--ac2)',trend:dateCol?trendObj(thisMonth,lastMonth):null,kpi:'month'}
   ];
 }
+function loadDuplicateColumnsForCurrentTab(){
+  let found = findCustomerAndTicketCols();
+  let savedDup = (S.dupColsByTab && S.dupColsByTab[D.tabName]) ? S.dupColsByTab[D.tabName] : {};
+  DETECTED_CUST_COL = savedDup.cust || DETECTED_CUST_COL || found.customerCol || (D.headers ? D.headers[0] : '');
+  DETECTED_TKT_COL = savedDup.tkt || DETECTED_TKT_COL || found.ticketCol || (D.headers ? (D.headers[1] || D.headers[0]) : '');
+  return { customerCol: DETECTED_CUST_COL, ticketCol: DETECTED_TKT_COL };
+}
+function loadOverTimeColumnsForCurrentTab(){
+  let found = findCreatedAndResolvedCols();
+  let savedOvr = (S.ovrColsByTab && S.ovrColsByTab[D.tabName]) ? S.ovrColsByTab[D.tabName] : {};
+  DETECTED_CRE_COL = savedOvr.cre || DETECTED_CRE_COL || found.createdCol || (D.headers ? D.headers[0] : '');
+  DETECTED_RES_COL = savedOvr.res || DETECTED_RES_COL || found.resolvedCol || (D.headers ? (D.headers[1] || D.headers[0]) : '');
+  return { createdCol: DETECTED_CRE_COL, resolvedCol: DETECTED_RES_COL };
+}
+function bindDuplicateGraphContext(card){
+  if(!card)return;
+  card.oncontextmenu=function(e){
+    showAppContextMenu(e,[{icon:'⚙️',label:'Duplicate Field Settings',onClick:openDuplicateGraphSettingsModal}]);
+  };
+  card.title='Right-click to change duplicate source fields';
+}
+function bindOverTimeGraphContext(card){
+  if(!card)return;
+  card.oncontextmenu=function(e){
+    showAppContextMenu(e,[{icon:'⚙️',label:'OverTime Field Settings',onClick:openOverTimeGraphSettingsModal}]);
+  };
+  card.title='Right-click to change overtime source fields';
+}
+function renderDuplicateOverviewInMain(){
+  if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
+  let cols = loadDuplicateColumnsForCurrentTab();
+  if(!cols.customerCol || !cols.ticketCol) return;
+  let dupResult = getDuplicateTicketsDataForCols(F, cols.customerCol, cols.ticketCol);
+  if(!dupResult.duplicates || !dupResult.duplicates.length) return;
+  if (dateCol) {
+    let dupRowsAll = [];
+    dupResult.duplicates.forEach(d => { dupRowsAll = dupRowsAll.concat(d.tickets); });
+    renderDuplicateTrendCard(dupRowsAll);
+  }
+  renderTopCustomersCard(dupResult.duplicates, dupResult.totalDupsCount);
+}
+function renderOverTimeOverviewInMain(){
+  if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
+  let cols = loadOverTimeColumnsForCurrentTab();
+  if(!cols.createdCol || !cols.resolvedCol) return;
+  let otData = getOverTimeTicketsData(F, cols.createdCol, cols.resolvedCol, false);
+  if(!otData.overTimeTickets || !otData.overTimeTickets.length) return;
+  if (dateCol) {
+    let otRowsAll = otData.overTimeTickets.map(x => x.row);
+    renderOverTimeTrendCard(otRowsAll);
+  }
+  renderOverTimeSeverityCard(otData.counts, otData.overTimeTickets.length);
+}
 function renderEnterpriseSections(){
   if(D.isPivot)return;
   
-  // Render CPE Complaint Count Graph as default primary graph for all period views!
   renderCpeComplaintSection();
-  
-  // Show Total Ticket Numbers chart ONLY in the "All" tab of the period range filters (All, Daily, Weekly, Monthly, Yearly)
   if (range === 'all') {
     renderTicketTrendSection();
   }
+  renderDuplicateOverviewInMain();
+  renderOverTimeOverviewInMain();
 }
 
 function renderCpeComplaintSection(){
@@ -4869,7 +5013,7 @@ function onDupCustColChange(val) {
   S.dupColsByTab[D.tabName].cust = val;
   if (typeof saveSettings === 'function') saveSettings();
   if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
-  renderDuplicateDashboard();
+  if (DUPLICATE_MODE) renderDuplicateDashboard(); else if (D.rawData) doRender();
 }
 
 function onDupTktColChange(val) {
@@ -4879,7 +5023,7 @@ function onDupTktColChange(val) {
   S.dupColsByTab[D.tabName].tkt = val;
   if (typeof saveSettings === 'function') saveSettings();
   if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
-  renderDuplicateDashboard();
+  if (DUPLICATE_MODE) renderDuplicateDashboard(); else if (D.rawData) doRender();
 }
 
 function showDuplicateTicketsM(customerName) {
@@ -5015,6 +5159,7 @@ function renderDuplicateTrendCard(dupRows) {
     </div>
   `;
   area.appendChild(card);
+  bindDuplicateGraphContext(card);
   
   setTimeout(() => {
     let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
@@ -5120,6 +5265,7 @@ function renderTopCustomersCard(duplicates, totalDupsCount) {
     </div>
   `;
   area.appendChild(card);
+  bindDuplicateGraphContext(card);
   
   setTimeout(() => {
     let short = chartLabels.map(l => l.length > 15 ? l.substring(0, 12) + '…' : l);
@@ -5194,7 +5340,7 @@ function findCreatedAndResolvedCols() {
   return { createdCol, resolvedCol };
 }
 
-function getOverTimeTicketsData(rows, creCol, resCol) {
+function getOverTimeTicketsData(rows, creCol, resCol, useSearch = true) {
   let overTimeTickets = [];
   let counts = { "50%": 0, "70%": 0, "90%": 0 };
   rows.forEach(r => {
@@ -5223,7 +5369,7 @@ function getOverTimeTicketsData(rows, creCol, resCol) {
   });
   
   // Apply search filter if query exists
-  if (OVR_SEARCH_QUERY.trim()) {
+  if (useSearch && OVR_SEARCH_QUERY.trim()) {
     let q = OVR_SEARCH_QUERY.toLowerCase().trim();
     overTimeTickets = overTimeTickets.filter(ot => {
       // Search in all columns of the row
@@ -5249,7 +5395,7 @@ function onOvrCreColChange(val) {
   S.ovrColsByTab[D.tabName].cre = val;
   if (typeof saveSettings === 'function') saveSettings();
   if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
-  renderOverTimeDashboard();
+  if (OVERTIME_MODE) renderOverTimeDashboard(); else if (D.rawData) doRender();
 }
 
 function onOvrResColChange(val) {
@@ -5259,7 +5405,7 @@ function onOvrResColChange(val) {
   S.ovrColsByTab[D.tabName].res = val;
   if (typeof saveSettings === 'function') saveSettings();
   if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
-  renderOverTimeDashboard();
+  if (OVERTIME_MODE) renderOverTimeDashboard(); else if (D.rawData) doRender();
 }
 
 function onOvrSearchInput(val) {
@@ -5394,6 +5540,7 @@ function renderOverTimeTrendCard(otRowsAll) {
     </div>
   `;
   area.appendChild(card);
+  bindOverTimeGraphContext(card);
   setTimeout(() => {
     let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
     let tc = S.dark ? '#94a3b8' : '#6b7280';
@@ -5495,6 +5642,7 @@ function renderOverTimeSeverityCard(counts, totalOtCount) {
     </div>
   `;
   area.appendChild(card);
+  bindOverTimeGraphContext(card);
   setTimeout(() => {
     let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
     let tc = S.dark ? '#94a3b8' : '#6b7280';
@@ -7803,10 +7951,10 @@ function editSavedChartTitle(id){
     FILTER_MODE = true;
     PIVOT_FILTER_MODE = false;
     COMPARE_MODE=false;DUPLICATE_MODE=false;OVERTIME_MODE=false;
-    document.getElementById("cmpTab").classList.remove('on');
-    document.getElementById("dupTab").classList.remove('on');
-    document.getElementById("ovrTab").classList.remove('on');
-    document.getElementById("fltTab").classList.add('on');
+    let _cmp=document.getElementById("cmpTab"); if(_cmp) _cmp.classList.remove('on');
+    let _dup=document.getElementById("dupTab"); if(_dup) _dup.classList.remove('on');
+    let _ovr=document.getElementById("ovrTab"); if(_ovr) _ovr.classList.remove('on');
+    let _flt=document.getElementById("fltTab"); if(_flt) _flt.classList.add('on');
     
     // Restore ALL saved filter selections
     FILTER_SELECTIONS = {};
@@ -7827,10 +7975,10 @@ function editSavedChartTitle(id){
     PIVOT_FILTER_MODE = true;
     FILTER_MODE = false;
     COMPARE_MODE=false;DUPLICATE_MODE=false;OVERTIME_MODE=false;
-    document.getElementById("cmpTab").classList.remove('on');
-    document.getElementById("dupTab").classList.remove('on');
-    document.getElementById("ovrTab").classList.remove('on');
-    document.getElementById("fltTab").classList.remove('on');
+    let _cmp2=document.getElementById("cmpTab"); if(_cmp2) _cmp2.classList.remove('on');
+    let _dup2=document.getElementById("dupTab"); if(_dup2) _dup2.classList.remove('on');
+    let _ovr2=document.getElementById("ovrTab"); if(_ovr2) _ovr2.classList.remove('on');
+    let _flt2=document.getElementById("fltTab"); if(_flt2) _flt2.classList.remove('on');
     
     // Restore saved pivot config
     PF_ROW_FIELD = chart.config.rowField || '';
@@ -7842,6 +7990,99 @@ function editSavedChartTitle(id){
 }
 
 
+
+function closeGraphFieldSettingsModal(){
+  let el=document.getElementById('graphFieldSettingsModal');
+  if(el) el.remove();
+}
+function openDuplicateGraphSettingsModal(){
+  if(!D || !D.headers || !D.headers.length) return;
+  let cols = loadDuplicateColumnsForCurrentTab();
+  closeGraphFieldSettingsModal();
+  let m=document.createElement('div');
+  m.id='graphFieldSettingsModal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:12000;padding:16px;';
+  m.innerHTML=`<div style="width:min(520px,96vw);background:var(--bg2);border:1px solid var(--border);border-radius:18px;box-shadow:0 24px 48px rgba(0,0,0,.25);overflow:hidden;">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 0%,var(--bg2) 100%);">
+      <div style="font-weight:800;color:var(--t1);font-size:15px;">Duplicate Ticket Graph Settings</div>
+      <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="padding:16px;display:grid;gap:12px;">
+      <div>
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Customer Field</label>
+        <select id="dupFieldSettingCust" class="sel-w" style="width:100%;min-width:0;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.customerCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Ticket ID Field</label>
+        <select id="dupFieldSettingTkt" class="sel-w" style="width:100%;min-width:0;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.ticketCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+      </div>
+      <div style="font-size:11px;color:var(--t3);">Right-click duplicate graphs to change which sheet columns are used for duplicate detection.</div>
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:var(--bg3);">
+      <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
+      <button class="btn-mc" onclick="applyDuplicateGraphSettingsFromModal()">Apply</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function applyDuplicateGraphSettingsFromModal(){
+  let cust=document.getElementById('dupFieldSettingCust');
+  let tkt=document.getElementById('dupFieldSettingTkt');
+  if(cust) DETECTED_CUST_COL = cust.value;
+  if(tkt) DETECTED_TKT_COL = tkt.value;
+  if (!S.dupColsByTab) S.dupColsByTab = {};
+  if (!S.dupColsByTab[D.tabName]) S.dupColsByTab[D.tabName] = {};
+  S.dupColsByTab[D.tabName].cust = DETECTED_CUST_COL;
+  S.dupColsByTab[D.tabName].tkt = DETECTED_TKT_COL;
+  saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  closeGraphFieldSettingsModal();
+  if (D.rawData) doRender();
+}
+function openOverTimeGraphSettingsModal(){
+  if(!D || !D.headers || !D.headers.length) return;
+  let cols = loadOverTimeColumnsForCurrentTab();
+  closeGraphFieldSettingsModal();
+  let m=document.createElement('div');
+  m.id='graphFieldSettingsModal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:12000;padding:16px;';
+  m.innerHTML=`<div style="width:min(520px,96vw);background:var(--bg2);border:1px solid var(--border);border-radius:18px;box-shadow:0 24px 48px rgba(0,0,0,.25);overflow:hidden;">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 0%,var(--bg2) 100%);">
+      <div style="font-weight:800;color:var(--t1);font-size:15px;">OverTime Graph Settings</div>
+      <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="padding:16px;display:grid;gap:12px;">
+      <div>
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Created Time Field</label>
+        <select id="ovrFieldSettingCre" class="sel-w" style="width:100%;min-width:0;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.createdCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Resolved Time Field</label>
+        <select id="ovrFieldSettingRes" class="sel-w" style="width:100%;min-width:0;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.resolvedCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+      </div>
+      <div style="font-size:11px;color:var(--t3);">Right-click overtime graphs to change which sheet columns are used for duration calculation.</div>
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:var(--bg3);">
+      <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
+      <button class="btn-mc" onclick="applyOverTimeGraphSettingsFromModal()">Apply</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function applyOverTimeGraphSettingsFromModal(){
+  let cre=document.getElementById('ovrFieldSettingCre');
+  let res=document.getElementById('ovrFieldSettingRes');
+  if(cre) DETECTED_CRE_COL = cre.value;
+  if(res) DETECTED_RES_COL = res.value;
+  if (!S.ovrColsByTab) S.ovrColsByTab = {};
+  if (!S.ovrColsByTab[D.tabName]) S.ovrColsByTab[D.tabName] = {};
+  S.ovrColsByTab[D.tabName].cre = DETECTED_CRE_COL;
+  S.ovrColsByTab[D.tabName].res = DETECTED_RES_COL;
+  saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  closeGraphFieldSettingsModal();
+  if (D.rawData) doRender();
+}
 
 /* ═══════════ ZOOM ═══════════ */
 function openZoom(zKey,chartType){
@@ -8164,5 +8405,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a195bc4dace3ce26',t:'MTc4Mzc1MTE3NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a195ce723f3cce26',t:'MTc4Mzc1MTkxOA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
