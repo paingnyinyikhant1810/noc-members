@@ -2217,19 +2217,22 @@
   padding: 12px;
   border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border));
-  background: linear-gradient(180deg, var(--bg2) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%);
-  box-shadow: 0 18px 38px rgba(15,23,42,.12);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%);
+  box-shadow: 0 20px 44px rgba(15,23,42,.14);
+  backdrop-filter: blur(12px);
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-8px) scale(.98);
+  transform: translateY(-14px) scale(.96);
+  filter: blur(3px);
   transform-origin: top right;
-  transition: opacity .22s ease, transform .22s ease;
+  transition: opacity .32s cubic-bezier(.22,1,.36,1), transform .36s cubic-bezier(.22,1,.36,1), filter .32s ease;
   z-index: 130;
 }
 .period-tray.open {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
+  filter: blur(0);
 }
 .period-tray-head {
   display: inline-flex;
@@ -2258,6 +2261,37 @@
   color: #fff !important;
   border-color: var(--ac) !important;
 }
+.tool-nav {
+  gap: 4px !important;
+  padding: 4px !important;
+}
+.tool-btn {
+  position: relative !important;
+  width: 34px !important;
+  height: 34px !important;
+  padding: 0 !important;
+  border-radius: 10px !important;
+  justify-content: center !important;
+}
+.tool-btn .ic {
+  width: 15px !important;
+  height: 15px !important;
+}
+.tool-btn .cnt {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px !important;
+  font-size: 9px !important;
+  line-height: 1;
+  box-shadow: 0 4px 10px rgba(15,23,42,.18);
+}
 @media (max-width: 768px) {
   .period-tray {
     right: -8px;
@@ -2269,6 +2303,98 @@
   }
   .period-tray-tabs .tp-b {
     flex: 1 1 calc(50% - 4px);
+  }
+}
+
+/* ═══════════ COMPACT TOOL NAV + SMALLER GRAPH PATCH V6 ═══════════ */
+.tool-nav {
+  gap: 4px !important;
+}
+.tool-nav .tool-btn {
+  margin-left: 0 !important;
+  border-left: none !important;
+  padding-left: 0 !important;
+  min-width: 34px !important;
+}
+.tool-nav .tool-btn.on {
+  box-shadow: 0 6px 14px rgba(15,23,42,.12) !important;
+}
+
+.cd .cb > .chb:only-child {
+  height: 340px !important;
+  min-height: 340px !important;
+}
+#card_trend_main .chb,
+#card_dup_trend .chb,
+#card_ot_trend .chb,
+#card_cmp_totals .chb,
+#card_dup_top_cust .chb,
+[id^="card_ot_"] .chb,
+[id^="card_dup_"] .chb {
+  height: 360px !important;
+  min-height: 360px !important;
+}
+.cd .row.g-3 {
+  grid-template-columns: minmax(0, 1.75fr) minmax(220px, .82fr) !important;
+}
+.cd .row.g-3 .chb {
+  height: 300px !important;
+  min-height: 300px !important;
+}
+.cd .row.g-3 .col-lg-5 > div {
+  height: 300px !important;
+  min-height: 300px !important;
+  max-height: 300px !important;
+}
+.cd .mini-data-grid {
+  max-height: 84px !important;
+}
+
+@media (max-width: 1100px) {
+  .cd .cb > .chb:only-child {
+    height: 300px !important;
+    min-height: 300px !important;
+  }
+  #card_trend_main .chb,
+  #card_dup_trend .chb,
+  #card_ot_trend .chb,
+  #card_cmp_totals .chb,
+  #card_dup_top_cust .chb,
+  [id^="card_ot_"] .chb,
+  [id^="card_dup_"] .chb {
+    height: 320px !important;
+    min-height: 320px !important;
+  }
+  .cd .row.g-3 .chb,
+  .cd .row.g-3 .col-lg-5 > div {
+    height: 260px !important;
+    min-height: 260px !important;
+    max-height: 260px !important;
+  }
+}
+@media (max-width: 768px) {
+  .period-tray {
+    transition: opacity .28s cubic-bezier(.22,1,.36,1), transform .3s cubic-bezier(.22,1,.36,1), filter .28s ease;
+  }
+  .cd .cb > .chb:only-child {
+    height: 260px !important;
+    min-height: 260px !important;
+  }
+  #card_trend_main .chb,
+  #card_dup_trend .chb,
+  #card_ot_trend .chb,
+  #card_cmp_totals .chb,
+  #card_dup_top_cust .chb,
+  [id^="card_ot_"] .chb,
+  [id^="card_dup_"] .chb {
+    height: 270px !important;
+    min-height: 270px !important;
+  }
+  .cd .row.g-3 .chb,
+  .cd .row.g-3 .col-lg-5 > div {
+    height: 220px !important;
+    min-height: 220px !important;
+    max-height: 220px !important;
   }
 }
 
@@ -2344,10 +2470,10 @@
         </div>
       </div>
     </div>
-    <div class="tp">
-      <button class="tp-b cmp" id="cmpTab" style="margin-left:0 !important;border-left:none !important;padding-left:12px !important;" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg> Compare <span class="cnt" id="cmpCnt">0</span></button>
-      <button class="tp-b pvt" id="pvtTab" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg> Pivot</button>
-      <button class="tp-b flt" id="fltTab" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg> Create Graph</button>
+    <div class="tp tool-nav">
+      <button class="tp-b cmp tool-btn" id="cmpTab" style="margin-left:0 !important;border-left:none !important;padding-left:0 !important;" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg><span class="cnt" id="cmpCnt">0</span></button>
+      <button class="tp-b pvt tool-btn" id="pvtTab" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg></button>
+      <button class="tp-b flt tool-btn" id="fltTab" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg></button>
     </div>
     <div style="display:flex; align-items:center; gap:8px;">
       <button class="icon-btn" id="setBtn" title="Settings" onclick="openSettings()"><svg class="ic"><use href="#i-settings"/></svg></button>
@@ -8001,26 +8127,32 @@ function openDuplicateGraphSettingsModal(){
   closeGraphFieldSettingsModal();
   let m=document.createElement('div');
   m.id='graphFieldSettingsModal';
-  m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:12000;padding:16px;';
-  m.innerHTML=`<div style="width:min(520px,96vw);background:var(--bg2);border:1px solid var(--border);border-radius:18px;box-shadow:0 24px 48px rgba(0,0,0,.25);overflow:hidden;">
-    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 0%,var(--bg2) 100%);">
-      <div style="font-weight:800;color:var(--t1);font-size:15px;">Duplicate Ticket Graph Settings</div>
+  m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
+  m.innerHTML=`<div style="width:min(560px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--orange) 10%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="width:42px;height:42px;border-radius:14px;background:rgba(245,158,11,.14);color:var(--orange);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-ticket"/></svg></div>
+        <div>
+          <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">Duplicate Ticket Graph Settings</div>
+          <div style="font-size:11.5px;color:var(--t2);margin-top:4px;">Choose which columns from this sheet identify duplicate customers and ticket numbers.</div>
+        </div>
+      </div>
       <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
     </div>
-    <div style="padding:16px;display:grid;gap:12px;">
-      <div>
-        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Customer Field</label>
-        <select id="dupFieldSettingCust" class="sel-w" style="width:100%;min-width:0;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.customerCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+    <div style="padding:18px;display:grid;gap:14px;">
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);">
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Customer Field</label>
+        <select id="dupFieldSettingCust" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.customerCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
       </div>
-      <div>
-        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Ticket ID Field</label>
-        <select id="dupFieldSettingTkt" class="sel-w" style="width:100%;min-width:0;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.ticketCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);">
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Ticket ID Field</label>
+        <select id="dupFieldSettingTkt" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.ticketCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
       </div>
-      <div style="font-size:11px;color:var(--t3);">Right-click duplicate graphs to change which sheet columns are used for duplicate detection.</div>
+      <div style="font-size:11.5px;color:var(--t3);padding:10px 12px;border-radius:14px;background:var(--ac-bg);border:1px solid color-mix(in srgb,var(--ac) 14%,var(--border));">Tip: Right-click duplicate graphs anytime to quickly update these source fields for the current tab.</div>
     </div>
-    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:var(--bg3);">
+    <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:color-mix(in srgb,var(--bg3) 80%,var(--bg2));">
       <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
-      <button class="btn-mc" onclick="applyDuplicateGraphSettingsFromModal()">Apply</button>
+      <button class="btn-mc" onclick="applyDuplicateGraphSettingsFromModal()">Apply Settings</button>
     </div>
   </div>`;
   document.body.appendChild(m);
@@ -8045,26 +8177,32 @@ function openOverTimeGraphSettingsModal(){
   closeGraphFieldSettingsModal();
   let m=document.createElement('div');
   m.id='graphFieldSettingsModal';
-  m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:12000;padding:16px;';
-  m.innerHTML=`<div style="width:min(520px,96vw);background:var(--bg2);border:1px solid var(--border);border-radius:18px;box-shadow:0 24px 48px rgba(0,0,0,.25);overflow:hidden;">
-    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 0%,var(--bg2) 100%);">
-      <div style="font-weight:800;color:var(--t1);font-size:15px;">OverTime Graph Settings</div>
+  m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
+  m.innerHTML=`<div style="width:min(560px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--red) 8%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="width:42px;height:42px;border-radius:14px;background:rgba(239,68,68,.12);color:var(--red);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-clock"/></svg></div>
+        <div>
+          <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">OverTime Graph Settings</div>
+          <div style="font-size:11.5px;color:var(--t2);margin-top:4px;">Choose which columns from this sheet define created time and resolved time for overtime calculation.</div>
+        </div>
+      </div>
       <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
     </div>
-    <div style="padding:16px;display:grid;gap:12px;">
-      <div>
-        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Created Time Field</label>
-        <select id="ovrFieldSettingCre" class="sel-w" style="width:100%;min-width:0;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.createdCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+    <div style="padding:18px;display:grid;gap:14px;">
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);">
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Created Time Field</label>
+        <select id="ovrFieldSettingCre" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.createdCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
       </div>
-      <div>
-        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Resolved Time Field</label>
-        <select id="ovrFieldSettingRes" class="sel-w" style="width:100%;min-width:0;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.resolvedCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);">
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Resolved Time Field</label>
+        <select id="ovrFieldSettingRes" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.resolvedCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
       </div>
-      <div style="font-size:11px;color:var(--t3);">Right-click overtime graphs to change which sheet columns are used for duration calculation.</div>
+      <div style="font-size:11.5px;color:var(--t3);padding:10px 12px;border-radius:14px;background:var(--ac-bg);border:1px solid color-mix(in srgb,var(--ac) 14%,var(--border));">Tip: Right-click overtime graphs anytime to quickly update these source fields for the current tab.</div>
     </div>
-    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:var(--bg3);">
+    <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:color-mix(in srgb,var(--bg3) 80%,var(--bg2));">
       <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
-      <button class="btn-mc" onclick="applyOverTimeGraphSettingsFromModal()">Apply</button>
+      <button class="btn-mc" onclick="applyOverTimeGraphSettingsFromModal()">Apply Settings</button>
     </div>
   </div>`;
   document.body.appendChild(m);
@@ -8405,5 +8543,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a195ce723f3cce26',t:'MTc4Mzc1MTkxOA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
