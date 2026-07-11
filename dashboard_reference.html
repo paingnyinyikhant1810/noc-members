@@ -1681,6 +1681,146 @@
 
 
 @keyframes fadeInMenu { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+    /* ═══════════ COMPACT DASHBOARD TUNING ═══════════ */
+
+/* overall spacing */
+.enterprise-grid{
+  gap:10px !important;
+  margin-bottom:10px !important;
+}
+.enterprise-card{
+  border-radius:12px !important;
+}
+.enterprise-head{
+  padding:10px 14px !important;
+}
+.enterprise-title h2{
+  font-size:14px !important;
+}
+.enterprise-title p{
+  font-size:10px !important;
+}
+.enterprise-body{
+  padding:10px 12px !important;
+}
+
+/* big charts smaller */
+.chart-xl{
+  height:240px !important;
+}
+.chart-md{
+  height:220px !important;
+}
+.zoom-chart-area{
+  height:320px !important;
+}
+
+/* old card/chart blocks smaller */
+.chb{
+  height:150px !important;
+  padding:4px !important;
+}
+.cd{
+  border-radius:12px !important;
+}
+.cb{
+  padding:10px 12px !important;
+}
+
+/* KPI summary row more compact */
+.sum-r{
+  gap:8px !important;
+  padding:10px 14px !important;
+}
+.sc{
+  padding:8px 10px !important;
+  border-radius:12px !important;
+}
+.si{
+  width:30px !important;
+  height:30px !important;
+}
+.sv{
+  font-size:16px !important;
+}
+.sl{
+  font-size:9.5px !important;
+}
+
+/* top filters / tabs more compact */
+.hdr{
+  padding:8px 14px !important;
+}
+.tp{
+  padding:3px !important;
+  border-radius:10px !important;
+}
+.tp-b{
+  height:30px !important;
+  padding:0 11px !important;
+  font-size:11px !important;
+}
+.sel,
+.sp-sel{
+  height:30px !important;
+  padding:4px 10px !important;
+  font-size:11px !important;
+}
+
+/* chart tables smaller */
+.enterprise-table-wrap{
+  max-height:320px !important;
+}
+.enterprise-table th,
+.enterprise-table td{
+  padding:7px 9px !important;
+  font-size:10.5px !important;
+}
+.tb thead th{
+  padding:5px 7px !important;
+}
+.tb td{
+  padding:5px 7px !important;
+}
+
+/* mini summary blocks */
+.mini-data-grid{
+  grid-template-columns:repeat(auto-fit,minmax(110px,1fr)) !important;
+  gap:6px !important;
+}
+.mini-data-item{
+  padding:6px 8px !important;
+  font-size:10.5px !important;
+}
+.mini-data-item span:last-child{
+  font-size:12px !important;
+}
+
+/* modal / popup compact */
+.modal-body{
+  padding:18px !important;
+}
+.modal-header{
+  padding:12px 16px !important;
+}
+.modal-footer{
+  padding:10px 16px !important;
+}
+
+/* responsive */
+@media (max-width: 1100px){
+  .chart-xl{ height:220px !important; }
+  .chart-md{ height:200px !important; }
+}
+
+@media (max-width: 768px){
+  .enterprise-body{ padding:10px !important; }
+  .chart-xl{ height:210px !important; }
+  .chart-md{ height:190px !important; }
+  .chb{ height:140px !important; }
+  .sum-r{ padding:8px 10px !important; }
+}
 </style>
 
   </head>
