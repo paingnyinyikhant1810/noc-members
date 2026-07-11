@@ -3876,6 +3876,165 @@ body {
   }
 }
 
+/* ═══════════ TOP NAV ALIGN + VERTICAL TOOLS + LARGER READABLE CHARTS PATCH V17 ═══════════ */
+.hdr {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+  padding: 10px 16px 10px !important;
+}
+.hdr-r {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 12px !important;
+}
+.period-tray,
+.tools-tray {
+  border-radius: 12px !important;
+  box-shadow: 0 12px 24px rgba(15,23,42,.10) !important;
+}
+.period-tray {
+  min-width: 300px !important;
+  padding: 10px !important;
+}
+.period-tray-grid {
+  grid-template-columns: 1fr !important;
+  gap: 8px !important;
+}
+.vertical-tool-nav {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 6px !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.tool-item-btn {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 36px !important;
+  padding: 0 10px !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  border-radius: 10px !important;
+  background: #f8fafc !important;
+  border: 1px solid rgba(226,232,240,.95) !important;
+}
+.tool-item-btn.on {
+  background: rgba(99,102,241,.10) !important;
+  border-color: rgba(99,102,241,.18) !important;
+  color: var(--ac) !important;
+  box-shadow: none !important;
+}
+.tool-item-label {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: inherit !important;
+  line-height: 1 !important;
+}
+.tool-item-btn .cnt {
+  margin-left: auto !important;
+  position: static !important;
+  min-width: 18px !important;
+  height: 18px !important;
+}
+.tool-btn::after,
+.tool-btn::before {
+  display: none !important;
+}
+
+.ct.dashboard-stage {
+  gap: 14px !important;
+  padding: 0 16px 2px !important;
+}
+#card_trend_total .chart-xl {
+  height: 320px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 2.9fr) minmax(132px, .58fr) !important;
+  gap: 10px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 250px !important;
+  min-height: 250px !important;
+  max-height: 250px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 228px !important;
+  min-height: 228px !important;
+  max-height: 228px !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 9px 12px !important;
+}
+#card_trend_total .enterprise-title h2,
+#card_cpe_complaints .chd h3,
+#card_dup_top_cust .chd h3,
+#card_ot_severity .chd h3 {
+  font-size: 14px !important;
+}
+#card_trend_total .c-tag,
+#card_cpe_complaints .c-tag,
+#card_dup_top_cust .c-tag,
+#card_ot_severity .c-tag {
+  padding: 4px 10px !important;
+  font-size: 8.8px !important;
+}
+
+@media (max-width: 768px) {
+  .hdr {
+    padding: 8px 12px 8px !important;
+    gap: 8px !important;
+  }
+  .hdr-r {
+    gap: 8px !important;
+  }
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 34px !important;
+    height: 34px !important;
+  }
+  .tool-item-btn {
+    height: 34px !important;
+    padding: 0 9px !important;
+  }
+  .tool-item-label {
+    font-size: 10px !important;
+  }
+  .ct.dashboard-stage {
+    padding: 0 12px 2px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 270px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 198px !important;
+    min-height: 198px !important;
+    max-height: 198px !important;
+  }
+}
+
 </style>
 
   </head>
@@ -3961,10 +4120,10 @@ body {
       <button class="icon-btn tools-toggle-btn" id="toolsToggleBtn" title="Tools" onclick="toggleToolsTray()"><svg class="ic"><use href="#i-grid"/></svg></button>
       <div class="tools-tray" id="toolsTray">
         <div class="tools-tray-head"><svg class="ic ic-sm"><use href="#i-grid"/></svg> Tools</div>
-        <div class="tp tool-nav">
-          <button class="tp-b cmp tool-btn" id="cmpTab" data-tip="Compare" style="margin-left:0 !important;border-left:none !important;padding-left:0 !important;" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg><span class="cnt" id="cmpCnt">0</span></button>
-          <button class="tp-b pvt tool-btn" id="pvtTab" data-tip="Pivot" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg></button>
-          <button class="tp-b flt tool-btn" id="fltTab" data-tip="Create Graph" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg></button>
+        <div class="tp tool-nav vertical-tool-nav">
+          <button class="tp-b cmp tool-btn tool-item-btn" id="cmpTab" data-tip="Compare" style="margin-left:0 !important;border-left:none !important;padding-left:0 !important;" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg><span class="tool-item-label">Compare</span><span class="cnt" id="cmpCnt">0</span></button>
+          <button class="tp-b pvt tool-btn tool-item-btn" id="pvtTab" data-tip="Pivot" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg><span class="tool-item-label">Pivot</span></button>
+          <button class="tp-b flt tool-btn tool-item-btn" id="fltTab" data-tip="Create Graph" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg><span class="tool-item-label">Create Graph</span></button>
         </div>
       </div>
     </div>
@@ -10070,5 +10229,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a196f319fb6afd21',t:'MTc4Mzc2MzkwNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
