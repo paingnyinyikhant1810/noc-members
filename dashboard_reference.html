@@ -4281,6 +4281,118 @@ body {
   }
 }
 
+
+/* ═══════════ TOOL LABEL ALIGN + EXPAND PAGE LOVELY SIMPLE PATCH V19 ═══════════ */
+.tools-tray {
+  min-width: 184px !important;
+  padding: 10px !important;
+}
+.tools-tray .tool-nav,
+.vertical-tool-nav {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 6px !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.tools-tray .tool-item-btn,
+.vertical-tool-nav .tool-item-btn {
+  width: 100% !important;
+  min-width: 152px !important;
+  height: 38px !important;
+  padding: 0 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  border-radius: 10px !important;
+  line-height: 1 !important;
+}
+.tools-tray .tool-item-btn .tool-item-label,
+.vertical-tool-nav .tool-item-btn .tool-item-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  white-space: nowrap !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+}
+.tools-tray .tool-item-btn .cnt,
+.vertical-tool-nav .tool-item-btn .cnt {
+  margin-left: auto !important;
+}
+
+.expand-page {
+  background: linear-gradient(180deg, rgba(250,252,255,.98) 0%, rgba(243,247,255,.99) 100%) !important;
+}
+.expand-shell {
+  max-width: 1320px !important;
+  padding: 20px 22px 24px !important;
+}
+.expand-topbar {
+  margin-bottom: 14px !important;
+}
+.expand-title-text h1 {
+  font-size: 20px !important;
+}
+.expand-title-text p {
+  font-size: 11.5px !important;
+}
+.expand-chip {
+  background: rgba(99,102,241,.09) !important;
+  color: var(--ac) !important;
+  border-color: rgba(99,102,241,.14) !important;
+}
+.expand-layout {
+  grid-template-columns: minmax(0, 1.68fr) minmax(270px, .72fr) !important;
+  gap: 16px !important;
+}
+.expand-panel {
+  border-radius: 20px !important;
+  box-shadow: 0 12px 24px rgba(15,23,42,.08) !important;
+}
+.expand-chart-panel {
+  padding: 12px 12px 10px !important;
+}
+.expand-chart-box {
+  height: 420px !important;
+  border-radius: 16px !important;
+  padding: 10px !important;
+}
+.expand-data-head {
+  padding: 12px 14px !important;
+  font-size: 11px !important;
+}
+.expand-table-wrap {
+  padding: 10px !important;
+  max-height: 500px !important;
+}
+.expand-table {
+  font-size: 11px !important;
+}
+.expand-table thead th {
+  font-size: 9px !important;
+  padding: 8px 9px !important;
+}
+.expand-table td {
+  padding: 9px 9px !important;
+  line-height: 1.35 !important;
+}
+.expand-table tbody tr {
+  height: 36px !important;
+}
+
+@media (max-width: 980px) {
+  .expand-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-chart-box {
+    height: 300px !important;
+  }
+}
+
 </style>
 
   </head>
@@ -6416,11 +6528,8 @@ function renderCpeComplaintSection(){
             bodyFont: { family: 'Inter', weight: '600' }
           }
         },
-        onClick: (e, el) => {
-          if (!el || !el.length) return;
-          let idx = el[0].index;
-          let m = activeModels[idx];
-          openCpeModelModal(m);
+        onClick: () => {
+          openZoom('cpe_complaints','bar');
         },
         scales: {
           y: { beginAtZero: true, grid: { color: gc }, ticks: { color: tc, font: { family: 'Inter', size: 9, weight: '600' } } },
@@ -10195,6 +10304,7 @@ function createExpandedChartData(zd, chartType){
 }
 function openExpandedChartPage(zKey,chartType){
   let zd=CHART_META[zKey]; if(!zd) return;
+  if(document.getElementById('expandChartPage')) return;
   closeExpandedChartPage();
   let rows=getExpandedChartRows(zd);
   let total = Number(zd.total || rows.reduce((s,r)=>s+r.value,0) || 0);
@@ -10467,11 +10577,14 @@ function openDateM(ds){
 }
 function showRecordsModalOnTop(){
   dataModal.show();
-  // bump z-index so the records modal sits above the zoom modal
   setTimeout(()=>{
-    let modal=document.getElementById('dModal');if(modal)modal.style.zIndex='1080';
+    let modal=document.getElementById('dModal');
+    if(modal) modal.style.zIndex='6080';
     let backdrops=document.querySelectorAll('.modal-backdrop');
-    if(backdrops.length>1){backdrops[backdrops.length-1].style.zIndex='1075';}
+    if(backdrops.length){
+      backdrops[backdrops.length-1].style.zIndex='6075';
+      backdrops[backdrops.length-1].classList.add('high');
+    }
   },10);
 }
 function renderMoreRows(){
@@ -10545,5 +10658,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a196fdd0dd31fd21',t:'MTc4Mzc2NDM0NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1970bf5bc02fd21',t:'MTc4Mzc2NDkyMw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
