@@ -5549,6 +5549,356 @@ body {
   }
 }
 
+/* ═══════════ PORTAL NAV / POPUP OVERLAP FINAL FIX V29 ═══════════ */
+.hdr {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  min-height: 46px !important;
+  padding: 10px 14px 10px !important;
+  margin: 0 0 8px 0 !important;
+  position: relative !important;
+  z-index: 80 !important;
+  background: transparent !important;
+}
+.hdr-r {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  z-index: 90 !important;
+}
+.period-tray,
+.tools-tray {
+  top: calc(100% + 10px) !important;
+  left: 0 !important;
+  right: auto !important;
+  z-index: 120 !important;
+}
+.ct.dashboard-stage {
+  padding: 0 14px 6px !important;
+  gap: 14px !important;
+}
+.expand-page {
+  inset: 116px 12px 12px 12px !important;
+}
+.expand-topbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 5 !important;
+}
+#dModal.show {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  padding-top: 120px !important;
+  padding-bottom: 12px !important;
+}
+#dModal .modal-dialog {
+  margin: 0 auto !important;
+}
+#dModal .modal-content {
+  overflow: hidden !important;
+}
+.modal-backdrop.high {
+  backdrop-filter: blur(8px);
+  background: rgba(15,23,42,.28) !important;
+  opacity: 1 !important;
+}
+@media (max-width: 980px) {
+  .expand-page {
+    inset: 108px 8px 8px 8px !important;
+  }
+  #dModal.show {
+    padding-top: 104px !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr {
+    min-height: 42px !important;
+    padding: 8px 12px 8px !important;
+    margin-bottom: 6px !important;
+  }
+  .ct.dashboard-stage {
+    padding: 0 10px 4px !important;
+  }
+  .expand-page {
+    inset: 96px 6px 6px 6px !important;
+  }
+  #dModal.show {
+    padding-top: 92px !important;
+  }
+}
+
+
+/* ═══════════ PORTAL NAV / POPUP CLEAN STACK PATCH V30 ═══════════ */
+.hdr {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  min-height: 52px !important;
+  padding: 10px 16px !important;
+  margin: 0 0 12px 0 !important;
+  position: relative !important;
+  z-index: 140 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+.hdr-r {
+  position: static !important;
+  left: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+.period-launch-wrap,
+.tools-launch-wrap,
+.palette-settings-wrap {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+}
+.palette-action {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 12px !important;
+}
+.period-tray,
+.tools-tray {
+  top: calc(100% + 10px) !important;
+  left: 0 !important;
+  right: auto !important;
+  bottom: auto !important;
+  z-index: 220 !important;
+}
+.ct.dashboard-stage {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+.expand-page {
+  inset: 122px 14px 14px 14px !important;
+  backdrop-filter: blur(14px) !important;
+  z-index: 4200 !important;
+}
+.expand-topbar {
+  top: 0 !important;
+  z-index: 8 !important;
+}
+#dModal {
+  z-index: 6080 !important;
+}
+#dModal.show {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  padding-top: 126px !important;
+  padding-bottom: 14px !important;
+}
+#dModal .modal-dialog {
+  margin: 0 auto !important;
+}
+.modal-backdrop.high {
+  z-index: 6075 !important;
+  backdrop-filter: blur(10px) !important;
+  background: rgba(15,23,42,.34) !important;
+}
+@media (max-width: 980px) {
+  .expand-page {
+    inset: 114px 8px 8px 8px !important;
+  }
+  #dModal.show {
+    padding-top: 112px !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr {
+    min-height: 46px !important;
+    padding: 8px 12px !important;
+    margin-bottom: 10px !important;
+  }
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 34px !important;
+    height: 34px !important;
+  }
+  .expand-page {
+    inset: 102px 6px 6px 6px !important;
+  }
+  #dModal.show {
+    padding-top: 100px !important;
+  }
+}
+
+
+/* ═══════════ FINAL UX POLISH PATCH V31 ═══════════ */
+/* Stronger separation for expanded overlay */
+.expand-page {
+  background: linear-gradient(180deg, rgba(244,247,255,.68) 0%, rgba(238,243,252,.74) 100%) !important;
+  backdrop-filter: blur(20px) saturate(1.04) !important;
+}
+[data-theme="dark"] .expand-page {
+  background: linear-gradient(180deg, rgba(15,17,23,.74) 0%, rgba(21,26,39,.80) 100%) !important;
+  backdrop-filter: blur(18px) saturate(1.03) !important;
+}
+
+/* Card/data ratio exact-ish 70/30 */
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 7fr) minmax(210px, 3fr) !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+#card_cpe_complaints .col-lg-5 > div,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 100% !important;
+  justify-self: stretch !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 234px !important;
+  min-height: 234px !important;
+  max-height: 234px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 212px !important;
+  min-height: 212px !important;
+  max-height: 212px !important;
+}
+#card_trend_total .chart-xl {
+  height: 296px !important;
+}
+
+/* Individual expand-page table widths by graph type */
+.expand-data-panel-cpe .expand-table th:first-child,
+.expand-data-panel-cpe .expand-table td:first-child,
+.expand-table-cpe th:first-child,
+.expand-table-cpe td:first-child { width: 50% !important; }
+.expand-data-panel-dup .expand-table th:first-child,
+.expand-data-panel-dup .expand-table td:first-child,
+.expand-table-dup th:first-child,
+.expand-table-dup td:first-child { width: 68% !important; }
+.expand-data-panel-ot .expand-table th:first-child,
+.expand-data-panel-ot .expand-table td:first-child,
+.expand-table-ot th:first-child,
+.expand-table-ot td:first-child { width: 42% !important; }
+.expand-data-panel-trend .expand-table th:first-child,
+.expand-data-panel-trend .expand-table td:first-child,
+.expand-table-trend th:first-child,
+.expand-table-trend td:first-child { width: 56% !important; }
+
+/* Cute compact calendar inside expand page */
+.expand-calendar-wrap {
+  position: relative;
+}
+.expand-calendar-tray {
+  min-width: 262px !important;
+  padding: 8px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(226,232,240,.96) !important;
+  background: rgba(255,255,255,.98) !important;
+  box-shadow: 0 12px 24px rgba(15,23,42,.10) !important;
+  backdrop-filter: blur(10px) !important;
+}
+.expand-calendar-range {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+.expand-range-btn {
+  min-width: 62px !important;
+  height: 30px !important;
+  padding: 0 8px !important;
+  border-radius: 9px !important;
+  font-size: 10px !important;
+}
+.expand-calendar-hint {
+  min-height: 34px !important;
+  margin-top: 6px !important;
+  font-size: 10px !important;
+  padding: 6px 8px !important;
+}
+.expand-sub-wrap { margin-top: 6px !important; }
+.expand-sub-select {
+  height: 32px !important;
+  border-radius: 9px !important;
+  font-size: 10px !important;
+}
+
+/* Total trend labels readability: choose real dates style */
+#card_trend_total .chart-xl canvas,
+.expand-chart-box canvas {
+  image-rendering: auto;
+}
+
+/* Cute compact records popup */
+#dModal .modal-content {
+  border-radius: 18px !important;
+  box-shadow: 0 16px 30px rgba(15,23,42,.16) !important;
+}
+#dModal .modal-header,
+#dModal .modal-footer {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%) !important;
+}
+#dModal .mtt tbody tr:nth-child(odd) { background: rgba(99,102,241,.035) !important; }
+#dModal .mtt tbody tr:nth-child(even) { background: rgba(255,255,255,.74) !important; }
+#dModal .mtt tbody tr:hover { background: rgba(99,102,241,.08) !important; }
+
+@media (max-width: 980px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-page {
+    inset: 108px 8px 8px 8px !important;
+  }
+}
+@media (max-width: 768px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-page {
+    inset: 96px 6px 6px 6px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 182px !important;
+    min-height: 182px !important;
+    max-height: 182px !important;
+  }
+}
+
 </style>
 
   </head>
@@ -7736,27 +8086,24 @@ function aggregateTickets(gran,rows){
   keys.sort(cmp);
   if(S.dateSortOrder !== 'asc') keys.reverse();
   let labels=[],displayLabels=[],values=[];
-  keys.forEach((key,idx)=>{
+  keys.forEach((key)=>{
     values.push(mp[key]||0);
     if(gran==='daily'){
       let d=parseLocalDate(key);
-      let badge='D'+(idx+1);
-      let sub=d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):key;
-      labels.push(badge+' · '+sub);
-      displayLabels.push([badge,sub]);
+      let label=d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):key;
+      labels.push(label);
+      displayLabels.push(wrapAxisLabel(label,10));
     }else if(gran==='weekly'){
       let sd=parseLocalDate(key),ed=new Date(sd);ed.setDate(ed.getDate()+6);
-      let badge='W'+(idx+1);
-      let sub=(sd&&ed)?(sd.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'–'+ed.toLocaleDateString('en-US',{month:'short',day:'numeric'})):key;
-      labels.push(badge+' · '+sub);
-      displayLabels.push([badge,sub]);
+      let label=(sd&&ed)?(sd.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+ed.toLocaleDateString('en-US',{month:'short',day:'numeric'})):key;
+      labels.push(label);
+      displayLabels.push(wrapAxisLabel(label,12));
     }else{
       let p=key.split('-');
       let d=new Date(+p[0],(+p[1])-1,1);
-      let badge='M'+(idx+1);
-      let sub=d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
-      labels.push(badge+' · '+sub);
-      displayLabels.push([badge,sub]);
+      let label=d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+      labels.push(label);
+      displayLabels.push(wrapAxisLabel(label,12));
     }
   });
   return {labels,displayLabels,values,keys};
@@ -8686,7 +9033,7 @@ function findCreatedAndResolvedCols() {
 
 function getOverTimeTicketsData(rows, creCol, resCol, useSearch = true) {
   let overTimeTickets = [];
-  let counts = { "50%": 0, "70%": 0, "90%": 0 };
+  let counts = { "lt36": 0, "36_50": 0, "50_68": 0, "gt68": 0 };
   rows.forEach(r => {
     let creVal = r[creCol];
     let resVal = r[resCol];
@@ -8695,15 +9042,10 @@ function getOverTimeTicketsData(rows, creCol, resCol, useSearch = true) {
     let resDate = parseLocalDate(resVal);
     if (!creDate || !resDate) return;
     let diffHrs = (resDate - creDate) / 3600000;
-    if (diffHrs <= 36) return;
-    let tier = "";
-    if (diffHrs > 68.4) {
-      tier = "90%";
-    } else if (diffHrs > 50.4) {
-      tier = "70%";
-    } else {
-      tier = "50%";
-    }
+    let tier = "lt36";
+    if (diffHrs > 68.4) tier = "gt68";
+    else if (diffHrs > 50.4) tier = "50_68";
+    else if (diffHrs >= 36) tier = "36_50";
     counts[tier]++;
     overTimeTickets.push({
       row: r,
@@ -8712,18 +9054,15 @@ function getOverTimeTicketsData(rows, creCol, resCol, useSearch = true) {
     });
   });
   
-  // Apply search filter if query exists
   if (useSearch && OVR_SEARCH_QUERY.trim()) {
     let q = OVR_SEARCH_QUERY.toLowerCase().trim();
     overTimeTickets = overTimeTickets.filter(ot => {
-      // Search in all columns of the row
       return D.headers.some(h => {
         let val = ot.row[h];
         return val && val.toString().toLowerCase().includes(q);
       });
     });
-    // Recalculate counts after filtering
-    counts = { "50%": 0, "70%": 0, "90%": 0 };
+    counts = { "lt36": 0, "36_50": 0, "50_68": 0, "gt68": 0 };
     overTimeTickets.forEach(ot => {
       counts[ot.tier]++;
     });
@@ -8762,13 +9101,16 @@ function onOvrSearchInput(val) {
   }
 }
 
+function getOverTimeTierLabel(tier){
+  return tier==='lt36' ? 'Below 36 Hours' : tier==='36_50' ? '36 to 50.4 Hours' : tier==='50_68' ? '50.4 to 68.4 Hours' : 'Above 68.4 Hours';
+}
 function showOverTimeTicketDetailsM(tierName) {
   let { createdCol, resolvedCol } = findCreatedAndResolvedCols();
   let cre = DETECTED_CRE_COL || createdCol;
   let res = DETECTED_RES_COL || resolvedCol;
   let data = getOverTimeTicketsData(F, cre, res);
   let matches = data.overTimeTickets.filter(x => x.tier === tierName).map(x => x.row);
-  showRowsM(matches, "OverTime Severity Tier: " + tierName);
+  showRowsM(matches, 'OverTime Severity: ' + getOverTimeTierLabel(tierName));
 }
 
 function renderOverTimeDashboard() {
@@ -8825,17 +9167,21 @@ function renderOverTimeDashboard() {
   sumRow.style.width = '100%';
   sumRow.style.flex = '1 1 100%';
   sumRow.innerHTML = `
-    <div class="sc" onclick="showOverTimeTicketDetailsM('50%')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
+    <div class="sc" onclick="showOverTimeTicketDetailsM('lt36')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
+      <div class="si" style="background:rgba(16,185,129,.12);color:var(--green);"><svg class="ic"><use href="#i-clock"/></svg></div>
+      <div><div class="sv">${counts["lt36"]}</div><div class="sl">Below 36 Hours</div></div>
+    </div>
+    <div class="sc" onclick="showOverTimeTicketDetailsM('36_50')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
       <div class="si" style="background:var(--ac-bg);color:var(--ac);"><svg class="ic"><use href="#i-clock"/></svg></div>
-      <div><div class="sv">${counts["50%"]}</div><div class="sl">Tier 50% (>36 hrs)</div></div>
+      <div><div class="sv">${counts["36_50"]}</div><div class="sl">36–50.4 Hours</div></div>
     </div>
-    <div class="sc" onclick="showOverTimeTicketDetailsM('70%')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
+    <div class="sc" onclick="showOverTimeTicketDetailsM('50_68')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
       <div class="si" style="background:rgba(245, 158, 11, 0.15);color:var(--orange);"><svg class="ic"><use href="#i-clock"/></svg></div>
-      <div><div class="sv">${counts["70%"]}</div><div class="sl">Tier 70% (>50.4 hrs)</div></div>
+      <div><div class="sv">${counts["50_68"]}</div><div class="sl">50.4–68.4 Hours</div></div>
     </div>
-    <div class="sc" onclick="showOverTimeTicketDetailsM('90%')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
+    <div class="sc" onclick="showOverTimeTicketDetailsM('gt68')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
       <div class="si" style="background:rgba(239, 68, 68, 0.15);color:var(--red);"><svg class="ic"><use href="#i-clock"/></svg></div>
-      <div><div class="sv">${counts["90%"]}</div><div class="sl">Tier 90% (>68.4 hrs)</div></div>
+      <div><div class="sv">${counts["gt68"]}</div><div class="sl">Above 68.4 Hours</div></div>
     </div>
   `;
   area.appendChild(sumRow);
@@ -8920,16 +9266,16 @@ function renderOverTimeTrendCard(otRowsAll) {
 function renderOverTimeSeverityCard(counts, totalOtCount) {
   let bId = 'otSeverityCanvas';
   let zKey = 'ot_severity';
-  let chartLabels = ["Tier 50% (>36h)", "Tier 70% (>50.4h)", "Tier 90% (>68.4h)"];
-  let chartValues = [counts["50%"], counts["70%"], counts["90%"]];
-  let colors = [cssVar('--ac'), cssVar('--orange'), cssVar('--red')];
-  let tiers = ["50%", "70%", "90%"];
+  let tiers = ['lt36','36_50','50_68','gt68'];
+  let chartLabels = ['Below 36h', '36–50.4h', '50.4–68.4h', '>68.4h'];
+  let chartValues = [counts['lt36'], counts['36_50'], counts['50_68'], counts['gt68']];
+  let colors = [cssVar('--green') || '#10b981', cssVar('--ac') || '#6366f1', cssVar('--orange') || '#f59e0b', cssVar('--red') || '#ef4444'];
   let rowsHtml = tiers.map((tier, i) => {
     let pc = totalOtCount > 0 ? ((counts[tier] / totalOtCount) * 100).toFixed(1) : 0;
     let fc = colors[i];
     return `
       <tr onclick="showOverTimeTicketDetailsM('${tier}')">
-        <td class="c-link">Tier ${tier}</td>
+        <td class="c-link">${escapeHtml(getOverTimeTierLabel(tier))}</td>
         <td><span class="cnt-p">${counts[tier]}</span></td>
         <td>
           <div class="bw">
@@ -11529,10 +11875,10 @@ function computeExpandedChartRowsByZKey(zKey, zd){
   if(zKey==='ot_severity' || (zd && zd.columnName==='_overtime')){
     let cols=loadOverTimeColumnsForCurrentTab();
     let ot=getOverTimeTicketsData(baseRows, cols.createdCol, cols.resolvedCol, false);
-    let tiers=['50%','70%','90%'];
-    let colors=[cssVar('--ac'), cssVar('--orange'), cssVar('--red')];
+    let tiers=['lt36','36_50','50_68','gt68'];
+    let colors=[cssVar('--green') || '#10b981', cssVar('--ac') || '#6366f1', cssVar('--orange') || '#f59e0b', cssVar('--red') || '#ef4444'];
     let total=ot.overTimeTickets.length||0;
-    return { rows:tiers.map((tier,i)=>({label:'Tier '+tier, key:tier, value:ot.counts[tier]||0, color:colors[i], pct: total>0?(((ot.counts[tier]||0)/total)*100).toFixed(1):'0.0', records:ot.overTimeTickets.filter(x=>x.tier===tier).map(x=>x.row)})) };
+    return { rows:tiers.map((tier,i)=>({label:getOverTimeTierLabel(tier), key:tier, value:ot.counts[tier]||0, color:colors[i], pct: total>0?(((ot.counts[tier]||0)/total)*100).toFixed(1):'0.0', records:ot.overTimeTickets.filter(x=>x.tier===tier).map(x=>x.row)})) };
   }
   let labels = Array.isArray(zd.pieLabels) && zd.pieLabels.length ? zd.pieLabels.slice() : (zd.labels||[]).slice();
   let values = Array.isArray(zd.pieValues) && zd.pieValues.length ? zd.pieValues.slice() : ((zd.datasets&&zd.datasets[0]&&Array.isArray(zd.datasets[0].data)) ? zd.datasets[0].data.map(v=>typeof v==='object'&&v!==null?Number(v.y||0):Number(v||0)) : []);
@@ -11549,12 +11895,19 @@ function expandedRowClick(zKey,index){
   let item=rows[index]; if(!item) return;
   let zd=CHART_META[zKey]; if(!zd) return;
   let label=item.label;
-  if(zKey==='dup_top_cust') return showDuplicateTicketsM(label);
+  if(zKey==='dup_top_cust'){
+    if(item.records) return showRowsM(item.records, 'Duplicate Tickets: ' + label);
+    return showDuplicateTicketsM(label);
+  }
   if(zKey==='ot_severity' || zd.columnName==='_overtime'){
-    let tier = String(label).includes('90') ? '90%' : (String(label).includes('70') ? '70%' : '50%');
+    if(item.records) return showRowsM(item.records, 'OverTime Severity: ' + label);
+    let tier = String(label).includes('68.4') || String(label).includes('>') ? 'gt68' : (String(label).includes('50.4') ? '50_68' : (String(label).includes('36') ? '36_50' : 'lt36'));
     return showOverTimeTicketDetailsM(tier);
   }
-  if(zKey==='cpe_complaints' || zd.type==='cpe_complaints') return openCpeModelModal(label);
+  if(zKey==='cpe_complaints' || zd.type==='cpe_complaints'){
+    if(item.records) return showRowsM(item.records, 'CPE Model: ' + label);
+    return openCpeModelModal(label);
+  }
   if(zKey==='trend_total'){
     let runtime = EXPANDED_PAGE_STATE.runtimeMeta;
     if(runtime && runtime.rows && runtime.rows[index]) return openTrendPeriodM(runtime.gran, runtime.rows[index].key, runtime.rows[index].label);
