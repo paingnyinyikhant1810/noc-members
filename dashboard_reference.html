@@ -3308,204 +3308,152 @@ body {
 }
 
 
-/* ═══════════ TOP-RIGHT PALETTE + EQUAL GRID + READABLE GRAPH PATCH V12 ═══════════ */
+/* ═══════════ TOP-LEFT INLINE ICONS + CLEANER GRAPH DENSITY PATCH V13 ═══════════ */
 .hdr-r {
-  right: 18px !important;
+  position: fixed !important;
+  left: 18px !important;
   top: 72px !important;
+  right: auto !important;
   bottom: auto !important;
+  width: auto !important;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  z-index: 260 !important;
 }
-.hdr-r.scroll-hide {
-  transform: translateY(-12px) scale(.94) !important;
+.period-launch-wrap,
+.tools-launch-wrap,
+.palette-settings-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  transform: none !important;
 }
 .palette-fab {
-  top: 0 !important;
-  bottom: auto !important;
+  display: none !important;
 }
 .palette-action {
-  top: 2px !important;
-  bottom: auto !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: none !important;
 }
-.hdr-r.open .period-launch-wrap {
-  transform: translate(-76px, 2px) scale(1) !important;
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 14px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(255,255,255,.88) !important;
+  backdrop-filter: blur(14px) saturate(1.12) !important;
+  box-shadow: 0 10px 20px rgba(15,23,42,.10) !important;
 }
-.hdr-r.open .tools-launch-wrap {
-  transform: translate(-50px, 60px) scale(1) !important;
+[data-theme="dark"] .palette-action > .icon-btn,
+[data-theme="dark"] .palette-settings-btn {
+  background: rgba(26,29,46,.84) !important;
 }
-.hdr-r.open .palette-settings-wrap {
-  transform: translate(-2px, 84px) scale(1) !important;
+.palette-action > .icon-btn .ic,
+.palette-settings-btn .ic {
+  width: 16px !important;
+  height: 16px !important;
 }
 .period-tray,
 .tools-tray {
-  top: 0 !important;
+  top: calc(100% + 10px) !important;
+  left: 0 !important;
+  right: auto !important;
   bottom: auto !important;
-  right: calc(100% + 12px) !important;
-  transform-origin: top right !important;
+  transform-origin: top left !important;
 }
 .period-tray {
-  min-width: 340px !important;
+  min-width: 332px !important;
 }
 .tools-tray {
-  min-width: 186px !important;
+  min-width: 178px !important;
 }
 
+#drInfo {
+  display: none !important;
+}
 .ct.dashboard-stage {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   gap: 14px 16px !important;
-  padding: 10px 16px 18px !important;
+  padding: 8px 16px 10px !important;
 }
 #card_trend_total,
 #card_cpe_complaints,
 #card_dup_top_cust,
 #card_ot_severity {
-  grid-column: auto !important;
-  grid-row: auto !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-  margin: 0 !important;
-  align-self: start !important;
-  justify-self: stretch !important;
-  flex: unset !important;
-  transform: none !important;
-  box-shadow: 0 10px 20px rgba(15,23,42,.06) !important;
+  box-shadow: 0 8px 18px rgba(15,23,42,.055) !important;
 }
 #card_trend_total .enterprise-head,
 #card_cpe_complaints .chd,
 #card_dup_top_cust .chd,
 #card_ot_severity .chd {
-  padding: 9px 12px !important;
-  min-height: 44px !important;
-}
-#card_trend_total .enterprise-title,
-#card_cpe_complaints .chd-l,
-#card_dup_top_cust .chd-l,
-#card_ot_severity .chd-l {
-  align-items: center !important;
+  padding: 8px 12px !important;
+  min-height: 40px !important;
 }
 #card_trend_total .enterprise-title h2,
 #card_cpe_complaints .chd h3,
 #card_dup_top_cust .chd h3,
 #card_ot_severity .chd h3 {
-  font-size: 14px !important;
+  font-size: 13.5px !important;
   line-height: 1.2 !important;
-}
-#card_trend_total .cd-actions,
-#card_cpe_complaints .cd-actions,
-#card_dup_top_cust .cd-actions,
-#card_ot_severity .cd-actions {
-  align-items: center !important;
 }
 #card_trend_total .btn-expand-dash,
 #card_cpe_complaints .btn-expand-dash,
 #card_dup_top_cust .btn-expand-dash,
 #card_ot_severity .btn-expand-dash {
-  height: 30px !important;
-  padding: 0 12px !important;
-  border-radius: 10px !important;
-  font-size: 10.5px !important;
+  height: 28px !important;
+  padding: 0 10px !important;
+  border-radius: 9px !important;
+  font-size: 10px !important;
 }
 #card_trend_total .c-tag,
 #card_cpe_complaints .c-tag,
 #card_dup_top_cust .c-tag,
 #card_ot_severity .c-tag {
-  border-radius: 999px !important;
-  padding: 4px 10px !important;
-  font-size: 9px !important;
-  font-weight: 800 !important;
-  border: 1px solid transparent !important;
-  box-shadow: none !important;
-}
-#card_trend_total .c-tag {
-  background: rgba(99,102,241,.10) !important;
-  color: #5b5ce9 !important;
-  border-color: rgba(99,102,241,.16) !important;
-}
-#card_cpe_complaints .c-tag {
-  background: rgba(16,185,129,.10) !important;
-  color: #0f9f73 !important;
-  border-color: rgba(16,185,129,.16) !important;
-}
-#card_dup_top_cust .c-tag {
-  background: rgba(59,130,246,.10) !important;
-  color: #3b6ee8 !important;
-  border-color: rgba(59,130,246,.16) !important;
-}
-#card_ot_severity .c-tag {
-  background: rgba(244,114,182,.10) !important;
-  color: #ec4899 !important;
-  border-color: rgba(244,114,182,.16) !important;
+  padding: 3px 9px !important;
+  font-size: 8.5px !important;
 }
 #card_trend_total .chart-xl {
-  height: 190px !important;
+  height: 176px !important;
 }
 #card_cpe_complaints .row.g-3,
 #card_dup_top_cust .row.g-3,
 #card_ot_severity .row.g-3 {
-  grid-template-columns: minmax(0, 2.18fr) minmax(116px, .5fr) !important;
+  grid-template-columns: minmax(0, 2.05fr) minmax(104px, .52fr) !important;
   gap: 8px !important;
 }
 #card_cpe_complaints .chb,
 #card_cpe_complaints .col-lg-5 > div {
-  height: 172px !important;
-  min-height: 172px !important;
-  max-height: 172px !important;
+  height: 158px !important;
+  min-height: 158px !important;
+  max-height: 158px !important;
 }
 #card_dup_top_cust .chb,
 #card_dup_top_cust .col-lg-5 > div,
 #card_ot_severity .chb,
 #card_ot_severity .col-lg-5 > div {
-  height: 156px !important;
-  min-height: 156px !important;
-  max-height: 156px !important;
+  height: 144px !important;
+  min-height: 144px !important;
+  max-height: 144px !important;
 }
 #card_cpe_complaints .mini-data-grid,
 #card_dup_top_cust .mini-data-grid,
 #card_ot_severity .mini-data-grid {
-  max-height: 54px !important;
+  max-height: 48px !important;
 }
 
 @media (max-width: 1100px) {
   .ct.dashboard-stage {
     grid-template-columns: 1fr !important;
-    gap: 14px !important;
-  }
-  #card_trend_total .chart-xl {
-    height: 182px !important;
-  }
-  #card_cpe_complaints .chb,
-  #card_cpe_complaints .col-lg-5 > div,
-  #card_dup_top_cust .chb,
-  #card_dup_top_cust .col-lg-5 > div,
-  #card_ot_severity .chb,
-  #card_ot_severity .col-lg-5 > div {
-    height: 150px !important;
-    min-height: 150px !important;
-    max-height: 150px !important;
-  }
-}
-@media (max-width: 768px) {
-  .hdr-r {
-    right: 10px !important;
-    top: 68px !important;
-  }
-  .hdr-r.open .period-launch-wrap {
-    transform: translate(-68px, 2px) scale(1) !important;
-  }
-  .hdr-r.open .tools-launch-wrap {
-    transform: translate(-46px, 54px) scale(1) !important;
-  }
-  .hdr-r.open .palette-settings-wrap {
-    transform: translate(0, 76px) scale(1) !important;
-  }
-  .period-tray,
-  .tools-tray {
-    right: calc(100% + 8px) !important;
-    top: 0 !important;
-    bottom: auto !important;
-    min-width: min(86vw, 288px) !important;
-  }
-  .ct.dashboard-stage {
-    padding: 10px 12px 18px !important;
+    gap: 12px !important;
   }
   #card_trend_total .chart-xl {
     height: 168px !important;
@@ -3516,9 +3464,44 @@ body {
   #card_dup_top_cust .col-lg-5 > div,
   #card_ot_severity .chb,
   #card_ot_severity .col-lg-5 > div {
-    height: 138px !important;
-    min-height: 138px !important;
-    max-height: 138px !important;
+    height: 142px !important;
+    min-height: 142px !important;
+    max-height: 142px !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr-r {
+    left: 10px !important;
+    top: 68px !important;
+    gap: 8px !important;
+  }
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 13px !important;
+  }
+  .period-tray,
+  .tools-tray {
+    left: 0 !important;
+    top: calc(100% + 8px) !important;
+    min-width: min(84vw, 276px) !important;
+  }
+  .ct.dashboard-stage {
+    padding: 6px 12px 8px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 154px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 128px !important;
+    min-height: 128px !important;
+    max-height: 128px !important;
   }
 }
 
@@ -3576,7 +3559,7 @@ body {
     <div class="hdr-s" id="subLbl" style="display:none;"></div>
   </div>
   <div class="hdr-r" style="display:flex; flex-direction:row; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; width:auto;">
-    <div class="palette-action period-launch-wrap" id="periodLaunchWrap">
+    <div class="period-launch-wrap" id="periodLaunchWrap">
       <button class="icon-btn period-toggle-btn" id="periodToggleBtn" title="Date Range" onclick="togglePeriodTray()"><svg class="ic"><use href="#i-calendar"/></svg></button>
       <div class="period-tray" id="periodTray">
         <div class="period-tray-head"><svg class="ic ic-sm"><use href="#i-calendar"/></svg> Date View</div>
@@ -3602,7 +3585,7 @@ body {
         </div>
       </div>
     </div>
-    <div class="palette-action tools-launch-wrap" id="toolsLaunchWrap">
+    <div class="tools-launch-wrap" id="toolsLaunchWrap">
       <button class="icon-btn tools-toggle-btn" id="toolsToggleBtn" title="Tools" onclick="toggleToolsTray()"><svg class="ic"><use href="#i-grid"/></svg></button>
       <div class="tools-tray" id="toolsTray">
         <div class="tools-tray-head"><svg class="ic ic-sm"><use href="#i-grid"/></svg> Tools</div>
@@ -3613,12 +3596,9 @@ body {
         </div>
       </div>
     </div>
-    <div class="palette-action palette-settings-wrap">
+    <div class="palette-settings-wrap">
       <button class="icon-btn palette-settings-btn" id="setBtn" title="Settings" onclick="openSettings()"><svg class="ic"><use href="#i-settings"/></svg></button>
     </div>
-    <button class="palette-fab" id="paletteFab" type="button" onclick="togglePaletteMenu()" title="Dashboard Controls">
-      <svg class="ic"><use href="#i-grid"/></svg>
-    </button>
   </div>
 </header>
 
@@ -4456,6 +4436,8 @@ const VALUE_LABEL_PLUGIN={
         let pos=el.tooltipPosition?el.tooltipPosition():{x:el.x,y:el.y};
         let x=pos.x,y=pos.y;
         if(chartType==='bar'){
+          if (meta.data.length > 24 && (i % 3 !== 0)) return;
+          if (meta.data.length > 16 && (i % 2 === 1)) return;
           if (meta.data.length > 18 && i >= 10 && el.width < 28) return;
           if (meta.data.length > 35 && i >= 6) return;
           if (el.width < 14 && i >= 3) return;
@@ -5277,33 +5259,10 @@ function updateSubPeriodUI(){
 function onSubPeriodChange(){subPeriod=document.getElementById("spSel").value;applyFilter(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 let PERIOD_TRAY_OPEN=false;
 let TOOLS_TRAY_OPEN=false;
-let PALETTE_OPEN=false;
-let PALETTE_SCROLL_TIMER=null;
-function setPaletteOpenState(isOpen){
-  let dock=document.querySelector('.hdr-r');
-  let fab=document.getElementById('paletteFab');
-  if(!dock||!fab)return;
-  PALETTE_OPEN = !!isOpen;
-  dock.classList.toggle('open', PALETTE_OPEN);
-  fab.classList.toggle('act', PALETTE_OPEN);
-}
-function togglePaletteMenu(forceState){
-  let next = typeof forceState === 'boolean' ? forceState : !PALETTE_OPEN;
-  if(!next){
-    PERIOD_TRAY_OPEN=false;
-    TOOLS_TRAY_OPEN=false;
-    let p=document.getElementById('periodTray'); if(p) p.classList.remove('open');
-    let t=document.getElementById('toolsTray'); if(t) t.classList.remove('open');
-    let pb=document.getElementById('periodToggleBtn'); if(pb) pb.classList.remove('act');
-    let tb=document.getElementById('toolsToggleBtn'); if(tb) tb.classList.remove('act');
-  }
-  setPaletteOpenState(next);
-}
 function togglePeriodTray(forceState){
   let tray=document.getElementById('periodTray');
   let btn=document.getElementById('periodToggleBtn');
   if(!tray||!btn)return;
-  if(!PALETTE_OPEN) setPaletteOpenState(true);
   PERIOD_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !PERIOD_TRAY_OPEN;
   tray.classList.toggle('open', PERIOD_TRAY_OPEN);
   btn.classList.toggle('act', PERIOD_TRAY_OPEN);
@@ -5317,7 +5276,6 @@ function toggleToolsTray(forceState){
   let tray=document.getElementById('toolsTray');
   let btn=document.getElementById('toolsToggleBtn');
   if(!tray||!btn)return;
-  if(!PALETTE_OPEN) setPaletteOpenState(true);
   TOOLS_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !TOOLS_TRAY_OPEN;
   tray.classList.toggle('open', TOOLS_TRAY_OPEN);
   btn.classList.toggle('act', TOOLS_TRAY_OPEN);
@@ -5330,19 +5288,9 @@ function toggleToolsTray(forceState){
 document.addEventListener('click', function(ev){
   let wrap=document.getElementById('periodLaunchWrap');
   let tWrap=document.getElementById('toolsLaunchWrap');
-  let dock=document.querySelector('.hdr-r');
   if(PERIOD_TRAY_OPEN && wrap && !wrap.contains(ev.target)) togglePeriodTray(false);
   if(TOOLS_TRAY_OPEN && tWrap && !tWrap.contains(ev.target)) toggleToolsTray(false);
-  if(PALETTE_OPEN && dock && !dock.contains(ev.target)) togglePaletteMenu(false);
 }, true);
-window.addEventListener('scroll', function(){
-  let dock=document.querySelector('.hdr-r');
-  if(!dock) return;
-  dock.classList.add('scroll-hide');
-  togglePaletteMenu(false);
-  if(PALETTE_SCROLL_TIMER) clearTimeout(PALETTE_SCROLL_TIMER);
-  PALETTE_SCROLL_TIMER=setTimeout(()=>{ let d=document.querySelector('.hdr-r'); if(d) d.classList.remove('scroll-hide'); }, 180);
-}, { passive:true });
 function getWeekStart(d){let dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay());dt.setHours(0,0,0,0);return dt;}
 function getWeekNumber(d){let s=new Date(d.getFullYear(),0,1);return Math.ceil(((d-s)/86400000+s.getDay()+1)/7);}
 
@@ -9750,5 +9698,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a19698a07bd1fd21',t:'MTc4Mzc2MDE5OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
