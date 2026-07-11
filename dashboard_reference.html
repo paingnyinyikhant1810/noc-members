@@ -2378,12 +2378,24 @@
   }
 }
 
-/* ═══════════ FLOATING DOCK + FOUR GRAPH LAYOUT PATCH V7 ═══════════ */
+/* ═══════════ FLOATING DOCK + HERO TITLE + STAGGERED FOUR CARD PATCH V8 ═══════════ */
+body {
+  background:
+    radial-gradient(circle at 12% 14%, rgba(99,102,241,.08), transparent 24%),
+    radial-gradient(circle at 86% 76%, rgba(59,130,246,.08), transparent 24%),
+    linear-gradient(180deg, #f7f9ff 0%, #eef3fb 100%) !important;
+}
+[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 12% 14%, rgba(129,140,248,.10), transparent 24%),
+    radial-gradient(circle at 86% 76%, rgba(56,189,248,.09), transparent 24%),
+    linear-gradient(180deg, #0f1117 0%, #151a27 100%) !important;
+}
 .hdr {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
-  padding: 12px 16px 8px !important;
+  padding: 14px 16px 10px !important;
   position: relative !important;
   top: auto !important;
   z-index: 20 !important;
@@ -2391,13 +2403,51 @@
 .hdr-l {
   display: inline-flex !important;
   align-items: center !important;
-  gap: 12px !important;
-  flex-wrap: wrap !important;
-  padding: 10px 14px !important;
-  border-radius: 20px !important;
-  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, #fff) 0%, color-mix(in srgb, var(--bg2) 93%, var(--bg3)) 100%) !important;
-  box-shadow: 0 12px 28px rgba(15,23,42,.07) !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  flex-wrap: nowrap !important;
+  min-width: min(100%, 540px) !important;
+  padding: 12px 16px !important;
+  border-radius: 22px !important;
+  border: 1px solid #d8e1f0 !important;
+  background: rgba(255,255,255,.88) !important;
+  backdrop-filter: blur(14px) saturate(1.1) !important;
+  box-shadow: 0 14px 30px rgba(31,41,55,.08) !important;
+}
+[data-theme="dark"] .hdr-l {
+  background: rgba(26,29,46,.82) !important;
+  border-color: color-mix(in srgb, var(--ac) 12%, var(--border)) !important;
+}
+.hdr-l > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.hdr-ico {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 14px !important;
+  background: linear-gradient(135deg, #7069ff 0%, #5562ff 100%) !important;
+  box-shadow: 0 12px 24px rgba(99,102,241,.24) !important;
+}
+.hdr-ico .ic {
+  width: 24px !important;
+  height: 24px !important;
+}
+.hdr-t {
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  letter-spacing: -.3px !important;
+}
+#tabDD {
+  min-width: 170px !important;
+  height: 40px !important;
+  padding: 0 14px !important;
+  border-radius: 14px !important;
+  background: rgba(255,255,255,.92) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 4px 10px rgba(15,23,42,.04) !important;
+}
+[data-theme="dark"] #tabDD {
+  background: rgba(15,23,42,.62) !important;
 }
 .hdr-r {
   position: fixed !important;
@@ -2407,7 +2457,7 @@
   padding: 8px 10px !important;
   border-radius: 20px !important;
   border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
-  background: rgba(255,255,255,.72) !important;
+  background: rgba(255,255,255,.74) !important;
   backdrop-filter: blur(14px) saturate(1.15) !important;
   box-shadow: 0 18px 40px rgba(15,23,42,.12) !important;
   z-index: 180 !important;
@@ -2478,81 +2528,137 @@
   box-shadow: 0 6px 14px rgba(15,23,42,.12) !important;
 }
 
-.ct {
-  gap: 18px !important;
+#sumRow {
+  display: none !important;
+}
+#drInfo {
+  padding: 4px 18px 14px !important;
+}
+.ct.dashboard-stage {
+  display: grid !important;
+  grid-template-columns: minmax(320px, 1.08fr) minmax(280px, .92fr) !important;
+  grid-auto-rows: min-content;
+  gap: 24px 24px !important;
+  padding: 8px 18px 30px !important;
+  align-items: start !important;
+  position: relative;
+}
+.ct.dashboard-stage::before,
+.ct.dashboard-stage::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(0);
+  pointer-events: none;
+  z-index: 0;
+}
+.ct.dashboard-stage::before {
+  width: 280px;
+  height: 280px;
+  left: -60px;
+  bottom: 20px;
+  background: radial-gradient(circle, rgba(99,102,241,.14) 0%, rgba(99,102,241,0) 70%);
+}
+.ct.dashboard-stage::after {
+  width: 220px;
+  height: 220px;
+  right: 20px;
+  top: 120px;
+  background: radial-gradient(circle, rgba(56,189,248,.12) 0%, rgba(56,189,248,0) 70%);
+}
+.ct.dashboard-stage > * {
+  position: relative;
+  z-index: 1;
 }
 #card_trend_total,
 #card_cpe_complaints,
 #card_dup_top_cust,
 #card_ot_severity {
-  border-radius: 22px !important;
+  border-radius: 24px !important;
   overflow: hidden !important;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%) !important;
+  background: rgba(255,255,255,.88) !important;
+  backdrop-filter: blur(16px) saturate(1.1) !important;
+  border: 1px solid rgba(219,229,241,.9) !important;
+}
+[data-theme="dark"] #card_trend_total,
+[data-theme="dark"] #card_cpe_complaints,
+[data-theme="dark"] #card_dup_top_cust,
+[data-theme="dark"] #card_ot_severity {
+  background: rgba(26,29,46,.82) !important;
 }
 #card_trend_total {
-  flex: 1 1 calc(58% - 10px) !important;
-  width: calc(58% - 10px) !important;
-  max-width: calc(58% - 10px) !important;
-  box-shadow: 0 18px 40px rgba(79,70,229,.14) !important;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 100% !important;
+  max-width: 100% !important;
+  transform: translateY(8px) rotate(-1deg);
+  box-shadow: 0 24px 48px rgba(79,70,229,.14) !important;
 }
 #card_cpe_complaints {
-  flex: 1 1 calc(42% - 10px) !important;
-  width: calc(42% - 10px) !important;
-  max-width: calc(42% - 10px) !important;
-  box-shadow: 0 18px 40px rgba(16,185,129,.13) !important;
+  grid-column: 2;
+  grid-row: 1;
+  width: 100% !important;
+  max-width: 100% !important;
+  transform: translateY(0) rotate(1deg);
+  box-shadow: 0 22px 44px rgba(16,185,129,.12) !important;
 }
 #card_dup_top_cust {
-  flex: 1 1 calc(44% - 10px) !important;
-  width: calc(44% - 10px) !important;
-  max-width: calc(44% - 10px) !important;
-  box-shadow: 0 18px 40px rgba(59,130,246,.13) !important;
+  grid-column: 1;
+  grid-row: 3;
+  width: min(78%, 420px) !important;
+  max-width: min(78%, 420px) !important;
+  justify-self: start;
+  margin-left: 28px;
+  transform: translateY(-8px) rotate(-1.5deg);
+  box-shadow: 0 20px 42px rgba(59,130,246,.12) !important;
 }
 #card_ot_severity {
-  flex: 1 1 calc(56% - 10px) !important;
-  width: calc(56% - 10px) !important;
-  max-width: calc(56% - 10px) !important;
-  box-shadow: 0 18px 40px rgba(244,63,94,.13) !important;
+  grid-column: 2;
+  grid-row: 2 / span 2;
+  width: 100% !important;
+  max-width: 100% !important;
+  transform: translateY(18px) rotate(.9deg);
+  box-shadow: 0 24px 48px rgba(244,63,94,.12) !important;
 }
 #card_trend_total .enterprise-head,
 #card_cpe_complaints .chd,
 #card_dup_top_cust .chd,
 #card_ot_severity .chd {
-  padding: 13px 16px !important;
+  padding: 12px 15px !important;
 }
 #card_trend_total .chart-xl {
-  height: 300px !important;
+  height: 290px !important;
 }
 #card_cpe_complaints .row.g-3,
 #card_dup_top_cust .row.g-3,
 #card_ot_severity .row.g-3 {
-  grid-template-columns: minmax(0, 2.45fr) minmax(170px, .55fr) !important;
+  grid-template-columns: minmax(0, 2.8fr) minmax(150px, .45fr) !important;
 }
 #card_cpe_complaints .chb {
-  height: 280px !important;
-  min-height: 280px !important;
+  height: 265px !important;
+  min-height: 265px !important;
 }
 #card_dup_top_cust .chb,
 #card_ot_severity .chb {
-  height: 250px !important;
-  min-height: 250px !important;
+  height: 235px !important;
+  min-height: 235px !important;
 }
 #card_cpe_complaints .col-lg-5 > div {
-  height: 280px !important;
-  min-height: 280px !important;
-  max-height: 280px !important;
+  height: 265px !important;
+  min-height: 265px !important;
+  max-height: 265px !important;
 }
 #card_dup_top_cust .col-lg-5 > div,
 #card_ot_severity .col-lg-5 > div {
-  height: 250px !important;
-  min-height: 250px !important;
-  max-height: 250px !important;
+  height: 235px !important;
+  min-height: 235px !important;
+  max-height: 235px !important;
 }
 #card_dup_top_cust .mini-data-grid,
 #card_ot_severity .mini-data-grid,
 #card_cpe_complaints .mini-data-grid {
-  max-height: 72px !important;
+  max-height: 64px !important;
 }
-/* hide removed default graphs */
 #card_trend_main,
 #card_dup_trend,
 #card_ot_trend {
@@ -2564,15 +2670,22 @@
     top: 10px !important;
     right: 10px !important;
   }
+  .ct.dashboard-stage {
+    grid-template-columns: 1fr !important;
+  }
   #card_trend_total,
   #card_cpe_complaints,
   #card_dup_top_cust,
   #card_ot_severity {
-    flex: 1 1 100% !important;
+    grid-column: auto !important;
+    grid-row: auto !important;
+    width: 100% !important;
     max-width: 100% !important;
+    margin-left: 0 !important;
+    transform: none !important;
   }
   #card_trend_total .chart-xl {
-    height: 270px !important;
+    height: 260px !important;
   }
   #card_cpe_complaints .row.g-3,
   #card_dup_top_cust .row.g-3,
@@ -2585,9 +2698,9 @@
   #card_dup_top_cust .col-lg-5 > div,
   #card_ot_severity .chb,
   #card_ot_severity .col-lg-5 > div {
-    height: 230px !important;
-    min-height: 230px !important;
-    max-height: 230px !important;
+    height: 220px !important;
+    min-height: 220px !important;
+    max-height: 220px !important;
   }
 }
 @media (max-width: 768px) {
@@ -2595,8 +2708,17 @@
     padding: 10px 12px 6px !important;
   }
   .hdr-l {
-    padding: 8px 10px !important;
-    border-radius: 16px !important;
+    min-width: 100% !important;
+    gap: 10px !important;
+    padding: 10px 12px !important;
+    border-radius: 18px !important;
+  }
+  .hdr-t {
+    font-size: 18px !important;
+  }
+  #tabDD {
+    min-width: 132px !important;
+    width: 100% !important;
   }
   .hdr-r {
     top: 8px !important;
@@ -2616,8 +2738,12 @@
   .period-tray-grid {
     grid-template-columns: 1fr;
   }
+  .ct.dashboard-stage {
+    padding: 8px 12px 24px !important;
+    gap: 18px !important;
+  }
   #card_trend_total .chart-xl {
-    height: 240px !important;
+    height: 220px !important;
   }
   #card_cpe_complaints .chb,
   #card_cpe_complaints .col-lg-5 > div,
@@ -2625,9 +2751,9 @@
   #card_dup_top_cust .col-lg-5 > div,
   #card_ot_severity .chb,
   #card_ot_severity .col-lg-5 > div {
-    height: 200px !important;
-    min-height: 200px !important;
-    max-height: 200px !important;
+    height: 190px !important;
+    min-height: 190px !important;
+    max-height: 190px !important;
   }
 }
 
@@ -5032,7 +5158,11 @@ function escapeJs(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 /* ═══════════ RENDER ═══════════ */
 function doRender(){
   renderSum();renderDR();killCH();CHART_META={};
-  document.getElementById("main").innerHTML='';
+  let mainEl=document.getElementById("main");
+  if(mainEl){
+    mainEl.innerHTML='';
+    mainEl.className='ct';
+  }
   if(OVERTIME_MODE){
     renderOverTimeDashboard();
   }
@@ -5044,6 +5174,7 @@ function doRender(){
   else if(PIVOT_BUILDER_MODE){renderPivotBuilderDashboard();}
   
   else{
+    if(mainEl) mainEl.classList.add('dashboard-stage');
     if(D.isPivot)renderPivot();
     else {
       renderEnterpriseSections();
