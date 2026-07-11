@@ -2378,129 +2378,253 @@
   }
 }
 
-/* ═══════════ COMPACT TOOL NAV + SMALLER GRAPH PATCH V6 ═══════════ */
+/* ═══════════ FLOATING DOCK + FOUR GRAPH LAYOUT PATCH V7 ═══════════ */
+.hdr {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 12px 16px 8px !important;
+  position: relative !important;
+  top: auto !important;
+  z-index: 20 !important;
+}
+.hdr-l {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+  padding: 10px 14px !important;
+  border-radius: 20px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, #fff) 0%, color-mix(in srgb, var(--bg2) 93%, var(--bg3)) 100%) !important;
+  box-shadow: 0 12px 28px rgba(15,23,42,.07) !important;
+}
+.hdr-r {
+  position: fixed !important;
+  top: 14px !important;
+  right: 18px !important;
+  width: auto !important;
+  padding: 8px 10px !important;
+  border-radius: 20px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(255,255,255,.72) !important;
+  backdrop-filter: blur(14px) saturate(1.15) !important;
+  box-shadow: 0 18px 40px rgba(15,23,42,.12) !important;
+  z-index: 180 !important;
+}
+[data-theme="dark"] .hdr-r {
+  background: rgba(26,29,46,.78) !important;
+}
+.tools-launch-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.tools-toggle-btn {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+}
+.tools-tray {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 190px;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%);
+  box-shadow: 0 20px 40px rgba(15,23,42,.14);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-12px) scale(.96);
+  filter: blur(3px);
+  transform-origin: top right;
+  transition: opacity .3s cubic-bezier(.22,1,.36,1), transform .34s cubic-bezier(.22,1,.36,1), filter .3s ease;
+  z-index: 140;
+}
+.tools-tray.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+}
+.tools-tray-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 8px;
+}
 .tool-nav {
-  gap: 4px !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 6px !important;
+  padding: 4px !important;
 }
 .tool-nav .tool-btn {
   margin-left: 0 !important;
   border-left: none !important;
   padding-left: 0 !important;
-  min-width: 34px !important;
+  min-width: 38px !important;
+  height: 38px !important;
 }
 .tool-nav .tool-btn.on {
   box-shadow: 0 6px 14px rgba(15,23,42,.12) !important;
 }
 
-.cd .cb > .chb:only-child {
+.ct {
+  gap: 18px !important;
+}
+#card_trend_total,
+#card_cpe_complaints,
+#card_dup_top_cust,
+#card_ot_severity {
+  border-radius: 22px !important;
+  overflow: hidden !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%) !important;
+}
+#card_trend_total {
+  flex: 1 1 calc(58% - 10px) !important;
+  width: calc(58% - 10px) !important;
+  max-width: calc(58% - 10px) !important;
+  box-shadow: 0 18px 40px rgba(79,70,229,.14) !important;
+}
+#card_cpe_complaints {
+  flex: 1 1 calc(42% - 10px) !important;
+  width: calc(42% - 10px) !important;
+  max-width: calc(42% - 10px) !important;
+  box-shadow: 0 18px 40px rgba(16,185,129,.13) !important;
+}
+#card_dup_top_cust {
+  flex: 1 1 calc(44% - 10px) !important;
+  width: calc(44% - 10px) !important;
+  max-width: calc(44% - 10px) !important;
+  box-shadow: 0 18px 40px rgba(59,130,246,.13) !important;
+}
+#card_ot_severity {
+  flex: 1 1 calc(56% - 10px) !important;
+  width: calc(56% - 10px) !important;
+  max-width: calc(56% - 10px) !important;
+  box-shadow: 0 18px 40px rgba(244,63,94,.13) !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 13px 16px !important;
+}
+#card_trend_total .chart-xl {
   height: 300px !important;
-  min-height: 300px !important;
 }
-#card_trend_main .chb,
-#card_cmp_totals .chb {
-  height: 320px !important;
-  min-height: 320px !important;
-}
-#card_dup_trend .chb,
-#card_ot_trend .chb {
-  height: 290px !important;
-  min-height: 290px !important;
-}
+#card_cpe_complaints .row.g-3,
 #card_dup_top_cust .row.g-3,
-#card_ot_severity .row.g-3,
-[id^="card_dup_"] .row.g-3,
-[id^="card_ot_"] .row.g-3 {
-  grid-template-columns: minmax(0, 2.2fr) minmax(180px, .62fr) !important;
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 2.45fr) minmax(170px, .55fr) !important;
 }
-.cd .row.g-3 {
-  grid-template-columns: minmax(0, 1.85fr) minmax(210px, .78fr) !important;
+#card_cpe_complaints .chb {
+  height: 280px !important;
+  min-height: 280px !important;
 }
-#card_dup_top_cust .row.g-3 .chb,
-#card_ot_severity .row.g-3 .chb,
-[id^="card_dup_"] .row.g-3 .chb,
-[id^="card_ot_"] .row.g-3 .chb {
+#card_dup_top_cust .chb,
+#card_ot_severity .chb {
   height: 250px !important;
   min-height: 250px !important;
 }
-#card_dup_top_cust .row.g-3 .col-lg-5 > div,
-#card_ot_severity .row.g-3 .col-lg-5 > div,
-[id^="card_dup_"] .row.g-3 .col-lg-5 > div,
-[id^="card_ot_"] .row.g-3 .col-lg-5 > div {
+#card_cpe_complaints .col-lg-5 > div {
+  height: 280px !important;
+  min-height: 280px !important;
+  max-height: 280px !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
   height: 250px !important;
   min-height: 250px !important;
   max-height: 250px !important;
 }
-.cd .row.g-3 .chb {
-  height: 270px !important;
-  min-height: 270px !important;
+#card_dup_top_cust .mini-data-grid,
+#card_ot_severity .mini-data-grid,
+#card_cpe_complaints .mini-data-grid {
+  max-height: 72px !important;
 }
-.cd .row.g-3 .col-lg-5 > div {
-  height: 270px !important;
-  min-height: 270px !important;
-  max-height: 270px !important;
-}
-.cd .mini-data-grid {
-  max-height: 76px !important;
+/* hide removed default graphs */
+#card_trend_main,
+#card_dup_trend,
+#card_ot_trend {
+  display: none !important;
 }
 
 @media (max-width: 1100px) {
-  .cd .cb > .chb:only-child {
-    height: 280px !important;
-    min-height: 280px !important;
+  .hdr-r {
+    top: 10px !important;
+    right: 10px !important;
   }
-  #card_trend_main .chb,
-  #card_cmp_totals .chb {
-    height: 300px !important;
-    min-height: 300px !important;
+  #card_trend_total,
+  #card_cpe_complaints,
+  #card_dup_top_cust,
+  #card_ot_severity {
+    flex: 1 1 100% !important;
+    max-width: 100% !important;
   }
-  #card_dup_trend .chb,
-  #card_ot_trend .chb {
+  #card_trend_total .chart-xl {
     height: 270px !important;
-    min-height: 270px !important;
   }
-  .cd .row.g-3 .chb,
-  .cd .row.g-3 .col-lg-5 > div,
-  #card_dup_top_cust .row.g-3 .chb,
-  #card_dup_top_cust .row.g-3 .col-lg-5 > div,
-  #card_ot_severity .row.g-3 .chb,
-  #card_ot_severity .row.g-3 .col-lg-5 > div,
-  [id^="card_dup_"] .row.g-3 .chb,
-  [id^="card_dup_"] .row.g-3 .col-lg-5 > div,
-  [id^="card_ot_"] .row.g-3 .chb,
-  [id^="card_ot_"] .row.g-3 .col-lg-5 > div {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
     height: 230px !important;
     min-height: 230px !important;
     max-height: 230px !important;
   }
 }
 @media (max-width: 768px) {
-  .period-tray {
-    transition: opacity .3s cubic-bezier(.22,1,.36,1), transform .34s cubic-bezier(.22,1,.36,1), filter .3s ease;
+  .hdr {
+    padding: 10px 12px 6px !important;
   }
-  .tool-btn::after {
+  .hdr-l {
+    padding: 8px 10px !important;
+    border-radius: 16px !important;
+  }
+  .hdr-r {
+    top: 8px !important;
+    right: 8px !important;
+    padding: 7px 8px !important;
+    border-radius: 16px !important;
+  }
+  .tool-btn::after,
+  .tool-btn::before {
     display: none;
   }
-  .cd .cb > .chb:only-child {
+  .period-tray,
+  .tools-tray {
+    right: -6px;
+    min-width: min(90vw, 320px);
+  }
+  .period-tray-grid {
+    grid-template-columns: 1fr;
+  }
+  #card_trend_total .chart-xl {
     height: 240px !important;
-    min-height: 240px !important;
   }
-  #card_trend_main .chb,
-  #card_cmp_totals .chb,
-  #card_dup_trend .chb,
-  #card_ot_trend .chb {
-    height: 250px !important;
-    min-height: 250px !important;
-  }
-  .cd .row.g-3 .chb,
-  .cd .row.g-3 .col-lg-5 > div,
-  #card_dup_top_cust .row.g-3 .chb,
-  #card_dup_top_cust .row.g-3 .col-lg-5 > div,
-  #card_ot_severity .row.g-3 .chb,
-  #card_ot_severity .row.g-3 .col-lg-5 > div,
-  [id^="card_dup_"] .row.g-3 .chb,
-  [id^="card_dup_"] .row.g-3 .col-lg-5 > div,
-  [id^="card_ot_"] .row.g-3 .chb,
-  [id^="card_ot_"] .row.g-3 .col-lg-5 > div {
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
     height: 200px !important;
     min-height: 200px !important;
     max-height: 200px !important;
@@ -2587,10 +2711,16 @@
         </div>
       </div>
     </div>
-    <div class="tp tool-nav">
-      <button class="tp-b cmp tool-btn" id="cmpTab" data-tip="Compare" style="margin-left:0 !important;border-left:none !important;padding-left:0 !important;" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg><span class="cnt" id="cmpCnt">0</span></button>
-      <button class="tp-b pvt tool-btn" id="pvtTab" data-tip="Pivot" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg></button>
-      <button class="tp-b flt tool-btn" id="fltTab" data-tip="Create Graph" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg></button>
+    <div class="tools-launch-wrap" id="toolsLaunchWrap">
+      <button class="icon-btn tools-toggle-btn" id="toolsToggleBtn" title="Tools" onclick="toggleToolsTray()"><svg class="ic"><use href="#i-grid"/></svg></button>
+      <div class="tools-tray" id="toolsTray">
+        <div class="tools-tray-head"><svg class="ic ic-sm"><use href="#i-grid"/></svg> Tools</div>
+        <div class="tp tool-nav">
+          <button class="tp-b cmp tool-btn" id="cmpTab" data-tip="Compare" style="margin-left:0 !important;border-left:none !important;padding-left:0 !important;" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg><span class="cnt" id="cmpCnt">0</span></button>
+          <button class="tp-b pvt tool-btn" id="pvtTab" data-tip="Pivot" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg></button>
+          <button class="tp-b flt tool-btn" id="fltTab" data-tip="Create Graph" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg></button>
+        </div>
+      </div>
     </div>
     <div style="display:flex; align-items:center; gap:8px;">
       <button class="icon-btn" id="setBtn" title="Settings" onclick="openSettings()"><svg class="ic"><use href="#i-settings"/></svg></button>
@@ -4252,6 +4382,7 @@ function updateSubPeriodUI(){
 }
 function onSubPeriodChange(){subPeriod=document.getElementById("spSel").value;applyFilter(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 let PERIOD_TRAY_OPEN=false;
+let TOOLS_TRAY_OPEN=false;
 function togglePeriodTray(forceState){
   let tray=document.getElementById('periodTray');
   let btn=document.getElementById('periodToggleBtn');
@@ -4259,11 +4390,22 @@ function togglePeriodTray(forceState){
   PERIOD_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !PERIOD_TRAY_OPEN;
   tray.classList.toggle('open', PERIOD_TRAY_OPEN);
   btn.classList.toggle('act', PERIOD_TRAY_OPEN);
+  if(PERIOD_TRAY_OPEN) toggleToolsTray(false);
+}
+function toggleToolsTray(forceState){
+  let tray=document.getElementById('toolsTray');
+  let btn=document.getElementById('toolsToggleBtn');
+  if(!tray||!btn)return;
+  TOOLS_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !TOOLS_TRAY_OPEN;
+  tray.classList.toggle('open', TOOLS_TRAY_OPEN);
+  btn.classList.toggle('act', TOOLS_TRAY_OPEN);
+  if(TOOLS_TRAY_OPEN) togglePeriodTray(false);
 }
 document.addEventListener('click', function(ev){
   let wrap=document.getElementById('periodLaunchWrap');
-  if(!wrap)return;
-  if(PERIOD_TRAY_OPEN && !wrap.contains(ev.target)) togglePeriodTray(false);
+  let tWrap=document.getElementById('toolsLaunchWrap');
+  if(PERIOD_TRAY_OPEN && wrap && !wrap.contains(ev.target)) togglePeriodTray(false);
+  if(TOOLS_TRAY_OPEN && tWrap && !tWrap.contains(ev.target)) toggleToolsTray(false);
 }, true);
 function getWeekStart(d){let dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay());dt.setHours(0,0,0,0);return dt;}
 function getWeekNumber(d){let s=new Date(d.getFullYear(),0,1);return Math.ceil(((d-s)/86400000+s.getDay()+1)/7);}
@@ -4423,11 +4565,6 @@ function renderDuplicateOverviewInMain(){
   if(!cols.customerCol || !cols.ticketCol) return;
   let dupResult = getDuplicateTicketsDataForCols(F, cols.customerCol, cols.ticketCol);
   if(!dupResult.duplicates || !dupResult.duplicates.length) return;
-  if (dateCol) {
-    let dupRowsAll = [];
-    dupResult.duplicates.forEach(d => { dupRowsAll = dupRowsAll.concat(d.tickets); });
-    renderDuplicateTrendCard(dupRowsAll);
-  }
   renderTopCustomersCard(dupResult.duplicates, dupResult.totalDupsCount);
 }
 function renderOverTimeOverviewInMain(){
@@ -4436,19 +4573,12 @@ function renderOverTimeOverviewInMain(){
   if(!cols.createdCol || !cols.resolvedCol) return;
   let otData = getOverTimeTicketsData(F, cols.createdCol, cols.resolvedCol, false);
   if(!otData.overTimeTickets || !otData.overTimeTickets.length) return;
-  if (dateCol) {
-    let otRowsAll = otData.overTimeTickets.map(x => x.row);
-    renderOverTimeTrendCard(otRowsAll);
-  }
   renderOverTimeSeverityCard(otData.counts, otData.overTimeTickets.length);
 }
 function renderEnterpriseSections(){
   if(D.isPivot)return;
-  
+  renderTicketTrendSection();
   renderCpeComplaintSection();
-  if (range === 'all') {
-    renderTicketTrendSection();
-  }
   renderDuplicateOverviewInMain();
   renderOverTimeOverviewInMain();
 }
@@ -4697,7 +4827,8 @@ function aggregateTickets(gran,rows){
 }
 function rowsForTrendPeriod(gran,key){
   if(!dateCol||!key)return [];
-  return (D.rawData||[]).filter(r=>{
+  let baseRows = (typeof currentTicketPool === 'function' ? currentTicketPool() : F) || [];
+  return baseRows.filter(r=>{
     let d=parseLocalDate(r[dateCol]);if(!d)return false;
     if(gran==='daily')return toLocalDateStr(d)===key;
     if(gran==='weekly'){
@@ -4822,7 +4953,8 @@ function switchTicketTrend(gran){TREND_GRAN=gran;document.querySelectorAll('#tic
 function buildTicketTrendChart(gran){
   let canvas=document.getElementById('totalTicketTrendChart');if(!canvas)return;
   if(CH.totalTicketTrendChart){try{CH.totalTicketTrendChart.destroy();}catch(e){}}
-  let a=aggregateTickets(gran,D.rawData);
+  let baseRows = (typeof currentTicketPool === 'function' ? currentTicketPool() : F);
+  let a=aggregateTickets(gran,baseRows);
   let gc=S.dark?'rgba(255,255,255,.07)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b',col=cssVar('--ac');
   let colors=a.labels.map((_,i)=>P[i%P.length]);
   
@@ -4911,7 +5043,13 @@ function doRender(){
   else if(FILTER_MODE){renderFilterDashboard();}
   else if(PIVOT_BUILDER_MODE){renderPivotBuilderDashboard();}
   
-  else{renderEnterpriseSections();renderTrendCard();if(D.isPivot)renderPivot();else renderDash();renderSavedDashboardCharts();}
+  else{
+    if(D.isPivot)renderPivot();
+    else {
+      renderEnterpriseSections();
+      renderSavedDashboardCharts();
+    }
+  }
   setTimeout(() => { 
     if (typeof refreshAllAppSelects === 'function') refreshAllAppSelects(); 
     if (typeof applyGraphOrderToDashboard === 'function') applyGraphOrderToDashboard();
