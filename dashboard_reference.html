@@ -3702,6 +3702,180 @@ body {
   }
 }
 
+/* ═══════════ NAV-ROW + MINIMAL CALENDAR + FULL VALUE LABELS PATCH V16 ═══════════ */
+.hdr {
+  display: flex !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 8px 16px 10px !important;
+  position: relative !important;
+  top: auto !important;
+  z-index: 40 !important;
+}
+.hdr-r {
+  gap: 8px !important;
+  margin: 0 !important;
+}
+.period-tray,
+.tools-tray {
+  background: rgba(255,255,255,.97) !important;
+  border: 1px solid rgba(226,232,240,.96) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 14px 28px rgba(15,23,42,.10) !important;
+  backdrop-filter: blur(10px) saturate(1.04) !important;
+}
+.period-tray {
+  min-width: 286px !important;
+  padding: 10px !important;
+}
+.period-tray-grid {
+  grid-template-columns: 1fr !important;
+  gap: 8px !important;
+}
+.period-mini-panel {
+  border: 1px solid rgba(226,232,240,.92) !important;
+  border-radius: 12px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%) !important;
+  padding: 8px !important;
+  box-shadow: none !important;
+}
+.period-mini-title {
+  font-size: 9.5px !important;
+  margin-bottom: 6px !important;
+}
+.period-tray-tabs {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.period-tray-tabs .tp-b {
+  flex: 0 0 auto !important;
+  min-width: 76px !important;
+  height: 34px !important;
+  padding: 0 10px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(226,232,240,.96) !important;
+  background: #f8fafc !important;
+  color: var(--t2) !important;
+}
+.period-tray-tabs .tp-b.on {
+  background: rgba(99,102,241,.10) !important;
+  color: var(--ac) !important;
+  border-color: rgba(99,102,241,.16) !important;
+  box-shadow: none !important;
+}
+.period-selection-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px dashed rgba(203,213,225,.92);
+  background: #fbfcff;
+  color: var(--t3);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px 10px;
+  text-align: center;
+}
+.period-tray #spSel {
+  min-width: 100% !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+  background: #f8fafc !important;
+}
+.tools-tray {
+  min-width: 182px !important;
+  padding: 10px !important;
+}
+.tool-nav {
+  grid-template-columns: repeat(3,minmax(0,1fr)) !important;
+  gap: 6px !important;
+}
+.tool-nav .tool-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+}
+.tool-btn::after,
+.tool-btn::before {
+  display: none !important;
+}
+
+.ct.dashboard-stage {
+  gap: 12px !important;
+  padding: 0 16px 0 !important;
+}
+#card_trend_total,
+#card_cpe_complaints,
+#card_dup_top_cust,
+#card_ot_severity {
+  box-shadow: 0 7px 14px rgba(15,23,42,.05) !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 7px 11px !important;
+  min-height: 38px !important;
+}
+#card_trend_total .chart-xl {
+  height: 270px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 2.85fr) minmax(150px, .7fr) !important;
+  gap: 8px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 228px !important;
+  min-height: 228px !important;
+  max-height: 228px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 206px !important;
+  min-height: 206px !important;
+  max-height: 206px !important;
+}
+@media (max-width: 768px) {
+  .hdr {
+    padding: 8px 12px 8px !important;
+  }
+  .period-tray,
+  .tools-tray {
+    min-width: min(84vw, 280px) !important;
+  }
+  .period-tray-tabs .tp-b {
+    min-width: 70px !important;
+    height: 32px !important;
+  }
+  .ct.dashboard-stage {
+    padding: 0 12px 0 !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 230px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 180px !important;
+    min-height: 180px !important;
+    max-height: 180px !important;
+  }
+}
+
 </style>
 
   </head>
@@ -3777,6 +3951,7 @@ body {
               <div class="sp-wrap" id="spWrap" style="display:none;align-items:center;gap:6px;">
                 <select class="sp-sel" id="spSel" onchange="onSubPeriodChange()"></select>
               </div>
+              <div id="periodSelectionHint" class="period-selection-hint">Choose a range above to enable date selection.</div>
             </div>
           </div>
         </div>
@@ -4633,12 +4808,6 @@ const VALUE_LABEL_PLUGIN={
         let pos=el.tooltipPosition?el.tooltipPosition():{x:el.x,y:el.y};
         let x=pos.x,y=pos.y;
         if(chartType==='bar'){
-          if (meta.data.length > 28 && (i % 4 !== 0)) return;
-          if (meta.data.length > 20 && (i % 3 !== 0)) return;
-          if (meta.data.length > 14 && (i % 2 === 1)) return;
-          if (meta.data.length > 18 && i >= 10 && el.width < 28) return;
-          if (meta.data.length > 35 && i >= 6) return;
-          if (el.width < 14 && i >= 3) return;
           y=(el.y||pos.y)-13;
           if(y<16)y=(el.y||pos.y)+14;
           const padX=8,padY=4,w=ctx.measureText(txt).width+(padX*2),h=fs+(padY*2);
@@ -5405,9 +5574,14 @@ function toggleDateSortOrder() {
 }
 
 function updateSubPeriodUI(){
-  let wrap=document.getElementById("spWrap"),sel=document.getElementById("spSel");
-  if(range==='all'||!dateCol||D.isPivot||allDates.length===0){wrap.style.display='none';return;}
-  wrap.style.display='flex';
+  let wrap=document.getElementById("spWrap"),sel=document.getElementById("spSel"),hint=document.getElementById('periodSelectionHint');
+  if(range==='all'||!dateCol||D.isPivot||allDates.length===0){
+    if(wrap) wrap.style.display='none';
+    if(hint) hint.style.display='flex';
+    return;
+  }
+  if(wrap) wrap.style.display='flex';
+  if(hint) hint.style.display='none';
   let opts=[];
   let asc = S.dateSortOrder === 'asc';
   
