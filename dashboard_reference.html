@@ -2292,6 +2292,30 @@
   line-height: 1;
   box-shadow: 0 4px 10px rgba(15,23,42,.18);
 }
+.tool-btn::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 8px);
+  transform: translateX(-50%) translateY(-4px);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(15,23,42,.88);
+  padding: 6px 8px;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(15,23,42,.22);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 12;
+}
+.tool-btn:hover::after,
+.tool-btn:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
 @media (max-width: 768px) {
   .period-tray {
     right: -8px;
@@ -2321,80 +2345,117 @@
 }
 
 .cd .cb > .chb:only-child {
-  height: 340px !important;
-  min-height: 340px !important;
+  height: 300px !important;
+  min-height: 300px !important;
 }
 #card_trend_main .chb,
+#card_cmp_totals .chb {
+  height: 320px !important;
+  min-height: 320px !important;
+}
 #card_dup_trend .chb,
-#card_ot_trend .chb,
-#card_cmp_totals .chb,
-#card_dup_top_cust .chb,
-[id^="card_ot_"] .chb,
-[id^="card_dup_"] .chb {
-  height: 360px !important;
-  min-height: 360px !important;
+#card_ot_trend .chb {
+  height: 290px !important;
+  min-height: 290px !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3,
+[id^="card_dup_"] .row.g-3,
+[id^="card_ot_"] .row.g-3 {
+  grid-template-columns: minmax(0, 1.55fr) minmax(210px, .92fr) !important;
 }
 .cd .row.g-3 {
-  grid-template-columns: minmax(0, 1.75fr) minmax(220px, .82fr) !important;
+  grid-template-columns: minmax(0, 1.7fr) minmax(220px, .86fr) !important;
+}
+#card_dup_top_cust .row.g-3 .chb,
+#card_ot_severity .row.g-3 .chb,
+[id^="card_dup_"] .row.g-3 .chb,
+[id^="card_ot_"] .row.g-3 .chb {
+  height: 260px !important;
+  min-height: 260px !important;
+}
+#card_dup_top_cust .row.g-3 .col-lg-5 > div,
+#card_ot_severity .row.g-3 .col-lg-5 > div,
+[id^="card_dup_"] .row.g-3 .col-lg-5 > div,
+[id^="card_ot_"] .row.g-3 .col-lg-5 > div {
+  height: 260px !important;
+  min-height: 260px !important;
+  max-height: 260px !important;
 }
 .cd .row.g-3 .chb {
-  height: 300px !important;
-  min-height: 300px !important;
+  height: 280px !important;
+  min-height: 280px !important;
 }
 .cd .row.g-3 .col-lg-5 > div {
-  height: 300px !important;
-  min-height: 300px !important;
-  max-height: 300px !important;
+  height: 280px !important;
+  min-height: 280px !important;
+  max-height: 280px !important;
 }
 .cd .mini-data-grid {
-  max-height: 84px !important;
+  max-height: 76px !important;
 }
 
 @media (max-width: 1100px) {
   .cd .cb > .chb:only-child {
+    height: 280px !important;
+    min-height: 280px !important;
+  }
+  #card_trend_main .chb,
+  #card_cmp_totals .chb {
     height: 300px !important;
     min-height: 300px !important;
   }
-  #card_trend_main .chb,
   #card_dup_trend .chb,
-  #card_ot_trend .chb,
-  #card_cmp_totals .chb,
-  #card_dup_top_cust .chb,
-  [id^="card_ot_"] .chb,
-  [id^="card_dup_"] .chb {
-    height: 320px !important;
-    min-height: 320px !important;
-  }
-  .cd .row.g-3 .chb,
-  .cd .row.g-3 .col-lg-5 > div {
-    height: 260px !important;
-    min-height: 260px !important;
-    max-height: 260px !important;
-  }
-}
-@media (max-width: 768px) {
-  .period-tray {
-    transition: opacity .28s cubic-bezier(.22,1,.36,1), transform .3s cubic-bezier(.22,1,.36,1), filter .28s ease;
-  }
-  .cd .cb > .chb:only-child {
-    height: 260px !important;
-    min-height: 260px !important;
-  }
-  #card_trend_main .chb,
-  #card_dup_trend .chb,
-  #card_ot_trend .chb,
-  #card_cmp_totals .chb,
-  #card_dup_top_cust .chb,
-  [id^="card_ot_"] .chb,
-  [id^="card_dup_"] .chb {
+  #card_ot_trend .chb {
     height: 270px !important;
     min-height: 270px !important;
   }
   .cd .row.g-3 .chb,
-  .cd .row.g-3 .col-lg-5 > div {
-    height: 220px !important;
-    min-height: 220px !important;
-    max-height: 220px !important;
+  .cd .row.g-3 .col-lg-5 > div,
+  #card_dup_top_cust .row.g-3 .chb,
+  #card_dup_top_cust .row.g-3 .col-lg-5 > div,
+  #card_ot_severity .row.g-3 .chb,
+  #card_ot_severity .row.g-3 .col-lg-5 > div,
+  [id^="card_dup_"] .row.g-3 .chb,
+  [id^="card_dup_"] .row.g-3 .col-lg-5 > div,
+  [id^="card_ot_"] .row.g-3 .chb,
+  [id^="card_ot_"] .row.g-3 .col-lg-5 > div {
+    height: 240px !important;
+    min-height: 240px !important;
+    max-height: 240px !important;
+  }
+}
+@media (max-width: 768px) {
+  .period-tray {
+    transition: opacity .3s cubic-bezier(.22,1,.36,1), transform .34s cubic-bezier(.22,1,.36,1), filter .3s ease;
+  }
+  .tool-btn::after {
+    display: none;
+  }
+  .cd .cb > .chb:only-child {
+    height: 240px !important;
+    min-height: 240px !important;
+  }
+  #card_trend_main .chb,
+  #card_cmp_totals .chb,
+  #card_dup_trend .chb,
+  #card_ot_trend .chb {
+    height: 250px !important;
+    min-height: 250px !important;
+  }
+  .cd .row.g-3 .chb,
+  .cd .row.g-3 .col-lg-5 > div,
+  #card_dup_top_cust .row.g-3 .chb,
+  #card_dup_top_cust .row.g-3 .col-lg-5 > div,
+  #card_ot_severity .row.g-3 .chb,
+  #card_ot_severity .row.g-3 .col-lg-5 > div,
+  [id^="card_dup_"] .row.g-3 .chb,
+  [id^="card_dup_"] .row.g-3 .col-lg-5 > div,
+  [id^="card_ot_"] .row.g-3 .chb,
+  [id^="card_ot_"] .row.g-3 .col-lg-5 > div {
+    height: 210px !important;
+    min-height: 210px !important;
+    max-height: 210px !important;
   }
 }
 
@@ -2471,9 +2532,9 @@
       </div>
     </div>
     <div class="tp tool-nav">
-      <button class="tp-b cmp tool-btn" id="cmpTab" style="margin-left:0 !important;border-left:none !important;padding-left:0 !important;" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg><span class="cnt" id="cmpCnt">0</span></button>
-      <button class="tp-b pvt tool-btn" id="pvtTab" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg></button>
-      <button class="tp-b flt tool-btn" id="fltTab" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg></button>
+      <button class="tp-b cmp tool-btn" id="cmpTab" data-tip="Compare" style="margin-left:0 !important;border-left:none !important;padding-left:0 !important;" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg><span class="cnt" id="cmpCnt">0</span></button>
+      <button class="tp-b pvt tool-btn" id="pvtTab" data-tip="Pivot" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg></button>
+      <button class="tp-b flt tool-btn" id="fltTab" data-tip="Create Graph" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg></button>
     </div>
     <div style="display:flex; align-items:center; gap:8px;">
       <button class="icon-btn" id="setBtn" title="Settings" onclick="openSettings()"><svg class="ic"><use href="#i-settings"/></svg></button>
