@@ -4109,6 +4109,17 @@ body {
   backdrop-filter: blur(10px);
   z-index: 5000;
   overflow: auto;
+  opacity: 0;
+  transform: scale(.985);
+  transition: opacity .18s ease, transform .22s ease;
+}
+.expand-page.show {
+  opacity: 1;
+  transform: scale(1);
+}
+.expand-page.closing {
+  opacity: 0;
+  transform: scale(.985);
 }
 [data-theme="dark"] .expand-page {
   background: linear-gradient(180deg, rgba(15,17,23,.96) 0%, rgba(21,26,39,.98) 100%);
@@ -4219,8 +4230,55 @@ body {
   text-transform: uppercase;
   letter-spacing: .45px;
 }
+.expand-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(226,232,240,.9);
+}
+.expand-search {
+  flex: 1 1 auto;
+  height: 34px;
+  min-width: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: #f8fafc;
+  color: var(--t1);
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 600;
+  outline: none;
+}
+.expand-sort-group {
+  display: inline-flex;
+  gap: 6px;
+}
+.expand-sort-btn {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: #fff;
+  color: var(--t2);
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.expand-sort-btn.on {
+  background: rgba(99,102,241,.10);
+  color: var(--ac);
+  border-color: rgba(99,102,241,.16);
+}
+.expand-rows-meta {
+  padding: 8px 12px 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--t3);
+}
 .expand-table-wrap {
-  padding: 10px 12px 12px;
+  padding: 0 12px 12px;
   overflow: auto;
   max-height: 540px;
 }
@@ -4249,6 +4307,21 @@ body {
   color: var(--t1);
   line-height: 1.35;
 }
+.expand-table th:first-child,
+.expand-table td:first-child {
+  width: 58%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.expand-label-text {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: calc(100% - 18px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .expand-table tbody tr {
   cursor: pointer;
   transition: background-color .16s ease;
@@ -4275,6 +4348,14 @@ body {
 @media (max-width: 980px) {
   .expand-layout {
     grid-template-columns: 1fr;
+  }
+  .expand-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .expand-sort-group {
+    width: 100%;
+    justify-content: flex-end;
   }
   .expand-chart-box {
     height: 340px;
@@ -10533,11 +10614,15 @@ function applyOverTimeGraphSettingsFromModal(){
 
 /* ═══════════ ZOOM / EXPAND PAGE ═══════════ */
 let expandedChartInstance=null;
-function closeExpandedChartPage(){
+let EXPANDED_PAGE_STATE={ zKey:'', chartType:'bar', rows:[], search:'', sortBy:'value', sortDir:'desc' };
+function closeExpandedChartPage(immediate){
   if(expandedChartInstance){ try{ expandedChartInstance.destroy(); }catch(e){} expandedChartInstance=null; }
   let old=document.getElementById('expandChartPage');
-  if(old) old.remove();
-  document.body.style.overflow='';
+  if(!old){ document.body.style.overflow=''; return; }
+  if(immediate){ old.remove(); document.body.style.overflow=''; return; }
+  old.classList.remove('show');
+  old.classList.add('closing');
+  setTimeout(()=>{ let el=document.getElementById('expandChartPage'); if(el) el.remove(); document.body.style.overflow=''; }, 180);
 }
 function getExpandedChartRows(zd){
   let labels = Array.isArray(zd.pieLabels) && zd.pieLabels.length ? zd.pieLabels.slice() : (zd.labels||[]).slice();
@@ -10547,8 +10632,9 @@ function getExpandedChartRows(zd){
   return labels.map((label,i)=>({ label, value:Number(values[i]||0), color:colors[i%colors.length], pct: total>0?((Number(values[i]||0)/total)*100).toFixed(1):'0.0' }));
 }
 function expandedRowClick(zKey,index){
+  let rows = getFilteredExpandedRows();
+  let item=rows[index]; if(!item) return;
   let zd=CHART_META[zKey]; if(!zd) return;
-  let rows=getExpandedChartRows(zd); let item=rows[index]; if(!item) return;
   let label=item.label;
   if(zKey==='dup_top_cust') return showDuplicateTicketsM(label);
   if(zKey==='ot_severity' || zd.columnName==='_overtime'){
@@ -10556,12 +10642,51 @@ function expandedRowClick(zKey,index){
     return showOverTimeTicketDetailsM(tier);
   }
   if(zKey==='cpe_complaints' || zd.type==='cpe_complaints') return openCpeModelModal(label);
-  if(zKey==='trend_total') return openTrendPeriodM(TREND_GRAN, zd.keys[index], zd.labels[index]);
-  if(zd.type==='trend' && zd.columnName) return scheduleOpenDateM(zd.labels[index]);
+  if(zKey==='trend_total'){
+    let rawIndex=(zd.labels||[]).indexOf(label);
+    if(rawIndex>=0) return openTrendPeriodM(TREND_GRAN, zd.keys[rawIndex], zd.labels[rawIndex]);
+  }
+  if(zd.type==='trend' && zd.columnName) return scheduleOpenDateM(label);
   if(zd.type==='normal' && zd.columnName) return scheduleOpenDataM(zd.columnName, label);
 }
+function getFilteredExpandedRows(){
+  let rows=(EXPANDED_PAGE_STATE.rows||[]).slice();
+  let q=(EXPANDED_PAGE_STATE.search||'').trim().toLowerCase();
+  if(q) rows=rows.filter(r=>String(r.label||'').toLowerCase().includes(q));
+  let key=EXPANDED_PAGE_STATE.sortBy||'value', dir=EXPANDED_PAGE_STATE.sortDir==='asc'?1:-1;
+  rows.sort((a,b)=>{
+    if(key==='label') return String(a.label).localeCompare(String(b.label), undefined, {numeric:true,sensitivity:'base'})*dir;
+    if(key==='share') return (parseFloat(a.pct)-parseFloat(b.pct))*dir;
+    return ((Number(a.value)||0)-(Number(b.value)||0))*dir;
+  });
+  return rows;
+}
+function renderExpandedDataTable(){
+  let body=document.getElementById('expandTableBody');
+  let counter=document.getElementById('expandRowsMeta');
+  if(!body) return;
+  let rows=getFilteredExpandedRows();
+  body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(EXPANDED_PAGE_STATE.zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
+  if(counter) counter.textContent = rows.length.toLocaleString() + ' rows';
+}
+function setExpandedSearch(val){
+  EXPANDED_PAGE_STATE.search=val||'';
+  renderExpandedDataTable();
+  renderExpandedChart();
+}
+function setExpandedSort(key){
+  if(EXPANDED_PAGE_STATE.sortBy===key){ EXPANDED_PAGE_STATE.sortDir = EXPANDED_PAGE_STATE.sortDir==='asc' ? 'desc' : 'asc'; }
+  else { EXPANDED_PAGE_STATE.sortBy=key; EXPANDED_PAGE_STATE.sortDir = key==='label' ? 'asc' : 'desc'; }
+  document.querySelectorAll('[data-expand-sort]').forEach(btn=>{
+    let active=btn.getAttribute('data-expand-sort')===key;
+    btn.classList.toggle('on', active);
+    if(active) btn.setAttribute('data-dir', EXPANDED_PAGE_STATE.sortDir); else btn.removeAttribute('data-dir');
+  });
+  renderExpandedDataTable();
+  renderExpandedChart();
+}
 function createExpandedChartData(zd, chartType){
-  let rows=getExpandedChartRows(zd);
+  let rows=getFilteredExpandedRows();
   let labels=rows.map(r=>r.label);
   let values=rows.map(r=>r.value);
   let colors=rows.map(r=>r.color);
@@ -10570,12 +10695,29 @@ function createExpandedChartData(zd, chartType){
   }
   return { type:'bar', data:{ labels: wrapAxisLabels(labels,12), datasets:[{ label: zd.title, data: values, backgroundColor: colors, borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] } };
 }
+function renderExpandedChart(){
+  let zd=CHART_META[EXPANDED_PAGE_STATE.zKey];
+  if(!zd) return;
+  if(expandedChartInstance){ try{ expandedChartInstance.destroy(); }catch(e){} expandedChartInstance=null; }
+  let gc=S.dark?'rgba(255,255,255,.08)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b';
+  let cfg=createExpandedChartData(zd, EXPANDED_PAGE_STATE.chartType||'bar');
+  cfg.options={
+    responsive:true,
+    maintainAspectRatio:false,
+    animation:{duration:320},
+    plugins:{ legend:{display:false}, valueLabels:{display:true,fontSize:10}, tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}} },
+    scales:{ y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'}}}, x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:9,weight:'700'},autoSkip:false,maxRotation:(EXPANDED_PAGE_STATE.chartType==='line'?18:22),minRotation:(EXPANDED_PAGE_STATE.chartType==='line'?18:22),padding:6}} },
+    onClick:(e,els)=>{ if(els&&els.length) expandedRowClick(EXPANDED_PAGE_STATE.zKey, els[0].index); },
+    onHover:(e,els)=>{ e.native.target.style.cursor=els&&els.length?'pointer':'default'; }
+  };
+  expandedChartInstance=createSafeChart(document.getElementById('expandPageCanvas'),cfg);
+}
 function openExpandedChartPage(zKey,chartType){
   let zd=CHART_META[zKey]; if(!zd) return;
-  closeExpandedChartPage();
+  closeExpandedChartPage(true);
   let rows=getExpandedChartRows(zd);
   let total = Number(zd.total || rows.reduce((s,r)=>s+r.value,0) || 0);
-  let htmlRows = rows.map((r,i)=>`<tr onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td><span class="expand-swatch" style="background:${r.color};"></span>${escapeHtml(r.label)}</td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
+  EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows, search:'', sortBy:'value', sortDir:'desc' };
   let page=document.createElement('div');
   page.id='expandChartPage';
   page.className='expand-page';
@@ -10590,23 +10732,15 @@ function openExpandedChartPage(zKey,chartType){
     </div>
     <div class="expand-layout">
       <div class="expand-panel expand-chart-panel"><div class="expand-chart-box"><canvas id="expandPageCanvas"></canvas></div></div>
-      <div class="expand-panel expand-data-panel"><div class="expand-data-head">Data Breakdown</div><div class="expand-table-wrap"><table class="expand-table"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${htmlRows}</tbody></table></div></div>
+      <div class="expand-panel expand-data-panel"><div class="expand-data-head">Data Breakdown</div><div class="expand-controls"><input id="expandSearch" class="expand-search" type="text" placeholder="Search label..." oninput="setExpandedSearch(this.value)"><div class="expand-sort-group"><button class="expand-sort-btn on" data-expand-sort="value" data-dir="desc" type="button" onclick="setExpandedSort('value')">Value</button><button class="expand-sort-btn" data-expand-sort="label" type="button" onclick="setExpandedSort('label')">Label</button><button class="expand-sort-btn" data-expand-sort="share" type="button" onclick="setExpandedSort('share')">Share</button></div></div><div class="expand-table-wrap"><div id="expandRowsMeta" class="expand-rows-meta"></div><table class="expand-table"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody id="expandTableBody"></tbody></table></div></div>
     </div>
   </div>`;
   document.body.appendChild(page);
   document.body.style.overflow='hidden';
-  let cfg=createExpandedChartData(zd, chartType||'bar');
-  let gc=S.dark?'rgba(255,255,255,.08)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b';
-  cfg.options={
-    responsive:true,
-    maintainAspectRatio:false,
-    animation:{duration:320},
-    plugins:{ legend:{display:false}, valueLabels:{display:true,fontSize:10}, tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}} },
-    scales:{ y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'}}}, x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:9,weight:'700'},autoSkip:false,maxRotation:chartType==='line'?18:22,minRotation:chartType==='line'?18:22,padding:6}} },
-    onClick:(e,els)=>{ if(els&&els.length) expandedRowClick(zKey, els[0].index); },
-    onHover:(e,els)=>{ e.native.target.style.cursor=els&&els.length?'pointer':'default'; }
-  };
-  expandedChartInstance=createSafeChart(document.getElementById('expandPageCanvas'),cfg);
+  requestAnimationFrame(()=>{ let el=document.getElementById('expandChartPage'); if(el) el.classList.add('show'); });
+  page.scrollTop=0;
+  renderExpandedChart();
+  renderExpandedDataTable();
 }
 function openZoom(zKey,chartType){
   openExpandedChartPage(zKey, chartType || 'bar');
@@ -10741,19 +10875,19 @@ function styleGeneralRecordsModal(titleStr, count) {
   let modalContent = document.querySelector('#dModal .modal-content');
   if (!modalContent) return;
   
-  modalContent.style.background = 'var(--bg2)';
-  modalContent.style.border = '1px solid var(--border)';
-  modalContent.style.borderRadius = '14px';
-  modalContent.style.boxShadow = '0 25px 45px -10px rgba(0,0,0,0.4)';
+  modalContent.style.background = 'linear-gradient(180deg, var(--bg2) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%)';
+  modalContent.style.border = '1px solid color-mix(in srgb, var(--ac) 10%, var(--border))';
+  modalContent.style.borderRadius = '18px';
+  modalContent.style.boxShadow = '0 18px 36px rgba(15,23,42,0.14)';
   modalContent.style.overflow = 'hidden';
   modalContent.style.display = 'flex';
   modalContent.style.flexDirection = 'column';
-  modalContent.style.maxHeight = '90vh';
+  modalContent.style.maxHeight = '84vh';
   
   let header = modalContent.querySelector('.modal-header');
   if (header) {
     header.style.borderBottom = '1px solid var(--border)';
-    header.style.padding = '16px 22px';
+    header.style.padding = '12px 16px';
     header.style.display = 'flex';
     header.style.justifyContent = 'space-between';
     header.style.alignItems = 'center';
@@ -10763,12 +10897,12 @@ function styleGeneralRecordsModal(titleStr, count) {
       <div style="display:flex;align-items:center;gap:14px;">
         <div style="width:40px;height:40px;border-radius:10px;background:var(--ac);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 10px rgba(0,0,0,0.2);">🔍</div>
         <div>
-          <h5 class="modal-title" style="font-size:16.5px;font-weight:800;margin:0;color:var(--t1);">${escapeHtml(titleStr)}</h5>
-          <p style="font-size:12px;color:var(--t2);margin:2px 0 0 0;">Underlying records matching selection (<strong style="color:var(--t1);">${count.toLocaleString()} tickets</strong>)</p>
+          <h5 class="modal-title" style="font-size:15px;font-weight:800;margin:0;color:var(--t1);">${escapeHtml(titleStr)}</h5>
+          <p style="font-size:11px;color:var(--t2);margin:2px 0 0 0;">Underlying records matching selection (<strong style="color:var(--t1);">${count.toLocaleString()} tickets</strong>)</p>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
-        <button type="button" class="btn-pvt-action small primary" style="padding:7px 16px;font-size:12px;background:var(--ac);color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,0.15);" onclick="exportRecordsCSV()">
+        <button type="button" class="btn-pvt-action small primary" style="padding:6px 14px;font-size:11px;background:var(--ac);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,0.15);" onclick="exportRecordsCSV()">
           📥 Export CSV (${count})
         </button>
         <button type="button" class="btn-close" style="filter:${S.dark ? 'invert(1)' : 'none'};margin-left:4px;" data-bs-dismiss="modal"></button>
@@ -10781,7 +10915,7 @@ function styleGeneralRecordsModal(titleStr, count) {
     body.style.padding = '0';
     body.style.overflow = 'auto';
     body.style.flex = '1';
-    body.style.maxHeight = 'calc(90vh - 140px)';
+    body.style.maxHeight = 'calc(84vh - 124px)';
   }
   
   let footer = modalContent.querySelector('.modal-footer');
@@ -10925,5 +11059,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a197132b7a83fd21',t:'MTc4Mzc2NTIxOQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
