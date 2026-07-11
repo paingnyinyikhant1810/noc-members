@@ -4035,6 +4035,252 @@ body {
   }
 }
 
+
+/* ═══════════ EXPAND PAGE + TOOL LABEL ALIGN + REPORT TABLE PATCH V18 ═══════════ */
+.vertical-tool-nav {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 6px !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.tool-item-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  width: 100% !important;
+  min-width: 150px !important;
+  height: 38px !important;
+  padding: 0 10px !important;
+  gap: 8px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(226,232,240,.95) !important;
+  background: #f8fafc !important;
+  color: var(--t2) !important;
+}
+.tool-item-btn .tool-item-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.1 !important;
+  white-space: normal !important;
+  text-align: left !important;
+}
+.tool-item-btn.on {
+  background: rgba(99,102,241,.10) !important;
+  border-color: rgba(99,102,241,.18) !important;
+  color: var(--ac) !important;
+}
+.tool-item-btn .cnt {
+  margin-left: auto !important;
+  position: static !important;
+  min-width: 18px !important;
+  height: 18px !important;
+}
+#card_cpe_complaints .tb,
+#card_dup_top_cust .tb,
+#card_ot_severity .tb {
+  font-size: 10.5px !important;
+}
+#card_cpe_complaints .tb thead th,
+#card_dup_top_cust .tb thead th,
+#card_ot_severity .tb thead th {
+  font-size: 9px !important;
+  padding: 8px 8px !important;
+}
+#card_cpe_complaints .tb td,
+#card_dup_top_cust .tb td,
+#card_ot_severity .tb td {
+  padding: 8px 8px !important;
+  line-height: 1.35 !important;
+}
+#card_cpe_complaints .tb tbody tr,
+#card_dup_top_cust .tb tbody tr,
+#card_ot_severity .tb tbody tr {
+  height: 34px !important;
+}
+
+.expand-page {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(245,248,255,.96) 0%, rgba(239,244,252,.98) 100%);
+  backdrop-filter: blur(10px);
+  z-index: 5000;
+  overflow: auto;
+}
+[data-theme="dark"] .expand-page {
+  background: linear-gradient(180deg, rgba(15,17,23,.96) 0%, rgba(21,26,39,.98) 100%);
+}
+.expand-shell {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 22px 24px 28px;
+}
+.expand-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.expand-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--ac) 12%, var(--border));
+  background: rgba(255,255,255,.86);
+  color: var(--t1);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15,23,42,.08);
+}
+[data-theme="dark"] .expand-back {
+  background: rgba(26,29,46,.86);
+}
+.expand-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.expand-title-badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--ac), var(--ac2));
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 24px rgba(99,102,241,.18);
+}
+.expand-title-text h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 800;
+  color: var(--t1);
+}
+.expand-title-text p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--t2);
+  font-weight: 600;
+}
+.expand-chip {
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(99,102,241,.10);
+  color: var(--ac);
+  border: 1px solid rgba(99,102,241,.16);
+}
+.expand-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, .7fr);
+  gap: 18px;
+}
+.expand-panel {
+  border-radius: 22px;
+  border: 1px solid rgba(226,232,240,.92);
+  background: rgba(255,255,255,.90);
+  box-shadow: 0 16px 32px rgba(15,23,42,.08);
+  overflow: hidden;
+}
+[data-theme="dark"] .expand-panel {
+  background: rgba(26,29,46,.84);
+}
+.expand-chart-panel {
+  padding: 14px 14px 10px;
+}
+.expand-chart-box {
+  height: 460px;
+  border-radius: 18px;
+  border: 1px solid rgba(226,232,240,.88);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 10px;
+}
+.expand-data-panel {
+  display: flex;
+  flex-direction: column;
+}
+.expand-data-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(226,232,240,.92);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: .45px;
+}
+.expand-table-wrap {
+  padding: 10px 12px 12px;
+  overflow: auto;
+  max-height: 540px;
+}
+.expand-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11.5px;
+}
+.expand-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(248,250,252,.96);
+  color: var(--t2);
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .45px;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(226,232,240,.92);
+}
+.expand-table td {
+  padding: 10px 10px;
+  border-bottom: 1px solid rgba(226,232,240,.78);
+  color: var(--t1);
+  line-height: 1.35;
+}
+.expand-table tbody tr {
+  cursor: pointer;
+  transition: background-color .16s ease;
+}
+.expand-table tbody tr:hover {
+  background: rgba(99,102,241,.06);
+}
+.expand-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.expand-value {
+  font-weight: 800;
+  color: var(--ac);
+}
+.expand-share {
+  color: var(--t2);
+  font-weight: 700;
+}
+@media (max-width: 980px) {
+  .expand-layout {
+    grid-template-columns: 1fr;
+  }
+  .expand-chart-box {
+    height: 340px;
+  }
+}
+
 </style>
 
   </head>
@@ -6233,10 +6479,10 @@ function aggregateTickets(gran,rows){
     periods.reverse();
   }
   periods.forEach((p, idx) => {
-    let numStr = ordinalWord(idx + 1);
-    if (gran === 'daily') p.label = 'Day ' + numStr;
-    else if (gran === 'weekly') p.label = 'Week ' + numStr;
-    else p.label = 'Month ' + numStr;
+    let n = idx + 1;
+    if (gran === 'daily') p.label = 'D' + n;
+    else if (gran === 'weekly') p.label = 'W' + n;
+    else p.label = 'M' + n;
   });
   return {labels:periods.map(x=>x.label+' · '+x.sub),displayLabels:periods.map(x=>[x.label,x.sub]),values:periods.map(x=>x.value),keys:periods.map(x=>x.key)};
 }
@@ -7080,7 +7326,7 @@ function renderTopCustomersCard(duplicates, totalDupsCount) {
   bindDuplicateGraphContext(card);
   
   setTimeout(() => {
-    let short = chartLabels.map(l => l.length > 15 ? l.substring(0, 12) + '…' : l);
+    let short = wrapAxisLabels(chartLabels, 10);
     let colors = chartLabels.map((_, i) => P[i % P.length]);
     let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
     let tc = S.dark ? '#94a3b8' : '#6b7280';
@@ -9908,15 +10154,85 @@ function applyOverTimeGraphSettingsFromModal(){
   if (D.rawData) doRender();
 }
 
-/* ═══════════ ZOOM ═══════════ */
+/* ═══════════ ZOOM / EXPAND PAGE ═══════════ */
+let expandedChartInstance=null;
+function closeExpandedChartPage(){
+  if(expandedChartInstance){ try{ expandedChartInstance.destroy(); }catch(e){} expandedChartInstance=null; }
+  let old=document.getElementById('expandChartPage');
+  if(old) old.remove();
+  document.body.style.overflow='';
+}
+function getExpandedChartRows(zd){
+  let labels = Array.isArray(zd.pieLabels) && zd.pieLabels.length ? zd.pieLabels.slice() : (zd.labels||[]).slice();
+  let values = Array.isArray(zd.pieValues) && zd.pieValues.length ? zd.pieValues.slice() : ((zd.datasets&&zd.datasets[0]&&Array.isArray(zd.datasets[0].data)) ? zd.datasets[0].data.map(v=>typeof v==='object'&&v!==null?Number(v.y||0):Number(v||0)) : []);
+  let colors = Array.isArray(zd.pieColors) && zd.pieColors.length ? zd.pieColors.slice() : labels.map((_,i)=>P[i%P.length]);
+  let total = Number(zd.total || values.reduce((s,v)=>s+(Number(v)||0),0) || 0);
+  return labels.map((label,i)=>({ label, value:Number(values[i]||0), color:colors[i%colors.length], pct: total>0?((Number(values[i]||0)/total)*100).toFixed(1):'0.0' }));
+}
+function expandedRowClick(zKey,index){
+  let zd=CHART_META[zKey]; if(!zd) return;
+  let rows=getExpandedChartRows(zd); let item=rows[index]; if(!item) return;
+  let label=item.label;
+  if(zKey==='dup_top_cust') return showDuplicateTicketsM(label);
+  if(zKey==='ot_severity' || zd.columnName==='_overtime'){
+    let tier = String(label).includes('90') ? '90%' : (String(label).includes('70') ? '70%' : '50%');
+    return showOverTimeTicketDetailsM(tier);
+  }
+  if(zKey==='cpe_complaints' || zd.type==='cpe_complaints') return openCpeModelModal(label);
+  if(zKey==='trend_total') return openTrendPeriodM(TREND_GRAN, zd.keys[index], zd.labels[index]);
+  if(zd.type==='trend' && zd.columnName) return scheduleOpenDateM(zd.labels[index]);
+  if(zd.type==='normal' && zd.columnName) return scheduleOpenDataM(zd.columnName, label);
+}
+function createExpandedChartData(zd, chartType){
+  let rows=getExpandedChartRows(zd);
+  let labels=rows.map(r=>r.label);
+  let values=rows.map(r=>r.value);
+  let colors=rows.map(r=>r.color);
+  if(chartType==='line'){
+    return { type:'line', data:{ labels: wrapAxisLabels(labels,12), datasets:[{ label: zd.title, data: values, borderColor: colors[0]||cssVar('--ac'), backgroundColor: (colors[0]||cssVar('--ac')) + '22', fill:true, tension:.32, pointRadius:3, pointHoverRadius:4, borderWidth:2.2 }] } };
+  }
+  return { type:'bar', data:{ labels: wrapAxisLabels(labels,12), datasets:[{ label: zd.title, data: values, backgroundColor: colors, borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] } };
+}
+function openExpandedChartPage(zKey,chartType){
+  let zd=CHART_META[zKey]; if(!zd) return;
+  closeExpandedChartPage();
+  let rows=getExpandedChartRows(zd);
+  let total = Number(zd.total || rows.reduce((s,r)=>s+r.value,0) || 0);
+  let htmlRows = rows.map((r,i)=>`<tr onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td><span class="expand-swatch" style="background:${r.color};"></span>${escapeHtml(r.label)}</td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
+  let page=document.createElement('div');
+  page.id='expandChartPage';
+  page.className='expand-page';
+  page.innerHTML=`<div class="expand-shell">
+    <div class="expand-topbar">
+      <div class="expand-title-wrap">
+        <button class="expand-back" type="button" onclick="closeExpandedChartPage()"><svg class="ic"><use href="#i-x"/></svg> Back to Dashboard</button>
+        <div class="expand-title-badge"><svg class="ic"><use href="#i-chart"/></svg></div>
+        <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1><p>Lovely simple expanded view with chart + data summary</p></div>
+      </div>
+      <div class="expand-chip">${total.toLocaleString()} total</div>
+    </div>
+    <div class="expand-layout">
+      <div class="expand-panel expand-chart-panel"><div class="expand-chart-box"><canvas id="expandPageCanvas"></canvas></div></div>
+      <div class="expand-panel expand-data-panel"><div class="expand-data-head">Data Breakdown</div><div class="expand-table-wrap"><table class="expand-table"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${htmlRows}</tbody></table></div></div>
+    </div>
+  </div>`;
+  document.body.appendChild(page);
+  document.body.style.overflow='hidden';
+  let cfg=createExpandedChartData(zd, chartType||'bar');
+  let gc=S.dark?'rgba(255,255,255,.08)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b';
+  cfg.options={
+    responsive:true,
+    maintainAspectRatio:false,
+    animation:{duration:320},
+    plugins:{ legend:{display:false}, valueLabels:{display:true,fontSize:10}, tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}} },
+    scales:{ y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'}}}, x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:9,weight:'700'},autoSkip:false,maxRotation:chartType==='line'?18:22,minRotation:chartType==='line'?18:22,padding:6}} },
+    onClick:(e,els)=>{ if(els&&els.length) expandedRowClick(zKey, els[0].index); },
+    onHover:(e,els)=>{ e.native.target.style.cursor=els&&els.length?'pointer':'default'; }
+  };
+  expandedChartInstance=createSafeChart(document.getElementById('expandPageCanvas'),cfg);
+}
 function openZoom(zKey,chartType){
-  let zd=CHART_META[zKey];if(!zd)return;
-  document.getElementById("zoomTitle").innerHTML='<svg class="ic"><use href="#i-chart"/></svg> '+escapeHtml(zd.title);
-  zoomD={...zd,currentType:chartType,zKey};
-  let types=['bar','line','polarArea','radar'],tl=['Bar','Line','Polar','Radar'];
-  document.getElementById("zoomTP").innerHTML=types.map((t,i)=>`<button class="ztp ${t===chartType?'on':''}" onclick="switchZT('${t}')">${tl[i]}</button>`).join('');
-  buildZC(chartType);buildZL();
-  zoomModal2.show();
+  openExpandedChartPage(zKey, chartType || 'bar');
 }
 function switchZT(type){
   if(!zoomD)return;zoomD.currentType=type;
@@ -10229,5 +10545,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a196f319fb6afd21',t:'MTc4Mzc2MzkwNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a196fdd0dd31fd21',t:'MTc4Mzc2NDM0NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
