@@ -2245,8 +2245,29 @@
   letter-spacing: .4px;
   margin-bottom: 10px;
 }
+.period-tray-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(220px, .9fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.period-mini-panel {
+  border: 1px solid color-mix(in srgb, var(--ac) 8%, var(--border));
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%);
+  padding: 10px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
+}
+.period-mini-title {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--t3);
+  text-transform: uppercase;
+  letter-spacing: .45px;
+  margin-bottom: 8px;
+}
 .period-tray-row {
-  margin-top: 10px;
+  margin-top: 0;
 }
 .period-tray #spWrap {
   width: 100%;
@@ -2254,7 +2275,7 @@
 .period-tray #spSel {
   width: 100%;
   max-width: 100%;
-  min-width: 240px;
+  min-width: 220px;
 }
 .period-toggle-btn.act {
   background: var(--ac) !important;
@@ -2296,31 +2317,58 @@
   content: attr(data-tip);
   position: absolute;
   left: 50%;
-  top: calc(100% + 8px);
-  transform: translateX(-50%) translateY(-4px);
+  top: calc(100% + 10px);
+  transform: translateX(-50%) translateY(-5px) scale(.96);
   white-space: nowrap;
   font-size: 10px;
-  font-weight: 700;
-  color: #fff;
-  background: rgba(15,23,42,.88);
-  padding: 6px 8px;
-  border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(15,23,42,.22);
+  font-weight: 800;
+  letter-spacing: .1px;
+  color: var(--ac);
+  background: color-mix(in srgb, var(--bg2) 92%, #fff);
+  border: 1px solid color-mix(in srgb, var(--ac) 16%, var(--border));
+  padding: 6px 10px;
+  border-radius: 999px;
+  box-shadow: 0 12px 24px rgba(15,23,42,.14);
+  backdrop-filter: blur(10px);
   opacity: 0;
   pointer-events: none;
-  transition: opacity .18s ease, transform .18s ease;
+  transition: opacity .2s ease, transform .2s ease;
   z-index: 12;
+}
+.tool-btn::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 5px);
+  width: 8px;
+  height: 8px;
+  background: color-mix(in srgb, var(--bg2) 92%, #fff);
+  border-top: 1px solid color-mix(in srgb, var(--ac) 16%, var(--border));
+  border-left: 1px solid color-mix(in srgb, var(--ac) 16%, var(--border));
+  transform: translateX(-50%) rotate(45deg) scale(.96);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 11;
 }
 .tool-btn:hover::after,
 .tool-btn:focus-visible::after {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+.tool-btn:hover::before,
+.tool-btn:focus-visible::before {
+  opacity: 1;
+  transform: translateX(-50%) rotate(45deg) scale(1);
 }
 @media (max-width: 768px) {
   .period-tray {
     right: -8px;
     min-width: min(92vw, 360px);
     padding: 10px;
+  }
+  .period-tray-grid {
+    grid-template-columns: 1fr;
   }
   .period-tray-tabs {
     width: 100%;
@@ -2362,34 +2410,34 @@
 #card_ot_severity .row.g-3,
 [id^="card_dup_"] .row.g-3,
 [id^="card_ot_"] .row.g-3 {
-  grid-template-columns: minmax(0, 1.55fr) minmax(210px, .92fr) !important;
+  grid-template-columns: minmax(0, 2.2fr) minmax(180px, .62fr) !important;
 }
 .cd .row.g-3 {
-  grid-template-columns: minmax(0, 1.7fr) minmax(220px, .86fr) !important;
+  grid-template-columns: minmax(0, 1.85fr) minmax(210px, .78fr) !important;
 }
 #card_dup_top_cust .row.g-3 .chb,
 #card_ot_severity .row.g-3 .chb,
 [id^="card_dup_"] .row.g-3 .chb,
 [id^="card_ot_"] .row.g-3 .chb {
-  height: 260px !important;
-  min-height: 260px !important;
+  height: 250px !important;
+  min-height: 250px !important;
 }
 #card_dup_top_cust .row.g-3 .col-lg-5 > div,
 #card_ot_severity .row.g-3 .col-lg-5 > div,
 [id^="card_dup_"] .row.g-3 .col-lg-5 > div,
 [id^="card_ot_"] .row.g-3 .col-lg-5 > div {
-  height: 260px !important;
-  min-height: 260px !important;
-  max-height: 260px !important;
+  height: 250px !important;
+  min-height: 250px !important;
+  max-height: 250px !important;
 }
 .cd .row.g-3 .chb {
-  height: 280px !important;
-  min-height: 280px !important;
+  height: 270px !important;
+  min-height: 270px !important;
 }
 .cd .row.g-3 .col-lg-5 > div {
-  height: 280px !important;
-  min-height: 280px !important;
-  max-height: 280px !important;
+  height: 270px !important;
+  min-height: 270px !important;
+  max-height: 270px !important;
 }
 .cd .mini-data-grid {
   max-height: 76px !important;
@@ -2420,9 +2468,9 @@
   [id^="card_dup_"] .row.g-3 .col-lg-5 > div,
   [id^="card_ot_"] .row.g-3 .chb,
   [id^="card_ot_"] .row.g-3 .col-lg-5 > div {
-    height: 240px !important;
-    min-height: 240px !important;
-    max-height: 240px !important;
+    height: 230px !important;
+    min-height: 230px !important;
+    max-height: 230px !important;
   }
 }
 @media (max-width: 768px) {
@@ -2453,9 +2501,9 @@
   [id^="card_dup_"] .row.g-3 .col-lg-5 > div,
   [id^="card_ot_"] .row.g-3 .chb,
   [id^="card_ot_"] .row.g-3 .col-lg-5 > div {
-    height: 210px !important;
-    min-height: 210px !important;
-    max-height: 210px !important;
+    height: 200px !important;
+    min-height: 200px !important;
+    max-height: 200px !important;
   }
 }
 
@@ -2517,16 +2565,24 @@
       <button class="icon-btn period-toggle-btn" id="periodToggleBtn" title="Date Range" onclick="togglePeriodTray()"><svg class="ic"><use href="#i-calendar"/></svg></button>
       <div class="period-tray" id="periodTray">
         <div class="period-tray-head"><svg class="ic ic-sm"><use href="#i-calendar"/></svg> Date View</div>
-        <div class="tp period-tray-tabs">
-          <button class="tp-b on" data-r="all" onclick="setRange('all')">All</button>
-          <button class="tp-b" data-r="daily" onclick="setRange('daily')">Daily</button>
-          <button class="tp-b" data-r="weekly" onclick="setRange('weekly')">Weekly</button>
-          <button class="tp-b" data-r="monthly" onclick="setRange('monthly')">Monthly</button>
-          <button class="tp-b" data-r="yearly" onclick="setRange('yearly')">Yearly</button>
-        </div>
-        <div class="period-tray-row">
-          <div class="sp-wrap" id="spWrap" style="display:none;align-items:center;gap:6px;">
-            <select class="sp-sel" id="spSel" onchange="onSubPeriodChange()"></select>
+        <div class="period-tray-grid">
+          <div class="period-mini-panel period-mini-panel-left">
+            <div class="period-mini-title">Range</div>
+            <div class="tp period-tray-tabs">
+              <button class="tp-b on" data-r="all" onclick="setRange('all')">All</button>
+              <button class="tp-b" data-r="daily" onclick="setRange('daily')">Daily</button>
+              <button class="tp-b" data-r="weekly" onclick="setRange('weekly')">Weekly</button>
+              <button class="tp-b" data-r="monthly" onclick="setRange('monthly')">Monthly</button>
+              <button class="tp-b" data-r="yearly" onclick="setRange('yearly')">Yearly</button>
+            </div>
+          </div>
+          <div class="period-mini-panel period-mini-panel-right">
+            <div class="period-mini-title">Selection</div>
+            <div class="period-tray-row">
+              <div class="sp-wrap" id="spWrap" style="display:none;align-items:center;gap:6px;">
+                <select class="sp-sel" id="spSel" onchange="onSubPeriodChange()"></select>
+              </div>
+            </div>
           </div>
         </div>
       </div>
