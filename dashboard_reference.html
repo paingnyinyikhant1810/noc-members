@@ -3307,6 +3307,198 @@ body {
   }
 }
 
+
+/* ═══════════ TOP-RIGHT PALETTE + EQUAL GRID + READABLE GRAPH PATCH V12 ═══════════ */
+.hdr-r {
+  right: 18px !important;
+  top: 118px !important;
+  bottom: auto !important;
+}
+.hdr-r.scroll-hide {
+  transform: translateY(-12px) scale(.94) !important;
+}
+.palette-fab {
+  top: 0 !important;
+  bottom: auto !important;
+}
+.palette-action {
+  top: 2px !important;
+  bottom: auto !important;
+}
+.hdr-r.open .period-launch-wrap {
+  transform: translate(-84px, 4px) scale(1) !important;
+}
+.hdr-r.open .tools-launch-wrap {
+  transform: translate(-58px, 70px) scale(1) !important;
+}
+.hdr-r.open .palette-settings-wrap {
+  transform: translate(-2px, 98px) scale(1) !important;
+}
+.period-tray,
+.tools-tray {
+  top: 0 !important;
+  bottom: auto !important;
+  right: calc(100% + 14px) !important;
+  transform-origin: top right !important;
+}
+.period-tray {
+  min-width: 360px !important;
+}
+.tools-tray {
+  min-width: 190px !important;
+}
+
+.ct.dashboard-stage {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 18px 20px !important;
+  padding: 16px 16px 32px !important;
+}
+#card_trend_total,
+#card_cpe_complaints,
+#card_dup_top_cust,
+#card_ot_severity {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  align-self: start !important;
+  justify-self: stretch !important;
+  flex: unset !important;
+  transform: none !important;
+  box-shadow: 0 12px 24px rgba(15,23,42,.07) !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 10px 13px !important;
+}
+#card_trend_total .enterprise-title h2,
+#card_cpe_complaints .chd h3,
+#card_dup_top_cust .chd h3,
+#card_ot_severity .chd h3 {
+  font-size: 14.5px !important;
+}
+#card_trend_total .c-tag,
+#card_cpe_complaints .c-tag,
+#card_dup_top_cust .c-tag,
+#card_ot_severity .c-tag {
+  border-radius: 999px !important;
+  padding: 4px 10px !important;
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+}
+#card_trend_total .c-tag {
+  background: rgba(99,102,241,.11) !important;
+  color: #5b5ce9 !important;
+  border-color: rgba(99,102,241,.18) !important;
+}
+#card_cpe_complaints .c-tag {
+  background: rgba(16,185,129,.11) !important;
+  color: #0f9f73 !important;
+  border-color: rgba(16,185,129,.18) !important;
+}
+#card_dup_top_cust .c-tag {
+  background: rgba(59,130,246,.11) !important;
+  color: #3b6ee8 !important;
+  border-color: rgba(59,130,246,.18) !important;
+}
+#card_ot_severity .c-tag {
+  background: rgba(244,114,182,.11) !important;
+  color: #ec4899 !important;
+  border-color: rgba(244,114,182,.18) !important;
+}
+#card_trend_total .chart-xl {
+  height: 210px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 2.3fr) minmax(124px, .54fr) !important;
+  gap: 10px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 190px !important;
+  min-height: 190px !important;
+  max-height: 190px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 172px !important;
+  min-height: 172px !important;
+  max-height: 172px !important;
+}
+#card_cpe_complaints .mini-data-grid,
+#card_dup_top_cust .mini-data-grid,
+#card_ot_severity .mini-data-grid {
+  max-height: 58px !important;
+}
+
+@media (max-width: 1100px) {
+  .ct.dashboard-stage {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 198px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 168px !important;
+    min-height: 168px !important;
+    max-height: 168px !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr-r {
+    right: 10px !important;
+    top: 92px !important;
+  }
+  .hdr-r.open .period-launch-wrap {
+    transform: translate(-76px, 4px) scale(1) !important;
+  }
+  .hdr-r.open .tools-launch-wrap {
+    transform: translate(-52px, 62px) scale(1) !important;
+  }
+  .hdr-r.open .palette-settings-wrap {
+    transform: translate(0, 88px) scale(1) !important;
+  }
+  .period-tray,
+  .tools-tray {
+    right: calc(100% + 10px) !important;
+    top: 0 !important;
+    bottom: auto !important;
+    min-width: min(88vw, 300px) !important;
+  }
+  .ct.dashboard-stage {
+    padding: 12px 12px 24px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 182px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 150px !important;
+    min-height: 150px !important;
+    max-height: 150px !important;
+  }
+}
+
 </style>
 
   </head>
@@ -5064,37 +5256,53 @@ let PERIOD_TRAY_OPEN=false;
 let TOOLS_TRAY_OPEN=false;
 let PALETTE_OPEN=false;
 let PALETTE_SCROLL_TIMER=null;
-function togglePaletteMenu(forceState){
+function setPaletteOpenState(isOpen){
   let dock=document.querySelector('.hdr-r');
   let fab=document.getElementById('paletteFab');
   if(!dock||!fab)return;
-  PALETTE_OPEN = typeof forceState === 'boolean' ? forceState : !PALETTE_OPEN;
+  PALETTE_OPEN = !!isOpen;
   dock.classList.toggle('open', PALETTE_OPEN);
   fab.classList.toggle('act', PALETTE_OPEN);
-  if(!PALETTE_OPEN){
-    togglePeriodTray(false);
-    toggleToolsTray(false);
+}
+function togglePaletteMenu(forceState){
+  let next = typeof forceState === 'boolean' ? forceState : !PALETTE_OPEN;
+  if(!next){
+    PERIOD_TRAY_OPEN=false;
+    TOOLS_TRAY_OPEN=false;
+    let p=document.getElementById('periodTray'); if(p) p.classList.remove('open');
+    let t=document.getElementById('toolsTray'); if(t) t.classList.remove('open');
+    let pb=document.getElementById('periodToggleBtn'); if(pb) pb.classList.remove('act');
+    let tb=document.getElementById('toolsToggleBtn'); if(tb) tb.classList.remove('act');
   }
+  setPaletteOpenState(next);
 }
 function togglePeriodTray(forceState){
   let tray=document.getElementById('periodTray');
   let btn=document.getElementById('periodToggleBtn');
   if(!tray||!btn)return;
-  togglePaletteMenu(true);
+  if(!PALETTE_OPEN) setPaletteOpenState(true);
   PERIOD_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !PERIOD_TRAY_OPEN;
   tray.classList.toggle('open', PERIOD_TRAY_OPEN);
   btn.classList.toggle('act', PERIOD_TRAY_OPEN);
-  if(PERIOD_TRAY_OPEN) toggleToolsTray(false);
+  if(PERIOD_TRAY_OPEN){
+    TOOLS_TRAY_OPEN=false;
+    let tt=document.getElementById('toolsTray'); if(tt) tt.classList.remove('open');
+    let tb=document.getElementById('toolsToggleBtn'); if(tb) tb.classList.remove('act');
+  }
 }
 function toggleToolsTray(forceState){
   let tray=document.getElementById('toolsTray');
   let btn=document.getElementById('toolsToggleBtn');
   if(!tray||!btn)return;
-  togglePaletteMenu(true);
+  if(!PALETTE_OPEN) setPaletteOpenState(true);
   TOOLS_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !TOOLS_TRAY_OPEN;
   tray.classList.toggle('open', TOOLS_TRAY_OPEN);
   btn.classList.toggle('act', TOOLS_TRAY_OPEN);
-  if(TOOLS_TRAY_OPEN) togglePeriodTray(false);
+  if(TOOLS_TRAY_OPEN){
+    PERIOD_TRAY_OPEN=false;
+    let pt=document.getElementById('periodTray'); if(pt) pt.classList.remove('open');
+    let pb=document.getElementById('periodToggleBtn'); if(pb) pb.classList.remove('act');
+  }
 }
 document.addEventListener('click', function(ev){
   let wrap=document.getElementById('periodLaunchWrap');
@@ -5451,7 +5659,7 @@ function renderCpeComplaintSection(){
         animation: { duration: 350 },
         plugins: {
           legend: { display: false },
-          valueLabels: { display: true, fontSize: 11 },
+          valueLabels: { display: true, fontSize: 9 },
           tooltip: {
             backgroundColor: S.dark ? '#252836' : '#111827',
             cornerRadius: 10,
@@ -5467,8 +5675,8 @@ function renderCpeComplaintSection(){
           openCpeModelModal(m);
         },
         scales: {
-          y: { beginAtZero: true, grid: { color: gc }, ticks: { color: tc, font: { family: 'Inter', size: 10, weight: '600' } } },
-          x: { grid: { display: false }, ticks: { color: tc, font: { family: 'Inter', size: 10, weight: '700' } } }
+          y: { beginAtZero: true, grid: { color: gc }, ticks: { color: tc, font: { family: 'Inter', size: 9, weight: '600' } } },
+          x: { grid: { display: false }, ticks: { color: tc, font: { family: 'Inter', size: 8, weight: '700' }, autoSkip:true, maxTicksLimit:10, maxRotation:0, minRotation:0, padding:4 } }
         }
       }
     });
@@ -5689,12 +5897,12 @@ function buildTicketTrendChart(gran){
       animation:{duration:350},
       plugins:{
         legend:{display:false},
-        valueLabels:{display:true,fontSize:11},
+        valueLabels:{display:true,fontSize:9},
         tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}}
       },
       scales:{
-        y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:11,weight:'700'}}},
-        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'},autoSkip:true,maxTicksLimit:gran==='monthly'?24:(gran==='daily'?14:12),maxRotation:0}}
+        y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'}}},
+        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:8,weight:'700'},autoSkip:true,maxTicksLimit:gran==='monthly'?10:(gran==='daily'?8:9),maxRotation:0,minRotation:0,padding:4}}
       },
       onClick:(e,els)=>{
         openZoom('trend_total', 'bar');
@@ -5906,14 +6114,15 @@ function renderCategoryCard(col,idx,rows){
 }
 
 function mkChart(id,type,data,gc,tc,fullLabels,showLeg,clickCol){
+  let labelCount = Array.isArray(fullLabels) ? fullLabels.length : 0;
   let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},
     plugins:{
       legend:{display:type==='doughnut'?false:!!showLeg,labels:{boxWidth:9,font:{size:9,family:'Inter'},color:tc,padding:6}},
-      valueLabels:{display:true,fontSize:9},
+      valueLabels:{display:true,fontSize:8},
       tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',titleFont:{size:10,family:'Inter',weight:'700'},bodyFont:{size:9,family:'Inter'},cornerRadius:6,padding:8,callbacks:{title:ctx=>fullLabels[ctx[0].dataIndex]||''}}
     }};
-  if(type==='bar')opts.scales={y:{grid:{color:gc},ticks:{font:{size:8,family:'Inter'},color:tc}},x:{grid:{display:false},ticks:{maxRotation:30,font:{size:7,family:'Inter'},color:tc}}};
-  if(type==='line')opts.scales={y:{grid:{color:gc},ticks:{font:{size:8,family:'Inter'},color:tc}},x:{grid:{color:gc},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:10,font:{size:7,family:'Inter'},color:tc}}};
+  if(type==='bar')opts.scales={y:{grid:{color:gc},ticks:{font:{size:9,family:'Inter',weight:'600'},color:tc}},x:{grid:{display:false},ticks:{maxRotation:0,minRotation:0,autoSkip:true,maxTicksLimit:labelCount>14?8:10,font:{size:8,family:'Inter',weight:'600'},color:tc,padding:4}}};
+  if(type==='line')opts.scales={y:{grid:{color:gc},ticks:{font:{size:9,family:'Inter',weight:'600'},color:tc}},x:{grid:{color:gc},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:labelCount>14?8:10,font:{size:8,family:'Inter',weight:'600'},color:tc,padding:4}}};
   if(type==='doughnut')opts.cutout='52%';
   if(clickCol)opts.onClick=(e,el)=>{if(el&&el.length)scheduleOpenDataM(clickCol,fullLabels[el[0].index]);};
   return createSafeChart(document.getElementById(id),{type,data,options:opts});
@@ -9508,5 +9717,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1968bfdd9c6fd21',t:'MTc4Mzc1OTY4Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
