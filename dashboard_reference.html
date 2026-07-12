@@ -6184,22 +6184,25 @@ body #drInfo .dr-b {
 
 /* ═══════════ GRAPH CARD HOVER POLISH PATCH V36 ═══════════ */
 .cd,
-.enterprise-card {
-  transition: transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s ease, border-color .22s ease, filter .22s ease !important;
+.enterprise-card,
+.chb {
+  transition: transform .24s cubic-bezier(.22,1,.36,1), box-shadow .24s ease, border-color .24s ease, filter .24s ease !important;
 }
 .cd:hover,
 .enterprise-card:hover {
-  transform: translateY(-4px) scale(1.003) !important;
-  border-color: color-mix(in srgb, var(--ac) 24%, var(--border)) !important;
-  box-shadow: 0 18px 38px rgba(15,23,42,.14) !important;
-  filter: saturate(1.02);
+  transform: translateY(-8px) scale(1.006) !important;
+  border-color: color-mix(in srgb, var(--ac) 28%, var(--border)) !important;
+  box-shadow: 0 24px 48px rgba(15,23,42,.16) !important;
+  filter: saturate(1.03);
 }
 .cd:hover .chb,
 .enterprise-card:hover .chb,
+.chb:hover,
 .cd:hover .chart-xl,
 .enterprise-card:hover .chart-xl {
-  border-color: color-mix(in srgb, var(--ac) 20%, var(--border)) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 10px 22px rgba(99,102,241,.08) !important;
+  transform: translateY(-2px) !important;
+  border-color: color-mix(in srgb, var(--ac) 22%, var(--border)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.42), 0 12px 24px rgba(99,102,241,.10) !important;
 }
 .cd:hover .chd h3,
 .enterprise-card:hover .enterprise-title h2 {
@@ -6207,7 +6210,8 @@ body #drInfo .dr-b {
 }
 @media (hover:none) {
   .cd:hover,
-  .enterprise-card:hover {
+  .enterprise-card:hover,
+  .chb:hover {
     transform: none !important;
     box-shadow: inherit !important;
     filter: none !important;
@@ -6396,7 +6400,6 @@ body #drInfo .dr-b {
 
         <div class="st-sec">
           <div class="st-h"><svg class="ic ic-sm"><use href="#i-rocket"/></svg> Startup Configurations </div>
-          <div class="st-row"><div><div class="st-lbl">Default tab</div><div class="st-desc">Tab to open when the dashboard loads</div></div><select class="sel-w" id="defTabSel"></select></div>
           <div class="st-row"><div><div class="st-lbl">Default period</div><div class="st-desc">Period view applied on startup</div></div>
             <select class="sel-w" id="defRangeSel"><option value="all">All</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>
           </div>
@@ -6419,8 +6422,6 @@ body #drInfo .dr-b {
 
         <div class="st-sec">
           <div class="st-h"><svg class="ic ic-sm"><use href="#i-trend"/></svg> Analytics</div>
-          <div class="st-row"><div><div class="st-lbl">Advanced summary</div><div class="st-desc">Show unique categories, top category, daily average</div></div><div class="dm" id="advT" onclick="toggleAdvSum()"><div class="dm-d"></div></div></div>
-          <div class="st-row"><div><div class="st-lbl">Trend chart</div><div class="st-desc">Tickets over time line chart at top</div></div><div class="dm" id="trT" onclick="toggleTrend()"><div class="dm-d"></div></div></div>
           <div class="st-row"><div><div class="st-lbl">Category Limit</div><div class="st-desc">Top K items shown in each card (type any number, 0 or empty for all)</div></div>
             <input type="number" id="chartLimitInput" class="searchbox" min="0" oninput="onChartLimitChange(this.value)" placeholder="Show All" style="width: 140px; height: 32px; padding: 4px 10px; margin: 0;">
           </div>
@@ -7377,6 +7378,9 @@ function loadUniversalAppStateFromCloud() {
           }
           if (cloudState.settings && typeof cloudState.settings === 'object') {
             Object.assign(S, cloudState.settings);
+            S.defaultTab='';
+            S.advSummary=true;
+            S.trendChart=true;
             localStorage.setItem('noc_settings_v2', JSON.stringify(S));
             if (typeof applyTheme === 'function') applyTheme();
             if (typeof buildSwatchRow === 'function') buildSwatchRow();
@@ -7467,6 +7471,9 @@ function testGasApiUrl() {
 function loadSettings(){
   try{let raw=localStorage.getItem('noc_settings_v2');if(raw)Object.assign(S,JSON.parse(raw));}catch(e){}
   if(localStorage.getItem('noc_dark')==='1')S.dark=true;
+  S.defaultTab='';
+  S.advSummary=true;
+  S.trendChart=true;
   try { let savedApi = localStorage.getItem('noc_gas_api_url'); if (savedApi) GAS_WEB_APP_URL = savedApi; let inp = document.getElementById('gasApiUrlInput'); if (inp) inp.value = GAS_WEB_APP_URL; } catch(e) {}
   try{let h=localStorage.getItem('noc_hidden_charts');if(h)HIDDEN_CHARTS=JSON.parse(h);}catch(e){HIDDEN_CHARTS={};}
 }
@@ -7543,8 +7550,10 @@ function buildSwatchRow(){
 function setAccent(id){S.accent=id;saveSettings();applyTheme();if(D.rawData)doRender();}
 function bindSegs(){
   document.querySelectorAll('#fsSeg button').forEach(b=>b.addEventListener('click',()=>{S.fontSize=b.dataset.v;saveSettings();applyTheme();}));
-  document.getElementById("defTabSel").addEventListener('change',e=>{S.defaultTab=e.target.value;saveSettings();});
-  document.getElementById("defRangeSel").addEventListener('change',e=>{S.defaultRange=e.target.value;saveSettings();});
+  let defTabSel=document.getElementById("defTabSel");
+  if(defTabSel) defTabSel.addEventListener('change',e=>{S.defaultTab=e.target.value;saveSettings();});
+  let defRangeSel=document.getElementById("defRangeSel");
+  if(defRangeSel) defRangeSel.addEventListener('change',e=>{S.defaultRange=e.target.value;saveSettings();});
   document.querySelectorAll('#cmpGranSeg button').forEach(b=>{
     b.addEventListener('click',()=>{
       document.querySelectorAll('#cmpGranSeg button').forEach(x=>x.classList.remove('on'));
@@ -7559,7 +7568,9 @@ function resetSettings(){
   S.dark=false;S.accent='indigo';S.fontSize='md';S.defaultTab='';S.defaultRange='all';S.advSummary=true;S.trendChart=true;
   S.graphOrder=[];S.graphOrderByTab={};
   HIDDEN_CHARTS={};saveSettings();saveHidden();applyTheme();buildSwatchRow();buildChartVisibilityList();
-  document.getElementById("defTabSel").value='';document.getElementById("defRangeSel").value='all';S.dateSortOrder='desc';let sortSel=document.getElementById("defDateSortSel");if(sortSel)sortSel.value='desc';if(typeof updateSubPeriodUI==='function')updateSubPeriodUI();
+  let defTabSel=document.getElementById("defTabSel"); if(defTabSel) defTabSel.value='';
+  let defRangeSel=document.getElementById("defRangeSel"); if(defRangeSel) defRangeSel.value='all';
+  S.dateSortOrder='desc';let sortSel=document.getElementById("defDateSortSel");if(sortSel)sortSel.value='desc';if(typeof updateSubPeriodUI==='function')updateSubPeriodUI();
   if(D.rawData)doRender();
   if(typeof refreshAllAppSelects === 'function') refreshAllAppSelects();
 }
@@ -8097,7 +8108,7 @@ function refreshTabsAfterUpload(tabNames,newTab){
   let dd=document.getElementById('tabDD');
   dd.innerHTML=tabNames.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
   let defSel=document.getElementById('defTabSel');
-  defSel.innerHTML='<option value="">— First tab —</option>'+tabNames.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
+  if(defSel) defSel.innerHTML='<option value="">— First tab —</option>'+tabNames.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
   dd.value=newTab;fetchTab(newTab);
 }
 function detectStatusCol(){
@@ -12313,13 +12324,13 @@ function openSiteGraphSettingsModal(){
   let m=document.createElement('div');
   m.id='graphFieldSettingsModal';
   m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
-  m.innerHTML=`<div style="width:min(620px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+  m.innerHTML=`<div style="width:min(560px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
     <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 10%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
       <div style="display:flex;align-items:flex-start;gap:12px;">
         <div style="width:42px;height:42px;border-radius:14px;background:rgba(59,130,246,.14);color:var(--blue);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-grid"/></svg></div>
         <div>
           <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">Site Graph Settings</div>
-          <div style="font-size:11.5px;color:var(--t2);margin-top:4px;">Choose Site Code, Full Name, Short Code, Active Site, and Active Count fields for both site graphs.</div>
+          <div style="font-size:10.5px;color:var(--t2);margin-top:4px;">Choose fields for Site Ticket Counts and Site Complaint Percent.</div>
         </div>
       </div>
       <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
@@ -12961,7 +12972,12 @@ function getHiddenPopupHeaders(){
     if (D && Array.isArray(D.headers)) {
       D.headers.forEach(h => {
         let l=String(h||'').trim().toLowerCase();
-        if (l==='full name' || l.includes('full name') || l==='short code' || l.includes('short code')) hidden.push(h);
+        if (
+          l==='full name' || l.includes('full name') ||
+          l==='short code' || l.includes('short code') ||
+          l==='active site' || l.includes('active site') ||
+          l==='active count' || l.includes('active count')
+        ) hidden.push(h);
       });
     }
   } catch(e) {}
