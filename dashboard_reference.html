@@ -8661,7 +8661,7 @@ function doRender(){
   if(COMPARE_MODE)refreshComparePicksUI();
 }
 function showRowsM(rows,title,omitHeaders){
-  let omit=Array.isArray(omitHeaders)?omitHeaders:[];
+  let omit=[...(Array.isArray(omitHeaders)?omitHeaders:[]), ...getHiddenPopupHeaders()];
   MODAL_HEADERS=(D.headers||[]).filter(h=>omit.indexOf(h)<0);
   MODAL_ROWS=rows||[];MODAL_COL='_kpi';MODAL_CAT=title;MODAL_RENDERED=0;
   styleGeneralRecordsModal('Records: ' + title, MODAL_ROWS.length);
@@ -12651,6 +12651,18 @@ function buildZL(){
 
 /* ═══════════ RECORDS MODAL (stacks on top of zoom) ═══════════ */
 let MODAL_ROWS=[],MODAL_HEADERS=[],MODAL_CHUNK=50,MODAL_RENDERED=0,MODAL_COL='',MODAL_CAT='';
+function getHiddenPopupHeaders(){
+  let hidden=[];
+  try {
+    if (D && Array.isArray(D.headers)) {
+      D.headers.forEach(h => {
+        let l=String(h||'').trim().toLowerCase();
+        if (l==='full name' || l.includes('full name') || l==='short code' || l.includes('short code')) hidden.push(h);
+      });
+    }
+  } catch(e) {}
+  return [...new Set(hidden)];
+}
 function scheduleOpenDataM(col,cat,period){
   if(window.__openingModal)return;
   window.__openingModal=true;
@@ -12739,7 +12751,8 @@ function openDataM(col,cat,period){
   }else{
     pool=COMPARE_MODE?periodFilter(D.rawData,COMPARE_PICKS):F;
   }
-  MODAL_HEADERS=(D.headers||[]).slice();
+  let _omit = getHiddenPopupHeaders();
+  MODAL_HEADERS=(D.headers||[]).filter(h=>_omit.indexOf(h)<0);
   MODAL_ROWS=[];for(let i=0;i<pool.length;i++){let r=pool[i],v=r[col];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';if(k===cat)MODAL_ROWS.push(r);}
   MODAL_COL=col;MODAL_CAT=cat;MODAL_RENDERED=0;
   styleGeneralRecordsModal('Records: ' + title, MODAL_ROWS.length);
@@ -12753,7 +12766,8 @@ function openDataM(col,cat,period){
 }
 function openPeriodM(p){
   let rows=rowsForPeriod(p);
-  MODAL_HEADERS=(D.headers||[]).slice();
+  let _omit = getHiddenPopupHeaders();
+  MODAL_HEADERS=(D.headers||[]).filter(h=>_omit.indexOf(h)<0);
   styleGeneralRecordsModal('Period: ' + periodLabel(p), rows.length);
   document.getElementById("mH").innerHTML=MODAL_HEADERS.map(h=>`<th style="padding:10px 14px;background:var(--bg3);font-weight:700;color:var(--t1);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;">${escapeHtml(h)}</th>`).join('');
   document.getElementById("mB").innerHTML='';
@@ -12765,7 +12779,8 @@ function openPeriodM(p){
 }
 function openDateM(ds){
   let rows=D.rawData.filter(r=>{let d=parseLocalDate(r[dateCol]);return d&&toLocalDateStr(d)===ds;});
-  MODAL_HEADERS=(D.headers||[]).slice();
+  let _omit = getHiddenPopupHeaders();
+  MODAL_HEADERS=(D.headers||[]).filter(h=>_omit.indexOf(h)<0);
   styleGeneralRecordsModal('Date: ' + ds, rows.length);
   document.getElementById("mH").innerHTML=MODAL_HEADERS.map(h=>`<th style="padding:10px 14px;background:var(--bg3);font-weight:700;color:var(--t1);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;">${escapeHtml(h)}</th>`).join('');
   document.getElementById("mB").innerHTML='';
@@ -12866,5 +12881,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1a0365ccc52c9c6',t:'MTc4Mzg2MTAzMg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
