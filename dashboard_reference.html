@@ -5969,6 +5969,71 @@ body {
   padding: 8px 10px !important;
 }
 
+/* ═══════════ SITE MATCH + FULL-WIDTH 70/30 + STRONGER EXPAND BLUR PATCH V33 ═══════════ */
+#card_site_summary {
+  flex: 1 1 100% !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  grid-column: 1 / -1 !important;
+}
+#card_site_summary .row.g-3 {
+  grid-template-columns: minmax(0, 7fr) minmax(220px, 3fr) !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+#card_site_summary .col-lg-5 > div {
+  width: 100% !important;
+  justify-self: stretch !important;
+  height: 230px !important;
+  min-height: 230px !important;
+  max-height: 230px !important;
+}
+#card_site_summary .chb {
+  height: 230px !important;
+  min-height: 230px !important;
+}
+
+.expand-page {
+  inset: 0 !important;
+  padding: 108px 12px 12px !important;
+  background: rgba(241,245,255,.42) !important;
+  backdrop-filter: blur(24px) saturate(1.02) !important;
+}
+[data-theme="dark"] .expand-page {
+  background: rgba(15,17,23,.54) !important;
+  backdrop-filter: blur(22px) saturate(1.02) !important;
+}
+.expand-shell {
+  max-width: 1240px !important;
+  min-height: calc(100vh - 120px) !important;
+  background: rgba(255,255,255,.72) !important;
+  border: 1px solid rgba(226,232,240,.88) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 24px 48px rgba(15,23,42,.14) !important;
+}
+[data-theme="dark"] .expand-shell {
+  background: rgba(26,29,46,.72) !important;
+}
+.expand-topbar {
+  border-bottom: 1px solid rgba(226,232,240,.72) !important;
+  padding: 0 2px 10px !important;
+}
+
+@media (max-width: 980px) {
+  #card_site_summary .row.g-3 { grid-template-columns: 1fr !important; }
+  #card_site_summary .col-lg-5 > div,
+  #card_site_summary .chb { height: 200px !important; min-height: 200px !important; max-height: 200px !important; }
+  .expand-page { padding: 102px 8px 8px !important; }
+  .expand-shell { min-height: calc(100vh - 110px) !important; }
+}
+@media (max-width: 768px) {
+  #card_site_summary .row.g-3 { grid-template-columns: 1fr !important; }
+  #card_site_summary .col-lg-5 > div,
+  #card_site_summary .chb { height: 176px !important; min-height: 176px !important; max-height: 176px !important; }
+  .expand-page { padding: 94px 6px 6px !important; }
+  .expand-shell { border-radius: 18px !important; min-height: calc(100vh - 100px) !important; }
+}
+
 </style>
 
   </head>
@@ -7933,7 +7998,8 @@ function getSiteTicketCounts(rows, siteCodeCol, fullNameCol, shortCodeCol){
     let site=String(r[siteCodeCol] ?? '').trim();
     if(!site) return;
     let shortCode=String(r[shortCodeCol] ?? '').trim() || site;
-    let fullName=String(r[fullNameCol] ?? '').trim() || codeToFull[site] || shortToFull[shortCode] || '';
+    let explicitFull=String(r[fullNameCol] ?? '').trim();
+    let fullName=shortToFull[site] || shortToFull[shortCode] || explicitFull || codeToFull[site] || '';
     if(!groups[site]) groups[site]={ site, shortCode, fullName, rows:[], count:0 };
     groups[site].count++;
     groups[site].rows.push(r);
@@ -7976,6 +8042,7 @@ function renderSiteTicketCountsCard(sites, cols){
   let card=document.createElement('div');
   card.className='cd';
   card.id='card_'+zKey;
+  card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
   if(isHidden(zKey)) card.style.display='none';
   card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[1]};"></div><h3>Site Ticket Counts</h3></div><span class="c-tag" style="background:${TG[1]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th style="width:60px;">Tickets</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   area.appendChild(card);
@@ -12699,5 +12766,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a19f8f3d392bfd38',t:'MTc4Mzg1NDE4Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
