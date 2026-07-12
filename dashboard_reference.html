@@ -6185,14 +6185,23 @@ body #drInfo .dr-b {
 /* ═══════════ GRAPH CARD HOVER POLISH PATCH V36 ═══════════ */
 .cd,
 .enterprise-card {
-  transition: transform .24s cubic-bezier(.22,1,.36,1), box-shadow .24s ease, border-color .24s ease, filter .24s ease !important;
+  transition: transform .26s cubic-bezier(.22,1,.36,1), box-shadow .26s ease, border-color .26s ease, filter .26s ease !important;
 }
 .cd:hover,
 .enterprise-card:hover {
-  transform: translateY(-8px) scale(1.006) !important;
-  border-color: color-mix(in srgb, var(--ac) 28%, var(--border)) !important;
-  box-shadow: 0 24px 48px rgba(15,23,42,.16) !important;
-  filter: saturate(1.03);
+  transform: translateY(-10px) scale(1.008) !important;
+  border-color: color-mix(in srgb, var(--ac) 30%, var(--border)) !important;
+  box-shadow: 0 28px 56px rgba(15,23,42,.18) !important;
+  filter: saturate(1.04);
+}
+.cd:hover::before,
+.enterprise-card:hover::before {
+  opacity: 1 !important;
+}
+.cd:hover .cb,
+.enterprise-card:hover .enterprise-body,
+.enterprise-card:hover .cb {
+  transform: translateY(-1px) !important;
 }
 .cd:hover .chd h3,
 .enterprise-card:hover .enterprise-title h2 {
@@ -6221,6 +6230,7 @@ body #drInfo .dr-b {
   border: 1px solid rgba(226,232,240,.95) !important;
   background: rgba(255,255,255,.92) !important;
   box-shadow: 0 8px 16px rgba(15,23,42,.08) !important;
+  transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s ease, border-color .2s ease, background .2s ease, color .2s ease !important;
 }
 [data-theme="dark"] #periodToggleBtn,
 [data-theme="dark"] #toolsToggleBtn,
@@ -6234,6 +6244,20 @@ body #drInfo .dr-b {
 #setBtn .ic {
   stroke: currentColor !important;
 }
+#periodToggleBtn:hover,
+#toolsToggleBtn:hover,
+#setBtn:hover {
+  transform: translateY(-3px) !important;
+  color: var(--ac) !important;
+  border-color: color-mix(in srgb, var(--ac) 24%, var(--border)) !important;
+  background: color-mix(in srgb, var(--ac) 8%, rgba(255,255,255,.96)) !important;
+  box-shadow: 0 14px 28px rgba(15,23,42,.12) !important;
+}
+[data-theme="dark"] #periodToggleBtn:hover,
+[data-theme="dark"] #toolsToggleBtn:hover,
+[data-theme="dark"] #setBtn:hover {
+  background: color-mix(in srgb, var(--ac) 12%, rgba(26,29,46,.92)) !important;
+}
 #periodToggleBtn:focus,
 #toolsToggleBtn:focus,
 #setBtn:focus,
@@ -6245,9 +6269,76 @@ body #drInfo .dr-b {
 }
 #periodToggleBtn.act,
 #toolsToggleBtn.act {
+  transform: translateY(0) !important;
   color: #fff !important;
   border-color: var(--ac) !important;
   background: var(--ac) !important;
+  box-shadow: 0 12px 24px rgba(99,102,241,.22) !important;
+}
+
+/* ═══════════ SETTINGS EXTENDED PAGE PATCH V38 ═══════════ */
+#settingsModal.show {
+  display: grid !important;
+  place-items: center !important;
+  padding: 16px !important;
+}
+#settingsModal .modal-dialog {
+  width: min(1120px, calc(100vw - 32px)) !important;
+  max-width: min(1120px, calc(100vw - 32px)) !important;
+  height: calc(100vh - 32px) !important;
+  max-height: calc(100vh - 32px) !important;
+  margin: 0 !important;
+}
+#settingsModal .modal-content {
+  height: 100% !important;
+  max-height: calc(100vh - 32px) !important;
+  border-radius: 28px !important;
+  border: 1px solid rgba(226,232,240,.88) !important;
+  background: rgba(255,255,255,.82) !important;
+  backdrop-filter: blur(18px) saturate(1.04) !important;
+  box-shadow: 0 30px 60px rgba(15,23,42,.18) !important;
+}
+[data-theme="dark"] #settingsModal .modal-content {
+  background: rgba(26,29,46,.84) !important;
+}
+#settingsModal .modal-header {
+  padding: 18px 22px !important;
+  border-bottom: 1px solid rgba(226,232,240,.78) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ac) 6%, var(--bg2)) 0%, var(--bg2) 100%) !important;
+}
+#settingsModal .modal-header .modal-title {
+  font-size: 18px !important;
+  font-weight: 800 !important;
+}
+#settingsModal .modal-body {
+  padding: 18px 22px !important;
+  max-height: none !important;
+  overflow: auto !important;
+}
+#settingsModal .modal-footer {
+  padding: 14px 22px !important;
+  border-top: 1px solid rgba(226,232,240,.78) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%) !important;
+}
+#settingsModal + .modal-backdrop,
+.modal-backdrop.show {
+  backdrop-filter: blur(12px) !important;
+}
+@media (max-width: 768px) {
+  #settingsModal.show { padding: 8px !important; }
+  #settingsModal .modal-dialog {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+    height: calc(100vh - 16px) !important;
+    max-height: calc(100vh - 16px) !important;
+  }
+  #settingsModal .modal-content {
+    border-radius: 20px !important;
+    max-height: calc(100vh - 16px) !important;
+  }
+  #settingsModal .modal-body {
+    padding: 14px 16px !important;
+  }
 }
 
 </style>
