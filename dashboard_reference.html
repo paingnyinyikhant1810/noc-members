@@ -5751,13 +5751,13 @@ body {
 
 
 /* ═══════════ PERIOD PILL + SITE EXPAND TABLE FIX PATCH V34 ═══════════ */
-#drInfo {
+body #drInfo {
   display: flex !important;
   align-items: center !important;
   gap: 8px !important;
   padding: 0 16px 10px !important;
 }
-#drInfo .dr-b {
+body #drInfo .dr-b {
   border-radius: 999px !important;
   padding: 6px 12px !important;
   font-size: 10.5px !important;
@@ -5765,21 +5765,21 @@ body {
   box-shadow: 0 6px 14px rgba(15,23,42,.06) !important;
 }
 .expand-page-site_summary .expand-layout {
-  grid-template-columns: minmax(0, 1.45fr) minmax(420px, .95fr) !important;
+  grid-template-columns: minmax(0, 1.05fr) minmax(580px, 1.25fr) !important;
 }
 .expand-page-site_summary .expand-table-site th:nth-child(1),
 .expand-page-site_summary .expand-table-site td:nth-child(1) {
-  width: 18% !important;
+  width: 14% !important;
 }
 .expand-page-site_summary .expand-table-site th:nth-child(2),
 .expand-page-site_summary .expand-table-site td:nth-child(2) {
-  width: 44% !important;
+  width: 52% !important;
   white-space: normal !important;
-  line-height: 1.28 !important;
+  line-height: 1.34 !important;
 }
 .expand-page-site_summary .expand-table-site th:nth-child(3),
 .expand-page-site_summary .expand-table-site td:nth-child(3) {
-  width: 18% !important;
+  width: 14% !important;
 }
 .expand-page-site_summary .expand-table-site th:nth-child(4),
 .expand-page-site_summary .expand-table-site td:nth-child(4) {
@@ -7723,7 +7723,7 @@ function processFetchedTabData(d) {
   let savedOvr = (S.ovrColsByTab && S.ovrColsByTab[D.tabName]) ? S.ovrColsByTab[D.tabName] : {};
   DETECTED_CRE_COL = savedOvr.cre || null;
   DETECTED_RES_COL = savedOvr.res || null;
-  range=S.defaultRange||'all';subPeriod='all';COMPARE_PICKS=[];
+  range=S.defaultRange||'all';subPeriod = range==='all' ? 'all' : '';COMPARE_PICKS=[];
   document.querySelectorAll('.tp-b').forEach(p=>{
     if (p.id !== 'cmpTab' && p.id !== 'dupTab' && p.id !== 'ovrTab' && p.id !== 'fltTab' && p.id !== 'pvtTab') {
       p.classList.toggle('on',p.dataset.r===range);
@@ -7851,7 +7851,7 @@ function updateSubPeriodUI(){
   if(hint) hint.style.display='none';
   let opts=getSubPeriodOptionsForRange();
   sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.t}</option>`).join(''); if(typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects();
-  let chosen = (subPeriod && opts.some(o=>o.v===subPeriod)) ? subPeriod : chooseDefaultSubPeriodValue(range, opts);
+  let chosen = (subPeriod && subPeriod!=='all' && opts.some(o=>o.v===subPeriod)) ? subPeriod : chooseDefaultSubPeriodValue(range, opts);
   subPeriod = chosen || 'all';
   sel.value = subPeriod;
 }
@@ -8130,6 +8130,7 @@ function showSiteTicketDetailsM(siteCode){
   let omit=[cols.fullNameCol, cols.shortCodeCol].filter(Boolean);
   showRowsM(matches, 'Site Ticket Counts: ' + siteCode + fullName, omit);
 }
+
 function bindDuplicateGraphContext(card){
   if(!card)return;
   card.oncontextmenu=function(e){
