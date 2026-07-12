@@ -6184,8 +6184,7 @@ body #drInfo .dr-b {
 
 /* ═══════════ GRAPH CARD HOVER POLISH PATCH V36 ═══════════ */
 .cd,
-.enterprise-card,
-.chb {
+.enterprise-card {
   transition: transform .24s cubic-bezier(.22,1,.36,1), box-shadow .24s ease, border-color .24s ease, filter .24s ease !important;
 }
 .cd:hover,
@@ -6195,18 +6194,14 @@ body #drInfo .dr-b {
   box-shadow: 0 24px 48px rgba(15,23,42,.16) !important;
   filter: saturate(1.03);
 }
-.cd:hover .chb,
-.enterprise-card:hover .chb,
-.chb:hover,
-.cd:hover .chart-xl,
-.enterprise-card:hover .chart-xl {
-  transform: translateY(-2px) !important;
-  border-color: color-mix(in srgb, var(--ac) 22%, var(--border)) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.42), 0 12px 24px rgba(99,102,241,.10) !important;
-}
 .cd:hover .chd h3,
 .enterprise-card:hover .enterprise-title h2 {
   color: color-mix(in srgb, var(--ac) 88%, var(--t1)) !important;
+}
+.chb:hover {
+  transform: none !important;
+  border-color: var(--border) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35) !important;
 }
 @media (hover:none) {
   .cd:hover,
@@ -6216,6 +6211,43 @@ body #drInfo .dr-b {
     box-shadow: inherit !important;
     filter: none !important;
   }
+}
+
+/* ═══════════ TOP ICON COLOR UNIFY PATCH V37 ═══════════ */
+#periodToggleBtn,
+#toolsToggleBtn,
+#setBtn {
+  color: var(--t2) !important;
+  border: 1px solid rgba(226,232,240,.95) !important;
+  background: rgba(255,255,255,.92) !important;
+  box-shadow: 0 8px 16px rgba(15,23,42,.08) !important;
+}
+[data-theme="dark"] #periodToggleBtn,
+[data-theme="dark"] #toolsToggleBtn,
+[data-theme="dark"] #setBtn {
+  color: var(--t2) !important;
+  border-color: color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(26,29,46,.88) !important;
+}
+#periodToggleBtn .ic,
+#toolsToggleBtn .ic,
+#setBtn .ic {
+  stroke: currentColor !important;
+}
+#periodToggleBtn:focus,
+#toolsToggleBtn:focus,
+#setBtn:focus,
+#periodToggleBtn:focus-visible,
+#toolsToggleBtn:focus-visible,
+#setBtn:focus-visible {
+  outline: none !important;
+  box-shadow: 0 8px 16px rgba(15,23,42,.08) !important;
+}
+#periodToggleBtn.act,
+#toolsToggleBtn.act {
+  color: #fff !important;
+  border-color: var(--ac) !important;
+  background: var(--ac) !important;
 }
 
 </style>
@@ -8263,13 +8295,22 @@ function getSiteComplaintPercentData(rows, siteCodeCol, fullNameCol, shortCodeCo
     };
   }).sort((a,b)=>b.complaintCount-a.complaintCount || b.percentValue-a.percentValue || String(a.site).localeCompare(String(b.site)));
 }
-function bindSiteGraphContext(card){
-
+function bindSiteTicketGraphContext(card){
   if(!card) return;
   card.oncontextmenu=function(e){
-    showAppContextMenu(e,[{icon:'⚙️',label:'Site Field Settings',onClick:openSiteGraphSettingsModal}]);
+    showAppContextMenu(e,[{icon:'⚙️',label:'Site Ticket Graph Settings',onClick:openSiteTicketGraphSettingsModal}]);
   };
-  card.title='Right-click to change site/full name/short code/active site/active count fields';
+  card.title='Right-click to change site code / full name / short code fields';
+}
+function bindSiteComplaintPercentGraphContext(card){
+  if(!card) return;
+  card.oncontextmenu=function(e){
+    showAppContextMenu(e,[{icon:'⚙️',label:'Site Complaint Percent Settings',onClick:openSiteComplaintPercentGraphSettingsModal}]);
+  };
+  card.title='Right-click to change active site / active count fields';
+}
+function bindSiteGraphContext(card){
+  bindSiteTicketGraphContext(card);
 }
 function renderSiteOverviewInMain(){
   if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
@@ -8310,7 +8351,7 @@ function renderSiteTicketCountsCard(sites, cols){
   if(isHidden(zKey)) card.style.display='none';
   card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[1]};"></div><h3>Site Ticket Counts</h3></div><span class="c-tag" style="background:${TG[1]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th style="width:60px;">Tickets</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   area.appendChild(card);
-  bindSiteGraphContext(card);
+  bindSiteTicketGraphContext(card);
   setTimeout(()=>{
     let colors=chartLabels.map((_,i)=>P[i%P.length]);
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
@@ -8340,7 +8381,7 @@ function renderSiteComplaintPercentCard(sites, cols){
   if(isHidden(zKey)) card.style.display='none';
   card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[2]};"></div><h3>Site Complaint Percent</h3></div><span class="c-tag" style="background:${TG[2]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   area.appendChild(card);
-  bindSiteGraphContext(card);
+  bindSiteComplaintPercentGraphContext(card);
   setTimeout(()=>{
     let colors=chartLabels.map((_,i)=>P[i%P.length]);
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
@@ -12318,19 +12359,22 @@ function applyDuplicateGraphSettingsFromModal(){
   if (D.rawData) doRender();
 }
 function openSiteGraphSettingsModal(){
+  openSiteTicketGraphSettingsModal();
+}
+function openSiteTicketGraphSettingsModal(){
   if(!D || !D.headers || !D.headers.length) return;
   let cols = loadSiteColumnsForCurrentTab();
   closeGraphFieldSettingsModal();
   let m=document.createElement('div');
   m.id='graphFieldSettingsModal';
   m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
-  m.innerHTML=`<div style="width:min(560px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+  m.innerHTML=`<div style="width:min(520px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
     <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 10%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
       <div style="display:flex;align-items:flex-start;gap:12px;">
         <div style="width:42px;height:42px;border-radius:14px;background:rgba(59,130,246,.14);color:var(--blue);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-grid"/></svg></div>
         <div>
-          <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">Site Graph Settings</div>
-          <div style="font-size:10.5px;color:var(--t2);margin-top:4px;">Choose fields for Site Ticket Counts and Site Complaint Percent.</div>
+          <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">Site Ticket Graph Settings</div>
+          <div style="font-size:10px;color:var(--t2);margin-top:4px;">Choose site identity fields for Site Ticket Counts.</div>
         </div>
       </div>
       <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
@@ -12339,27 +12383,62 @@ function openSiteGraphSettingsModal(){
       <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Site Code Field</label><select id="siteFieldSettingCode" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.siteCodeCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
       <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Full Name Field</label><select id="siteFieldSettingFull" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.fullNameCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
       <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Short Code Field</label><select id="siteFieldSettingShort" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.shortCodeCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
-      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Active Site Field</label><select id="siteFieldSettingActiveSite" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.activeSiteCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
-      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Active Count Field</label><select id="siteFieldSettingActiveCount" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.activeCountCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
     </div>
     <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:color-mix(in srgb,var(--bg3) 80%,var(--bg2));">
       <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
-      <button class="btn-mc" onclick="applySiteGraphSettingsFromModal()">Apply Settings</button>
+      <button class="btn-mc" onclick="applySiteTicketGraphSettingsFromModal()">Apply Settings</button>
     </div>
   </div>`;
   document.body.appendChild(m);
 }
-function applySiteGraphSettingsFromModal(){
+function applySiteTicketGraphSettingsFromModal(){
   let code=document.getElementById('siteFieldSettingCode');
   let full=document.getElementById('siteFieldSettingFull');
   let short=document.getElementById('siteFieldSettingShort');
-  let activeSite=document.getElementById('siteFieldSettingActiveSite');
-  let activeCount=document.getElementById('siteFieldSettingActiveCount');
   if (!S.siteColsByTab) S.siteColsByTab = {};
   if (!S.siteColsByTab[D.tabName]) S.siteColsByTab[D.tabName] = {};
   if(code) S.siteColsByTab[D.tabName].siteCode = code.value;
   if(full) S.siteColsByTab[D.tabName].fullName = full.value;
   if(short) S.siteColsByTab[D.tabName].shortCode = short.value;
+  saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  closeGraphFieldSettingsModal();
+  if (D.rawData) doRender();
+}
+function openSiteComplaintPercentGraphSettingsModal(){
+  if(!D || !D.headers || !D.headers.length) return;
+  let cols = loadSiteColumnsForCurrentTab();
+  closeGraphFieldSettingsModal();
+  let m=document.createElement('div');
+  m.id='graphFieldSettingsModal';
+  m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
+  m.innerHTML=`<div style="width:min(500px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 10%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="width:42px;height:42px;border-radius:14px;background:rgba(59,130,246,.14);color:var(--blue);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-grid"/></svg></div>
+        <div>
+          <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">Site Complaint Percent Settings</div>
+          <div style="font-size:10px;color:var(--t2);margin-top:4px;">Choose active lookup fields for Site Complaint Percent.</div>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="padding:18px;display:grid;gap:14px;">
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Active Site Field</label><select id="siteFieldSettingActiveSite" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.activeSiteCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Active Count Field</label><select id="siteFieldSettingActiveCount" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.activeCountCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:color-mix(in srgb,var(--bg3) 80%,var(--bg2));">
+      <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
+      <button class="btn-mc" onclick="applySiteComplaintPercentGraphSettingsFromModal()">Apply Settings</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function applySiteComplaintPercentGraphSettingsFromModal(){
+  let activeSite=document.getElementById('siteFieldSettingActiveSite');
+  let activeCount=document.getElementById('siteFieldSettingActiveCount');
+  if (!S.siteColsByTab) S.siteColsByTab = {};
+  if (!S.siteColsByTab[D.tabName]) S.siteColsByTab[D.tabName] = {};
   if(activeSite) S.siteColsByTab[D.tabName].activeSite = activeSite.value;
   if(activeCount) S.siteColsByTab[D.tabName].activeCount = activeCount.value;
   saveSettings();
