@@ -343,7 +343,15 @@ function renderMobileDashboardMenu(){
 /* ══════════════════════════════════════════════════════════
    NAVIGATION
 ══════════════════════════════════════════════════════════ */
+function setDashboardViewportMode(on){
+  try{
+    document.documentElement.classList.toggle('dashboard-embed-active', !!on);
+    document.body.classList.toggle('dashboard-embed-active', !!on);
+  }catch(e){}
+}
+
 function navigateTo(page){
+  setDashboardViewportMode(page==='dashboard');
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
   document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active'));
   if(el('infoDropdown'))el('infoDropdown').classList.add('hidden');
@@ -432,6 +440,7 @@ document.addEventListener('click',e=>{
 });
 
 function showInfoCategory(catId,catName){
+  setDashboardViewportMode(false);
   resetDashboardMode();
   currentInfoCategory=catId;
   if(el('infoDropdown'))el('infoDropdown').classList.add('hidden');
@@ -1267,6 +1276,7 @@ async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}=
 
 async function showDashboardItem(id,name='Dashboard'){
   if(!isLeader()) return showToast('Leader or above required','error');
+  setDashboardViewportMode(true);
   currentDashboardId=id;
   currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'};
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
@@ -1281,6 +1291,10 @@ async function showDashboardItem(id,name='Dashboard'){
       dashboardName:currentDashboardItem.name||name||'Dashboard',
       api:getDashboardApi(currentDashboardItem)
     });
+    const authHeader = (()=>{ try{return localStorage.getItem('authHeader')||'';}catch(e){return '';}})();
+    frame.onload = () => {
+      try { if(authHeader) frame.contentWindow.postMessage({ type:'noc-auth', authHeader }, window.location.origin); } catch(e) {}
+    };
     frame.src=`dashboard_reference.html?${q.toString()}`;
   }
 }
