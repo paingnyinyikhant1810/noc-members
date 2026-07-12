@@ -6049,7 +6049,10 @@ body #drInfo .dr-b {
 
 .expand-page {
   inset: 0 !important;
-  padding: 108px 12px 12px !important;
+  padding: clamp(16px, 2.6vh, 28px) !important;
+  display: grid !important;
+  place-items: center !important;
+  overflow: auto !important;
   background: rgba(241,245,255,.42) !important;
   backdrop-filter: blur(24px) saturate(1.02) !important;
 }
@@ -6058,15 +6061,21 @@ body #drInfo .dr-b {
   backdrop-filter: blur(22px) saturate(1.02) !important;
 }
 .expand-shell {
-  max-width: 1240px !important;
-  min-height: calc(100vh - 120px) !important;
-  background: rgba(255,255,255,.72) !important;
+  width: min(1240px, calc(100vw - 36px)) !important;
+  max-width: min(1240px, calc(100vw - 36px)) !important;
+  height: min(820px, calc(100vh - 36px)) !important;
+  min-height: min(820px, calc(100vh - 36px)) !important;
+  max-height: calc(100vh - 36px) !important;
+  margin: auto !important;
+  padding: 14px 16px 16px !important;
+  overflow: hidden !important;
+  background: rgba(255,255,255,.78) !important;
   border: 1px solid rgba(226,232,240,.88) !important;
   border-radius: 24px !important;
-  box-shadow: 0 24px 48px rgba(15,23,42,.14) !important;
+  box-shadow: 0 28px 56px rgba(15,23,42,.16) !important;
 }
 [data-theme="dark"] .expand-shell {
-  background: rgba(26,29,46,.72) !important;
+  background: rgba(26,29,46,.76) !important;
 }
 .expand-topbar {
   border-bottom: 1px solid rgba(226,232,240,.72) !important;
@@ -6077,15 +6086,75 @@ body #drInfo .dr-b {
   #card_site_summary .row.g-3 { grid-template-columns: 1fr !important; }
   #card_site_summary .col-lg-5 > div,
   #card_site_summary .chb { height: 200px !important; min-height: 200px !important; max-height: 200px !important; }
-  .expand-page { padding: 102px 8px 8px !important; }
-  .expand-shell { min-height: calc(100vh - 110px) !important; }
+  .expand-page { padding: 10px !important; }
+  .expand-shell {
+    width: min(100%, calc(100vw - 20px)) !important;
+    max-width: min(100%, calc(100vw - 20px)) !important;
+    height: calc(100vh - 20px) !important;
+    min-height: calc(100vh - 20px) !important;
+    max-height: calc(100vh - 20px) !important;
+  }
 }
 @media (max-width: 768px) {
   #card_site_summary .row.g-3 { grid-template-columns: 1fr !important; }
   #card_site_summary .col-lg-5 > div,
   #card_site_summary .chb { height: 176px !important; min-height: 176px !important; max-height: 176px !important; }
-  .expand-page { padding: 94px 6px 6px !important; }
-  .expand-shell { border-radius: 18px !important; min-height: calc(100vh - 100px) !important; }
+  .expand-page { padding: 6px !important; }
+  .expand-shell {
+    width: calc(100vw - 12px) !important;
+    max-width: calc(100vw - 12px) !important;
+    height: calc(100vh - 12px) !important;
+    min-height: calc(100vh - 12px) !important;
+    max-height: calc(100vh - 12px) !important;
+    border-radius: 18px !important;
+  }
+}
+
+/* ═══════════ EXPAND + POPUP TRUE CENTER PATCH V35 ═══════════ */
+#dModal.show {
+  display: grid !important;
+  place-items: center !important;
+  align-items: center !important;
+  justify-items: center !important;
+  padding: 18px !important;
+  overflow: hidden !important;
+}
+#dModal .modal-dialog {
+  width: min(1280px, calc(100vw - 36px)) !important;
+  max-width: min(1280px, calc(100vw - 36px)) !important;
+  max-height: calc(100vh - 36px) !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transform: translate3d(0,0,0) !important;
+}
+#dModal .modal-content {
+  width: 100% !important;
+  max-height: calc(100vh - 36px) !important;
+}
+#dModal .modal-body {
+  max-height: calc(100vh - 168px) !important;
+}
+.modal-backdrop.high {
+  background: rgba(15,23,42,.42) !important;
+  backdrop-filter: blur(16px) saturate(1.02) !important;
+}
+@media (max-width: 980px) {
+  #dModal.show { padding: 12px !important; }
+  #dModal .modal-dialog,
+  #dModal .modal-content { max-height: calc(100vh - 24px) !important; }
+  #dModal .modal-body { max-height: calc(100vh - 156px) !important; }
+}
+@media (max-width: 768px) {
+  #dModal.show { padding: 8px !important; }
+  #dModal .modal-dialog {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+    max-height: calc(100vh - 16px) !important;
+  }
+  #dModal .modal-content { max-height: calc(100vh - 16px) !important; }
+  #dModal .modal-body { max-height: calc(100vh - 148px) !important; }
 }
 
 </style>
@@ -12801,22 +12870,23 @@ function showRecordsModalOnTop(){
   let modal=document.getElementById('dModal');
   if(!modal) return;
   try{ if(dataModal && typeof dataModal.show==='function') dataModal.show(); }catch(e){}
-  modal.style.zIndex='6080';
-  modal.style.position='fixed';
-  modal.style.inset='0';
-  modal.style.display='flex';
-  modal.style.alignItems='center';
-  modal.style.justifyContent='center';
+  modal.style.setProperty('z-index','6080','important');
+  modal.style.setProperty('position','fixed','important');
+  modal.style.setProperty('inset','0','important');
+  modal.style.setProperty('display','grid','important');
+  modal.style.setProperty('place-items','center','important');
+  modal.style.setProperty('align-items','center','important');
+  modal.style.setProperty('justify-items','center','important');
   modal.classList.add('show');
   document.body.classList.add('modal-open');
   setTimeout(()=>{
     let dlg=modal.querySelector('.modal-dialog');
     if(dlg){
-      dlg.style.margin='0 auto';
-      dlg.style.maxHeight='min(84vh, 760px)';
-      dlg.style.display='flex';
-      dlg.style.alignItems='center';
-      dlg.style.transform='translateY(-4vh)';
+      dlg.style.setProperty('margin','0','important');
+      dlg.style.setProperty('display','flex','important');
+      dlg.style.setProperty('align-items','center','important');
+      dlg.style.setProperty('justify-content','center','important');
+      dlg.style.setProperty('transform','translate3d(0,0,0)','important');
     }
     let backdrops=document.querySelectorAll('.modal-backdrop');
     if(!backdrops.length){
