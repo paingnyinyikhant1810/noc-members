@@ -8122,9 +8122,13 @@ function renderSiteTicketCountsCard(sites, cols){
 }
 function showSiteTicketDetailsM(siteCode){
   let cols=loadSiteColumnsForCurrentTab();
-  let matches=(F||[]).filter(r=>String(r[cols.siteCodeCol] ?? '').trim()===siteCode);
+  let baseRows=(F||[]).slice();
+  let matches=baseRows.filter(r=>String(r[cols.siteCodeCol] ?? '').trim()===siteCode);
+  let groups=getSiteTicketCounts(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, (D&&D.rawData)||baseRows);
+  let hit=groups.find(g=>g.site===siteCode);
+  let fullName=(hit&&hit.fullName)?(' - ' + hit.fullName):'';
   let omit=[cols.fullNameCol, cols.shortCodeCol].filter(Boolean);
-  showRowsM(matches, 'Site Ticket Counts: ' + siteCode, omit);
+  showRowsM(matches, 'Site Ticket Counts: ' + siteCode + fullName, omit);
 }
 function bindDuplicateGraphContext(card){
   if(!card)return;
@@ -12257,7 +12261,8 @@ function expandedRowClick(zKey,index){
     if(item.records){
       let cols=loadSiteColumnsForCurrentTab();
       let omit=[cols.fullNameCol, cols.shortCodeCol].filter(Boolean);
-      return showRowsM(item.records, 'Site Ticket Counts: ' + label, omit);
+      let extra=item.fullName ? (' - ' + item.fullName) : '';
+      return showRowsM(item.records, 'Site Ticket Counts: ' + label + extra, omit);
     }
     return showSiteTicketDetailsM(label);
   }
@@ -12379,6 +12384,25 @@ function renderExpandedChart(){
     onHover:(e,els)=>{ e.native.target.style.cursor=els&&els.length?'pointer':'default'; }
   };
   expandedChartInstance=createSafeChart(document.getElementById('expandPageCanvas'),cfg);
+  syncExpandedSummaryPills();
+}
+function getExpandedPeriodPillText(){
+  let exRange=EXPANDED_PAGE_STATE.range || 'all';
+  if(exRange==='all' || !dateCol) return 'All Periods';
+  let opts=getExpandedSubPeriodOptionsForRange();
+  let found=opts.find(o=>o.v===EXPANDED_PAGE_STATE.subPeriod);
+  return found ? found.t : (cap(exRange) + ' View');
+}
+function syncExpandedSummaryPills(){
+  let totalEl=document.getElementById('expandTotalChip');
+  let periodEl=document.getElementById('expandPeriodChip');
+  if(totalEl){
+    let total=(EXPANDED_PAGE_STATE.rows||[]).reduce((s,r)=>s+(Number(r.value)||0),0);
+    totalEl.textContent = total.toLocaleString() + ' total';
+  }
+  if(periodEl){
+    periodEl.textContent = getExpandedPeriodPillText();
+  }
 }
 function toggleExpandCalendar(forceState){
   let tray=document.getElementById('expandCalendarTray');
@@ -12441,6 +12465,7 @@ function syncExpandedCalendarUI(){
   if(exRange==='all'||!dateCol||D.isPivot||allDates.length===0){
     if(wrap) wrap.style.display='none';
     if(hint) hint.style.display='flex';
+    syncExpandedSummaryPills();
     return;
   }
   if(wrap) wrap.style.display='flex';
@@ -12450,6 +12475,7 @@ function syncExpandedCalendarUI(){
     sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.t}</option>`).join('');
     sel.value = exSub && opts.some(o=>o.v===exSub) ? exSub : 'all';
   }
+  syncExpandedSummaryPills();
 }
 function setExpandedCalendarRange(r){
   EXPANDED_PAGE_STATE.range=r;
@@ -12479,7 +12505,7 @@ function openExpandedChartPage(zKey,chartType){
   let defaultExpandedRange = (zKey==='trend_total') ? (range || 'all') : 'all';
   let defaultExpandedSub = (zKey==='trend_total') ? (subPeriod || 'all') : 'all';
   EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows, search:'', sortBy:(zKey==='trend_total'?'natural':'value'), sortDir:(zKey==='trend_total'?'asc':'desc'), range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
-  let showCalendar = !!dateCol && zKey==='trend_total';
+  let showCalendar = !!dateCol;
   let page=document.createElement('div');
   page.id='expandChartPage';
   page.className='expand-page expand-page-'+zKey;
@@ -12492,7 +12518,8 @@ function openExpandedChartPage(zKey,chartType){
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
         ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div></div></div>` : ''}
-        <div class="expand-chip">${total.toLocaleString()} total</div>
+        <div class="expand-chip" id="expandPeriodChip">${defaultExpandedRange==='all' ? 'All Periods' : cap(defaultExpandedRange)+' View'}</div>
+        <div class="expand-chip" id="expandTotalChip">${total.toLocaleString()} total</div>
       </div>
     </div>
     <div class="expand-layout">
