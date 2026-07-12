@@ -7898,6 +7898,100 @@ function loadOverTimeColumnsForCurrentTab(){
   DETECTED_RES_COL = savedOvr.res || DETECTED_RES_COL || found.resolvedCol || (D.headers ? (D.headers[1] || D.headers[0]) : '');
   return { createdCol: DETECTED_CRE_COL, resolvedCol: DETECTED_RES_COL };
 }
+function findSiteFullNameCols(){
+  let siteCodeCol=null, fullNameCol=null, shortCodeCol=null;
+  if(!D || !D.headers) return { siteCodeCol, fullNameCol, shortCodeCol };
+  for(let h of D.headers){ let l=h.toLowerCase(); if(l.includes('opi site code')||l==='opi site code'){ siteCodeCol=h; break; } }
+  if(!siteCodeCol){ for(let h of D.headers){ let l=h.toLowerCase(); if((l.includes('site')&&l.includes('code'))||l==='site code'){ siteCodeCol=h; break; } } }
+  for(let h of D.headers){ let l=h.toLowerCase(); if(l==='full name' || l.includes('full name')){ fullNameCol=h; break; } }
+  for(let h of D.headers){ let l=h.toLowerCase(); if(l==='short code' || l.includes('short code')){ shortCodeCol=h; break; } }
+  if(!shortCodeCol) shortCodeCol = siteCodeCol;
+  return { siteCodeCol, fullNameCol, shortCodeCol };
+}
+function loadSiteColumnsForCurrentTab(){
+  let found = findSiteFullNameCols();
+  let saved = (S.siteColsByTab && S.siteColsByTab[D.tabName]) ? S.siteColsByTab[D.tabName] : {};
+  S.SITE_CODE_COL = saved.siteCode || S.SITE_CODE_COL || found.siteCodeCol || (D.headers ? D.headers[0] : '');
+  S.SITE_FULLNAME_COL = saved.fullName || S.SITE_FULLNAME_COL || found.fullNameCol || (D.headers ? D.headers[0] : '');
+  S.SITE_SHORTCODE_COL = saved.shortCode || S.SITE_SHORTCODE_COL || found.shortCodeCol || S.SITE_CODE_COL || (D.headers ? D.headers[0] : '');
+  return { siteCodeCol:S.SITE_CODE_COL, fullNameCol:S.SITE_FULLNAME_COL, shortCodeCol:S.SITE_SHORTCODE_COL };
+}
+function getSiteTicketCounts(rows, siteCodeCol, fullNameCol, shortCodeCol){
+  let codeToFull={};
+  let shortToFull={};
+  (rows||[]).forEach(r=>{
+    let sc=String(r[shortCodeCol] ?? '').trim();
+    let site=String(r[siteCodeCol] ?? '').trim();
+    let fn=String(r[fullNameCol] ?? '').trim();
+    if(fn){
+      if(sc && !shortToFull[sc]) shortToFull[sc]=fn;
+      if(site && !codeToFull[site]) codeToFull[site]=fn;
+    }
+  });
+  let groups={};
+  (rows||[]).forEach(r=>{
+    let site=String(r[siteCodeCol] ?? '').trim();
+    if(!site) return;
+    let shortCode=String(r[shortCodeCol] ?? '').trim() || site;
+    let fullName=String(r[fullNameCol] ?? '').trim() || codeToFull[site] || shortToFull[shortCode] || '';
+    if(!groups[site]) groups[site]={ site, shortCode, fullName, rows:[], count:0 };
+    groups[site].count++;
+    groups[site].rows.push(r);
+    if(!groups[site].fullName && fullName) groups[site].fullName=fullName;
+    if(!groups[site].shortCode && shortCode) groups[site].shortCode=shortCode;
+  });
+  return Object.values(groups).sort((a,b)=>b.count-a.count || String(a.site).localeCompare(String(b.site)));
+}
+function bindSiteGraphContext(card){
+  if(!card) return;
+  card.oncontextmenu=function(e){
+    showAppContextMenu(e,[{icon:'⚙️',label:'Site Field Settings',onClick:openSiteGraphSettingsModal}]);
+  };
+  card.title='Right-click to change site/full name/short code fields';
+}
+function renderSiteOverviewInMain(){
+  if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
+  let cols=loadSiteColumnsForCurrentTab();
+  if(!cols.siteCodeCol) return;
+  let sites=getSiteTicketCounts(F, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol);
+  if(!sites.length) return;
+  renderSiteTicketCountsCard(sites, cols);
+}
+function renderSiteTicketCountsCard(sites, cols){
+  let bId='siteTicketCanvas';
+  let zKey='site_summary';
+  let limit=S.chartLimit||0;
+  let displaySites=limit>0?sites.slice(0,limit):sites.slice();
+  let chartLabels=displaySites.map(s=>s.site);
+  let chartValues=displaySites.map(s=>s.count);
+  let total=displaySites.reduce((sum,s)=>sum+s.count,0);
+  let rowsHtml=displaySites.map((s,i)=>{ let pc=total>0?((s.count/total)*100).toFixed(1):0; let fc=P[i%P.length]; return `
+      <tr onclick="showSiteTicketDetailsM('${escapeJs(s.site)}')">
+        <td class="c-link">${escapeHtml(s.site)}</td>
+        <td>${escapeHtml(s.fullName || '—')}</td>
+        <td><span class="cnt-p">${s.count}</span></td>
+        <td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td>
+      </tr>`; }).join('');
+  let area=document.getElementById('main');
+  let card=document.createElement('div');
+  card.className='cd';
+  card.id='card_'+zKey;
+  if(isHidden(zKey)) card.style.display='none';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[1]};"></div><h3>Site Ticket Counts</h3></div><span class="c-tag" style="background:${TG[1]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th style="width:60px;">Tickets</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  area.appendChild(card);
+  bindSiteGraphContext(card);
+  setTimeout(()=>{
+    let colors=chartLabels.map((_,i)=>P[i%P.length]);
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    CH[bId]=mkChart(bId,'bar',{labels:chartLabels,datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,chartLabels,false);
+    CHART_META[zKey]={ title:'Site Ticket Counts', labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total, type:'site_summary', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[]}])) };
+  },30);
+}
+function showSiteTicketDetailsM(siteCode){
+  let cols=loadSiteColumnsForCurrentTab();
+  let matches=(F||[]).filter(r=>String(r[cols.siteCodeCol] ?? '').trim()===siteCode);
+  showRowsM(matches, 'Site Ticket Counts: ' + siteCode);
+}
 function bindDuplicateGraphContext(card){
   if(!card)return;
   card.oncontextmenu=function(e){
@@ -7932,6 +8026,7 @@ function renderEnterpriseSections(){
   if(D.isPivot)return;
   renderTicketTrendSection();
   renderCpeComplaintSection();
+  renderSiteOverviewInMain();
   renderDuplicateOverviewInMain();
   renderOverTimeOverviewInMain();
 }
@@ -8129,6 +8224,7 @@ function openCpeModelModal(modelName) {
 }
 function getExpandedTableColumnClass(zKey){
   if(zKey==='cpe_complaints') return 'expand-table-cpe';
+  if(zKey==='site_summary') return 'expand-table-site';
   if(zKey==='dup_top_cust') return 'expand-table-dup';
   if(zKey==='ot_severity') return 'expand-table-ot';
   if(zKey==='trend_total') return 'expand-table-trend';
@@ -11806,6 +11902,50 @@ function applyDuplicateGraphSettingsFromModal(){
   closeGraphFieldSettingsModal();
   if (D.rawData) doRender();
 }
+function openSiteGraphSettingsModal(){
+  if(!D || !D.headers || !D.headers.length) return;
+  let cols = loadSiteColumnsForCurrentTab();
+  closeGraphFieldSettingsModal();
+  let m=document.createElement('div');
+  m.id='graphFieldSettingsModal';
+  m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
+  m.innerHTML=`<div style="width:min(560px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 10%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="width:42px;height:42px;border-radius:14px;background:rgba(59,130,246,.14);color:var(--blue);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-grid"/></svg></div>
+        <div>
+          <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">Site Graph Settings</div>
+          <div style="font-size:11.5px;color:var(--t2);margin-top:4px;">Choose Site Code, Full Name, and Short Code fields for the site ticket graph.</div>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="padding:18px;display:grid;gap:14px;">
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Site Code Field</label><select id="siteFieldSettingCode" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.siteCodeCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Full Name Field</label><select id="siteFieldSettingFull" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.fullNameCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Short Code Field</label><select id="siteFieldSettingShort" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.shortCodeCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:color-mix(in srgb,var(--bg3) 80%,var(--bg2));">
+      <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
+      <button class="btn-mc" onclick="applySiteGraphSettingsFromModal()">Apply Settings</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function applySiteGraphSettingsFromModal(){
+  let code=document.getElementById('siteFieldSettingCode');
+  let full=document.getElementById('siteFieldSettingFull');
+  let short=document.getElementById('siteFieldSettingShort');
+  if (!S.siteColsByTab) S.siteColsByTab = {};
+  if (!S.siteColsByTab[D.tabName]) S.siteColsByTab[D.tabName] = {};
+  if(code) S.siteColsByTab[D.tabName].siteCode = code.value;
+  if(full) S.siteColsByTab[D.tabName].fullName = full.value;
+  if(short) S.siteColsByTab[D.tabName].shortCode = short.value;
+  saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  closeGraphFieldSettingsModal();
+  if (D.rawData) doRender();
+}
 function openOverTimeGraphSettingsModal(){
   if(!D || !D.headers || !D.headers.length) return;
   let cols = loadOverTimeColumnsForCurrentTab();
@@ -11936,6 +12076,13 @@ function computeExpandedChartRowsByZKey(zKey, zd){
     let total=active.reduce((s,m)=>s+counts[m],0);
     return { rows:active.map((m,i)=>({label:m,key:m,value:counts[m],color:P[i%P.length],pct: total>0?((counts[m]/total)*100).toFixed(1):'0.0',records:tickets[m]})) };
   }
+  if(zKey==='site_summary'){
+    let cols=loadSiteColumnsForCurrentTab();
+    let sites=getSiteTicketCounts(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol);
+    let limit=S.chartLimit||0; if(limit>0) sites=sites.slice(0,limit);
+    let total=sites.reduce((s,x)=>s+(Number(x.count)||0),0);
+    return { rows:sites.map((s,i)=>({label:s.site,key:s.site,fullName:s.fullName||'',value:Number(s.count||0),color:P[i%P.length],pct: total>0?((Number(s.count||0)/total)*100).toFixed(1):'0.0',records:s.rows||[]})) };
+  }
   if(zKey==='dup_top_cust'){
     let cols=loadDuplicateColumnsForCurrentTab();
     let dup=getDuplicateTicketsDataForCols(baseRows, cols.customerCol, cols.ticketCol);
@@ -11966,6 +12113,10 @@ function expandedRowClick(zKey,index){
   let item=rows[index]; if(!item) return;
   let zd=CHART_META[zKey]; if(!zd) return;
   let label=item.label;
+  if(zKey==='site_summary'){
+    if(item.records) return showRowsM(item.records, 'Site Ticket Counts: ' + label);
+    return showSiteTicketDetailsM(label);
+  }
   if(zKey==='dup_top_cust'){
     if(item.records) return showRowsM(item.records, 'Duplicate Tickets: ' + label);
     return showDuplicateTicketsM(label);
@@ -12013,13 +12164,21 @@ function getFilteredExpandedRows(){
 function renderExpandedDataTable(){
   let body=document.getElementById('expandTableBody');
   let counter=document.getElementById('expandRowsMeta');
+  let table=document.querySelector('.expand-table');
   if(!body) return;
   let rows=getFilteredExpandedRows();
-  body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(EXPANDED_PAGE_STATE.zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
+  let zKey=EXPANDED_PAGE_STATE.zKey;
+  if(zKey==='site_summary'){
+    if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Site</th><th>Full Name</th><th>Tickets</th><th>Share</th></tr>'; }
+    body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td title="${escapeHtml(r.fullName||'')}">${escapeHtml(r.fullName||'—')}</td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
+  }else{
+    if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Label</th><th>Value</th><th>Share</th></tr>'; }
+    body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
+  }
   if(counter) counter.textContent = rows.length.toLocaleString() + ' rows';
   let panel=document.querySelector('.expand-data-panel');
   if(panel){
-    panel.classList.remove('expand-data-panel-cpe','expand-data-panel-dup','expand-data-panel-ot','expand-data-panel-trend','expand-data-panel-generic');
+    panel.classList.remove('expand-data-panel-cpe','expand-data-panel-site','expand-data-panel-dup','expand-data-panel-ot','expand-data-panel-trend','expand-data-panel-generic');
     panel.classList.add('expand-data-panel-' + getExpandedTableColumnClass(EXPANDED_PAGE_STATE.zKey).replace('expand-table-',''));
   }
 }
@@ -12528,5 +12687,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a19920c20d319c6b',t:'MTc4Mzc4Njc0Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
