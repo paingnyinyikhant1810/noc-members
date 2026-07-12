@@ -6182,6 +6182,38 @@ body #drInfo .dr-b {
   #dModal .modal-body { max-height: calc(100vh - 148px) !important; }
 }
 
+/* ═══════════ GRAPH CARD HOVER POLISH PATCH V36 ═══════════ */
+.cd,
+.enterprise-card {
+  transition: transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s ease, border-color .22s ease, filter .22s ease !important;
+}
+.cd:hover,
+.enterprise-card:hover {
+  transform: translateY(-4px) scale(1.003) !important;
+  border-color: color-mix(in srgb, var(--ac) 24%, var(--border)) !important;
+  box-shadow: 0 18px 38px rgba(15,23,42,.14) !important;
+  filter: saturate(1.02);
+}
+.cd:hover .chb,
+.enterprise-card:hover .chb,
+.cd:hover .chart-xl,
+.enterprise-card:hover .chart-xl {
+  border-color: color-mix(in srgb, var(--ac) 20%, var(--border)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 10px 22px rgba(99,102,241,.08) !important;
+}
+.cd:hover .chd h3,
+.enterprise-card:hover .enterprise-title h2 {
+  color: color-mix(in srgb, var(--ac) 88%, var(--t1)) !important;
+}
+@media (hover:none) {
+  .cd:hover,
+  .enterprise-card:hover {
+    transform: none !important;
+    box-shadow: inherit !important;
+    filter: none !important;
+  }
+}
+
 </style>
 
   </head>
@@ -7110,7 +7142,10 @@ const VALUE_LABEL_PLUGIN={
         const raw=Array.isArray(ds.data)?ds.data[i]:0;
         const val=(typeof raw==='object'&&raw!==null)?raw.y:raw;
         if(val==null||val===''||isNaN(Number(val))||Number(val)===0)return;
-        const txt=Number(val).toLocaleString();
+        const txt=(typeof opts.formatter==='function')
+          ? String(opts.formatter(val,{chart:chart,dataset:ds,datasetIndex:di,dataIndex:i,raw:raw}) ?? '')
+          : Number(val).toLocaleString();
+        if(!txt) return;
         let pos=el.tooltipPosition?el.tooltipPosition():{x:el.x,y:el.y};
         let x=pos.x,y=pos.y;
         if(chartType==='bar'){
@@ -8215,7 +8250,7 @@ function getSiteComplaintPercentData(rows, siteCodeCol, fullNameCol, shortCodeCo
       percentValue,
       percentText: percentValue.toFixed(1) + '%'
     };
-  }).sort((a,b)=>b.percentValue-a.percentValue || b.complaintCount-a.complaintCount || String(a.site).localeCompare(String(b.site)));
+  }).sort((a,b)=>b.complaintCount-a.complaintCount || b.percentValue-a.percentValue || String(a.site).localeCompare(String(b.site)));
 }
 function bindSiteGraphContext(card){
 
@@ -8298,7 +8333,33 @@ function renderSiteComplaintPercentCard(sites, cols){
   setTimeout(()=>{
     let colors=chartLabels.map((_,i)=>P[i%P.length]);
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
-    CH[bId]=mkChart(bId,'bar',{labels:chartLabels,datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,chartLabels,false);
+    CH[bId]=createSafeChart(document.getElementById(bId),{
+      type:'bar',
+      data:{ labels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}] },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        animation:{duration:350},
+        plugins:{
+          legend:{display:false},
+          valueLabels:{display:true,fontSize:8,formatter:(val)=>Number(val||0).toFixed(1)},
+          tooltip:{
+            callbacks:{
+              title:(ctx)=>chartLabels[ctx[0].dataIndex]||'',
+              label:(ctx)=>{
+                let s=displaySites[ctx.dataIndex];
+                if(!s) return Number(ctx.parsed.y||0).toFixed(1)+'%';
+                return (s.ratioText||'0/0') + ' · ' + (s.percentText||'0.0%');
+              }
+            }
+          }
+        },
+        scales:{
+          y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:9,weight:'600'}}},
+          x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:6.6,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
+        }
+      }
+    });
     CHART_META[zKey]={ title:'Site Complaint Percent', labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total:chartValues.reduce((s,v)=>s+Number(v||0),0), type:'site_complaint_percent', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, activeSiteCol: cols.activeSiteCol, activeCountCol: cols.activeCountCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[],ratioText:s.ratioText,percentText:s.percentText,percentValue:Number(s.percentValue||0),activeCount:Number(s.activeCount||0),complaintCount:Number(s.complaintCount||0)}])) };
   },30);
 }
@@ -12604,6 +12665,20 @@ function renderExpandedChart(){
     onClick:(e,els)=>{ if(els&&els.length) expandedRowClick(EXPANDED_PAGE_STATE.zKey, els[0].index); },
     onHover:(e,els)=>{ e.native.target.style.cursor=els&&els.length?'pointer':'default'; }
   };
+  if(EXPANDED_PAGE_STATE.zKey==='site_complaint_percent'){
+    cfg.options.plugins.valueLabels={display:true,fontSize:10,formatter:(val)=>Number(val||0).toFixed(1)};
+    cfg.options.plugins.tooltip.callbacks={
+      title:(ctx)=>{
+        let row=EXPANDED_PAGE_STATE.rows[ctx[0].dataIndex];
+        return row ? row.label : '';
+      },
+      label:(ctx)=>{
+        let row=EXPANDED_PAGE_STATE.rows[ctx.dataIndex];
+        if(!row) return Number(ctx.parsed.y||0).toFixed(1)+'%';
+        return (row.ratioText||'0/0') + ' · ' + (row.percentText||'0.0%');
+      }
+    };
+  }
   expandedChartInstance=createSafeChart(document.getElementById('expandPageCanvas'),cfg);
   syncExpandedSummaryPills();
 }
@@ -12618,8 +12693,13 @@ function syncExpandedSummaryPills(){
   let totalEl=document.getElementById('expandTotalChip');
   let periodEl=document.getElementById('expandPeriodChip');
   if(totalEl){
-    let total=(EXPANDED_PAGE_STATE.rows||[]).reduce((s,r)=>s+(Number(r.value)||0),0);
-    totalEl.textContent = total.toLocaleString() + ' total';
+    if(EXPANDED_PAGE_STATE.zKey==='site_complaint_percent'){
+      let totalComplaints=(EXPANDED_PAGE_STATE.rows||[]).reduce((s,r)=>s+(Number(r.complaintCount)||0),0);
+      totalEl.textContent = totalComplaints.toLocaleString() + ' complaints';
+    }else{
+      let total=(EXPANDED_PAGE_STATE.rows||[]).reduce((s,r)=>s+(Number(r.value)||0),0);
+      totalEl.textContent = total.toLocaleString() + ' total';
+    }
   }
   if(periodEl){
     periodEl.textContent = getExpandedPeriodPillText();
@@ -12723,11 +12803,15 @@ function openExpandedChartPage(zKey,chartType){
   closeExpandedChartPage(true);
   let defaultExpandedRange = range || 'all';
   let defaultExpandedSub = subPeriod || 'all';
-  EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows:[], search:'', sortBy:(zKey==='trend_total'?'natural':'value'), sortDir:(zKey==='trend_total'?'asc':'desc'), range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
+  let defaultSortKey=(zKey==='trend_total' || zKey==='site_complaint_percent') ? 'natural' : 'value';
+  let defaultSortDir=(zKey==='trend_total' || zKey==='site_complaint_percent') ? 'asc' : 'desc';
+  EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows:[], search:'', sortBy:defaultSortKey, sortDir:defaultSortDir, range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
   let initialComputed=computeExpandedChartRowsByZKey(zKey, zd) || { rows: [] };
   EXPANDED_PAGE_STATE.rows=(initialComputed.rows||[]).slice();
   EXPANDED_PAGE_STATE.runtimeMeta=initialComputed;
-  let total = EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.value)||0),0) || Number(zd.total||0);
+  let total = zKey==='site_complaint_percent'
+    ? EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.complaintCount)||0),0)
+    : (EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.value)||0),0) || Number(zd.total||0));
   let showCalendar = !!dateCol;
   let page=document.createElement('div');
   page.id='expandChartPage';
