@@ -5750,6 +5750,51 @@ body {
 }
 
 
+/* ═══════════ PERIOD PILL + SITE EXPAND TABLE FIX PATCH V34 ═══════════ */
+#drInfo {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 0 16px 10px !important;
+}
+#drInfo .dr-b {
+  border-radius: 999px !important;
+  padding: 6px 12px !important;
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  box-shadow: 0 6px 14px rgba(15,23,42,.06) !important;
+}
+.expand-page-site_summary .expand-layout {
+  grid-template-columns: minmax(0, 1.45fr) minmax(420px, .95fr) !important;
+}
+.expand-page-site_summary .expand-table-site th:nth-child(1),
+.expand-page-site_summary .expand-table-site td:nth-child(1) {
+  width: 18% !important;
+}
+.expand-page-site_summary .expand-table-site th:nth-child(2),
+.expand-page-site_summary .expand-table-site td:nth-child(2) {
+  width: 44% !important;
+  white-space: normal !important;
+  line-height: 1.28 !important;
+}
+.expand-page-site_summary .expand-table-site th:nth-child(3),
+.expand-page-site_summary .expand-table-site td:nth-child(3) {
+  width: 18% !important;
+}
+.expand-page-site_summary .expand-table-site th:nth-child(4),
+.expand-page-site_summary .expand-table-site td:nth-child(4) {
+  width: 20% !important;
+}
+.expand-page-site_summary .expand-table-site td:nth-child(2) {
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+}
+@media (max-width: 980px) {
+  .expand-page-site_summary .expand-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 /* ═══════════ FINAL UX POLISH PATCH V31 ═══════════ */
 /* Stronger separation for expanded overlay */
 .expand-page {
@@ -7678,7 +7723,7 @@ function processFetchedTabData(d) {
   let savedOvr = (S.ovrColsByTab && S.ovrColsByTab[D.tabName]) ? S.ovrColsByTab[D.tabName] : {};
   DETECTED_CRE_COL = savedOvr.cre || null;
   DETECTED_RES_COL = savedOvr.res || null;
-  range=S.defaultRange||'all';subPeriod = range!=='all' ? getCurrentSubPeriodValue(range) : 'all';COMPARE_PICKS=[];
+  range=S.defaultRange||'all';subPeriod='all';COMPARE_PICKS=[];
   document.querySelectorAll('.tp-b').forEach(p=>{
     if (p.id !== 'cmpTab' && p.id !== 'dupTab' && p.id !== 'ovrTab' && p.id !== 'fltTab' && p.id !== 'pvtTab') {
       p.classList.toggle('on',p.dataset.r===range);
@@ -7786,6 +7831,15 @@ function getCurrentSubPeriodValue(rangeType){
   if(rangeType==='yearly') return 'y_' + now.getFullYear();
   return 'all';
 }
+function chooseDefaultSubPeriodValue(rangeType, opts){
+  opts=opts||[];
+  if(!opts.length) return 'all';
+  let currentVal=getCurrentSubPeriodValue(rangeType);
+  if(currentVal && opts.some(o=>o.v===currentVal)) return currentVal;
+  let nonAll=opts.filter(o=>o.v!=='all');
+  if(!nonAll.length) return 'all';
+  return S.dateSortOrder==='asc' ? nonAll[nonAll.length-1].v : nonAll[0].v;
+}
 function updateSubPeriodUI(){
   let wrap=document.getElementById("spWrap"),sel=document.getElementById("spSel"),hint=document.getElementById('periodSelectionHint');
   if(range==='all'||!dateCol||D.isPivot||allDates.length===0){
@@ -7796,11 +7850,10 @@ function updateSubPeriodUI(){
   if(wrap) wrap.style.display='flex';
   if(hint) hint.style.display='none';
   let opts=getSubPeriodOptionsForRange();
-  let currentVal=getCurrentSubPeriodValue(range);
   sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.t}</option>`).join(''); if(typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects();
-  if(subPeriod && opts.some(o=>o.v===subPeriod)) sel.value=subPeriod;
-  else if(currentVal && opts.some(o=>o.v===currentVal)) { subPeriod=currentVal; sel.value=currentVal; }
-  else sel.value='all';
+  let chosen = (subPeriod && opts.some(o=>o.v===subPeriod)) ? subPeriod : chooseDefaultSubPeriodValue(range, opts);
+  subPeriod = chosen || 'all';
+  sel.value = subPeriod;
 }
 function onSubPeriodChange(){subPeriod=document.getElementById("spSel").value;applyFilter(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 let PERIOD_TRAY_OPEN=false;
@@ -8641,16 +8694,20 @@ function renderSum(){
 }
 function renderDR(){
   let el=document.getElementById("drInfo");
+  if(!el) return;
   if(COMPARE_MODE){
     if(!COMPARE_PICKS.length){el.innerHTML='';return;}
     el.innerHTML=`<span class="dr-b"><svg class="ic ic-sm"><use href="#i-compare"/></svg> Comparing ${COMPARE_PICKS.length} ${COMPARE_GRAN}s: ${COMPARE_PICKS.map(periodLabel).join(' · ')}</span>`;
     return;
   }
-  if(range==='all'||!dateCol||D.isPivot){el.innerHTML='';return;}
-  let ds=F.map(r=>parseLocalDate(r[dateCol])).filter(d=>d);
-  if(!ds.length){el.innerHTML='<span class="dr-b"><svg class="ic ic-sm"><use href="#i-info"/></svg> No records in this period</span>';return;}
-  ds.sort((a,b)=>a-b);let fm=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  el.innerHTML=`<span class="dr-b"><svg class="ic ic-sm"><use href="#i-calendar"/></svg> ${fm(ds[0])} — ${fm(ds[ds.length-1])} · ${F.length} tickets</span>`;
+  if(!dateCol||D.isPivot){el.innerHTML='';return;}
+  let label='All Periods';
+  if(range!=='all'){
+    let opts=getSubPeriodOptionsForRange();
+    let found=opts.find(o=>o.v===subPeriod);
+    label=found ? found.t : cap(range);
+  }
+  el.innerHTML=`<span class="dr-b"><svg class="ic ic-sm"><use href="#i-calendar"/></svg> ${escapeHtml(label)} · ${F.length.toLocaleString()} tickets</span>`;
 }
 
 /* trend card */
@@ -12422,10 +12479,10 @@ function openExpandedChartPage(zKey,chartType){
   let defaultExpandedRange = (zKey==='trend_total') ? (range || 'all') : 'all';
   let defaultExpandedSub = (zKey==='trend_total') ? (subPeriod || 'all') : 'all';
   EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows, search:'', sortBy:(zKey==='trend_total'?'natural':'value'), sortDir:(zKey==='trend_total'?'asc':'desc'), range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
-  let showCalendar = !!dateCol;
+  let showCalendar = !!dateCol && zKey==='trend_total';
   let page=document.createElement('div');
   page.id='expandChartPage';
-  page.className='expand-page';
+  page.className='expand-page expand-page-'+zKey;
   page.innerHTML=`<div class="expand-shell">
     <div class="expand-topbar">
       <div class="expand-title-wrap">
