@@ -5427,6 +5427,9 @@ body {
   .expand-chart-box {
     min-height: 240px !important;
   }
+  #dModal .modal-dialog {
+    transform: translateY(-2vh);
+  }
 }
 @media (max-width: 768px) {
   .ct.dashboard-stage {
@@ -5595,6 +5598,7 @@ body {
 }
 #dModal .modal-dialog {
   margin: 0 auto !important;
+  transform: translateY(-4vh);
 }
 #dModal .modal-content {
   overflow: hidden !important;
@@ -5611,6 +5615,9 @@ body {
   #dModal.show {
     padding: 10px !important;
   }
+  #dModal .modal-dialog {
+    transform: translateY(-2vh);
+  }
 }
 @media (max-width: 768px) {
   .hdr {
@@ -5625,7 +5632,10 @@ body {
     inset: 96px 6px 6px 6px !important;
   }
   #dModal.show {
-    padding-top: 92px !important;
+    padding: 8px !important;
+  }
+  #dModal .modal-dialog {
+    transform: translateY(0);
   }
 }
 
@@ -12790,6 +12800,7 @@ function openDateM(ds){
 function showRecordsModalOnTop(){
   let modal=document.getElementById('dModal');
   if(!modal) return;
+  try{ if(dataModal && typeof dataModal.show==='function') dataModal.show(); }catch(e){}
   modal.style.zIndex='6080';
   modal.style.position='fixed';
   modal.style.inset='0';
@@ -12805,8 +12816,16 @@ function showRecordsModalOnTop(){
       dlg.style.maxHeight='min(84vh, 760px)';
       dlg.style.display='flex';
       dlg.style.alignItems='center';
+      dlg.style.transform='translateY(-4vh)';
     }
     let backdrops=document.querySelectorAll('.modal-backdrop');
+    if(!backdrops.length){
+      let bd=document.createElement('div');
+      bd.className='modal-backdrop fade show high';
+      bd.style.zIndex='6075';
+      document.body.appendChild(bd);
+      backdrops=document.querySelectorAll('.modal-backdrop');
+    }
     if(backdrops.length){
       backdrops[backdrops.length-1].style.zIndex='6075';
       backdrops[backdrops.length-1].classList.add('high');
