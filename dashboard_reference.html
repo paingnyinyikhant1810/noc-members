@@ -6222,6 +6222,32 @@ body #drInfo .dr-b {
   }
 }
 
+/* ═══════════ GRAPH HOVER UNIFY PATCH V40 ═══════════ */
+#card_trend_total,
+#card_cpe_complaints,
+#card_site_summary,
+#card_site_complaint_percent,
+#card_dup_top_cust,
+#card_ot_severity,
+[id^="card_saved_"],
+[id^="card_flt_"],
+[id^="card_pv_"] {
+  transform: none !important;
+}
+#card_trend_total:hover,
+#card_cpe_complaints:hover,
+#card_site_summary:hover,
+#card_site_complaint_percent:hover,
+#card_dup_top_cust:hover,
+#card_ot_severity:hover,
+[id^="card_saved_"]:hover,
+[id^="card_flt_"]:hover,
+[id^="card_pv_"]:hover {
+  transform: translateY(-10px) scale(1.008) !important;
+  border-color: color-mix(in srgb, var(--ac) 30%, var(--border)) !important;
+  box-shadow: 0 28px 56px rgba(15,23,42,.18) !important;
+}
+
 /* ═══════════ TOP ICON COLOR UNIFY PATCH V37 ═══════════ */
 #periodToggleBtn,
 #toolsToggleBtn,
@@ -6277,66 +6303,83 @@ body #drInfo .dr-b {
 }
 
 /* ═══════════ SETTINGS EXTENDED PAGE PATCH V38 ═══════════ */
-#settingsModal.show {
-  display: grid !important;
-  place-items: center !important;
-  padding: 16px !important;
+.settings-extended-page {
+  position: fixed;
+  inset: 0;
+  z-index: 6200;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(241,245,255,.42);
+  backdrop-filter: blur(20px) saturate(1.04);
+  opacity: 0;
+  transform: scale(.988);
+  transition: opacity .18s ease, transform .22s ease;
 }
-#settingsModal .modal-dialog {
-  width: min(1120px, calc(100vw - 32px)) !important;
-  max-width: min(1120px, calc(100vw - 32px)) !important;
-  height: calc(100vh - 32px) !important;
-  max-height: calc(100vh - 32px) !important;
-  margin: 0 !important;
+.settings-extended-page.show {
+  opacity: 1;
+  transform: scale(1);
 }
-#settingsModal .modal-content {
+.settings-extended-page.closing {
+  opacity: 0;
+  transform: scale(.988);
+}
+[data-theme="dark"] .settings-extended-page {
+  background: rgba(15,17,23,.56);
+  backdrop-filter: blur(18px) saturate(1.03);
+}
+.settings-extended-shell {
+  width: min(1120px, calc(100vw - 32px));
+  max-width: min(1120px, calc(100vw - 32px));
+  height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px);
+  display: flex;
+}
+.settings-extended-shell .modal-content {
   height: 100% !important;
+  width: 100% !important;
   max-height: calc(100vh - 32px) !important;
   border-radius: 28px !important;
   border: 1px solid rgba(226,232,240,.88) !important;
-  background: rgba(255,255,255,.82) !important;
+  background: rgba(255,255,255,.84) !important;
   backdrop-filter: blur(18px) saturate(1.04) !important;
   box-shadow: 0 30px 60px rgba(15,23,42,.18) !important;
 }
-[data-theme="dark"] #settingsModal .modal-content {
-  background: rgba(26,29,46,.84) !important;
+[data-theme="dark"] .settings-extended-shell .modal-content {
+  background: rgba(26,29,46,.86) !important;
 }
-#settingsModal .modal-header {
+.settings-extended-shell .modal-header {
   padding: 18px 22px !important;
   border-bottom: 1px solid rgba(226,232,240,.78) !important;
   background: linear-gradient(180deg, color-mix(in srgb, var(--ac) 6%, var(--bg2)) 0%, var(--bg2) 100%) !important;
 }
-#settingsModal .modal-header .modal-title {
+.settings-extended-shell .modal-header .modal-title {
   font-size: 18px !important;
   font-weight: 800 !important;
 }
-#settingsModal .modal-body {
+.settings-extended-shell .modal-body {
   padding: 18px 22px !important;
   max-height: none !important;
   overflow: auto !important;
 }
-#settingsModal .modal-footer {
+.settings-extended-shell .modal-footer {
   padding: 14px 22px !important;
   border-top: 1px solid rgba(226,232,240,.78) !important;
   background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%) !important;
 }
-#settingsModal + .modal-backdrop,
-.modal-backdrop.show {
-  backdrop-filter: blur(12px) !important;
-}
 @media (max-width: 768px) {
-  #settingsModal.show { padding: 8px !important; }
-  #settingsModal .modal-dialog {
-    width: calc(100vw - 16px) !important;
-    max-width: calc(100vw - 16px) !important;
-    height: calc(100vh - 16px) !important;
-    max-height: calc(100vh - 16px) !important;
+  .settings-extended-page { padding: 8px; }
+  .settings-extended-shell {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    max-height: calc(100vh - 16px);
   }
-  #settingsModal .modal-content {
+  .settings-extended-shell .modal-content {
     border-radius: 20px !important;
     max-height: calc(100vh - 16px) !important;
   }
-  #settingsModal .modal-body {
+  .settings-extended-shell .modal-body {
     padding: 14px 16px !important;
   }
 }
@@ -7686,7 +7729,64 @@ function bindSegs(){
     });
   });
 }
-function openSettings(){buildChartVisibilityList();settingsModal.show(); setTimeout(()=>{ if(typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects(); }, 50);}
+let SETTINGS_CONTENT_HOME = null;
+function openSettings(){
+  buildChartVisibilityList();
+  let modal=document.getElementById('settingsModal');
+  let dialog=modal ? modal.querySelector('.modal-dialog') : null;
+  let content=modal ? modal.querySelector('.modal-content') : null;
+  if(!dialog || !content) return;
+  let existing=document.getElementById('settingsExtendedPage');
+  if(existing){ existing.classList.add('show'); return; }
+  SETTINGS_CONTENT_HOME = dialog;
+  let page=document.createElement('div');
+  page.id='settingsExtendedPage';
+  page.className='settings-extended-page';
+  page.innerHTML='<div class="settings-extended-shell"></div>';
+  let shell=page.querySelector('.settings-extended-shell');
+  shell.appendChild(content);
+  document.body.appendChild(page);
+  document.body.style.overflow='hidden';
+  let closeBtn=content.querySelector('.modal-header .btn-close');
+  if(closeBtn){
+    closeBtn.removeAttribute('data-bs-dismiss');
+    closeBtn.setAttribute('onclick','closeSettingsPage()');
+  }
+  let doneBtn=content.querySelector('.modal-footer .btn-mc:not(.sec)');
+  if(doneBtn){
+    doneBtn.removeAttribute('data-bs-dismiss');
+    doneBtn.setAttribute('onclick','updateCreatedGraphsVisibility();closeSettingsPage()');
+  }
+  page.addEventListener('click',function(ev){ if(ev.target===page) closeSettingsPage(); });
+  requestAnimationFrame(()=>page.classList.add('show'));
+  setTimeout(()=>{ if(typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects(); }, 60);
+}
+function closeSettingsPage(immediate){
+  let page=document.getElementById('settingsExtendedPage');
+  let modal=document.getElementById('settingsModal');
+  let dialog=modal ? modal.querySelector('.modal-dialog') : null;
+  let content=page ? page.querySelector('.modal-content') : null;
+  let finish=()=>{
+    if(dialog && content) dialog.appendChild(content);
+    let closeBtn=dialog ? dialog.querySelector('.modal-header .btn-close') : null;
+    if(closeBtn){
+      closeBtn.removeAttribute('onclick');
+      closeBtn.setAttribute('data-bs-dismiss','modal');
+    }
+    let doneBtn=dialog ? dialog.querySelector('.modal-footer .btn-mc:not(.sec)') : null;
+    if(doneBtn){
+      doneBtn.setAttribute('data-bs-dismiss','modal');
+      doneBtn.setAttribute('onclick','updateCreatedGraphsVisibility()');
+    }
+    if(page) page.remove();
+    document.body.style.overflow='';
+  };
+  if(!page){ finish(); return; }
+  if(immediate){ finish(); return; }
+  page.classList.remove('show');
+  page.classList.add('closing');
+  setTimeout(finish,180);
+}
 function resetSettings(){
   S.dark=false;S.accent='indigo';S.fontSize='md';S.defaultTab='';S.defaultRange='all';S.advSummary=true;S.trendChart=true;
   S.graphOrder=[];S.graphOrderByTab={};
