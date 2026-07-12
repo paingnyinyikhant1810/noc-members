@@ -5773,15 +5773,20 @@ body #drInfo .dr-b {
   font-weight: 700 !important;
   box-shadow: 0 6px 14px rgba(15,23,42,.06) !important;
 }
-.expand-page-site_summary .expand-layout {
+.expand-page-site_summary .expand-layout,
+.expand-page-site_complaint_percent .expand-layout {
   grid-template-columns: minmax(0, 1.05fr) minmax(580px, 1.25fr) !important;
 }
 .expand-page-site_summary .expand-table-site th:nth-child(1),
-.expand-page-site_summary .expand-table-site td:nth-child(1) {
+.expand-page-site_summary .expand-table-site td:nth-child(1),
+.expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(1),
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(1) {
   width: 14% !important;
 }
 .expand-page-site_summary .expand-table-site th:nth-child(2),
-.expand-page-site_summary .expand-table-site td:nth-child(2) {
+.expand-page-site_summary .expand-table-site td:nth-child(2),
+.expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(2),
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(2) {
   width: 52% !important;
   white-space: normal !important;
   line-height: 1.34 !important;
@@ -5794,12 +5799,22 @@ body #drInfo .dr-b {
 .expand-page-site_summary .expand-table-site td:nth-child(4) {
   width: 20% !important;
 }
-.expand-page-site_summary .expand-table-site td:nth-child(2) {
+.expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(3),
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(3) {
+  width: 14% !important;
+}
+.expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(4),
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(4) {
+  width: 20% !important;
+}
+.expand-page-site_summary .expand-table-site td:nth-child(2),
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(2) {
   word-break: normal !important;
   overflow-wrap: anywhere !important;
 }
 @media (max-width: 980px) {
-  .expand-page-site_summary .expand-layout {
+  .expand-page-site_summary .expand-layout,
+  .expand-page-site_complaint_percent .expand-layout {
     grid-template-columns: 1fr !important;
   }
 }
@@ -6024,25 +6039,29 @@ body #drInfo .dr-b {
 }
 
 /* ═══════════ SITE MATCH + FULL-WIDTH 70/30 + STRONGER EXPAND BLUR PATCH V33 ═══════════ */
-#card_site_summary {
+#card_site_summary,
+#card_site_complaint_percent {
   flex: 1 1 100% !important;
   width: 100% !important;
   max-width: 100% !important;
   grid-column: 1 / -1 !important;
 }
-#card_site_summary .row.g-3 {
+#card_site_summary .row.g-3,
+#card_site_complaint_percent .row.g-3 {
   grid-template-columns: minmax(0, 7fr) minmax(220px, 3fr) !important;
   gap: 10px !important;
   align-items: stretch !important;
 }
-#card_site_summary .col-lg-5 > div {
+#card_site_summary .col-lg-5 > div,
+#card_site_complaint_percent .col-lg-5 > div {
   width: 100% !important;
   justify-self: stretch !important;
   height: 230px !important;
   min-height: 230px !important;
   max-height: 230px !important;
 }
-#card_site_summary .chb {
+#card_site_summary .chb,
+#card_site_complaint_percent .chb {
   height: 230px !important;
   min-height: 230px !important;
 }
@@ -6083,9 +6102,12 @@ body #drInfo .dr-b {
 }
 
 @media (max-width: 980px) {
-  #card_site_summary .row.g-3 { grid-template-columns: 1fr !important; }
+  #card_site_summary .row.g-3,
+  #card_site_complaint_percent .row.g-3 { grid-template-columns: 1fr !important; }
   #card_site_summary .col-lg-5 > div,
-  #card_site_summary .chb { height: 200px !important; min-height: 200px !important; max-height: 200px !important; }
+  #card_site_summary .chb,
+  #card_site_complaint_percent .col-lg-5 > div,
+  #card_site_complaint_percent .chb { height: 200px !important; min-height: 200px !important; max-height: 200px !important; }
   .expand-page { padding: 10px !important; }
   .expand-shell {
     width: min(100%, calc(100vw - 20px)) !important;
@@ -6096,9 +6118,12 @@ body #drInfo .dr-b {
   }
 }
 @media (max-width: 768px) {
-  #card_site_summary .row.g-3 { grid-template-columns: 1fr !important; }
+  #card_site_summary .row.g-3,
+  #card_site_complaint_percent .row.g-3 { grid-template-columns: 1fr !important; }
   #card_site_summary .col-lg-5 > div,
-  #card_site_summary .chb { height: 176px !important; min-height: 176px !important; max-height: 176px !important; }
+  #card_site_summary .chb,
+  #card_site_complaint_percent .col-lg-5 > div,
+  #card_site_complaint_percent .chb { height: 176px !important; min-height: 176px !important; max-height: 176px !important; }
   .expand-page { padding: 6px !important; }
   .expand-shell {
     width: calc(100vw - 12px) !important;
@@ -8107,14 +8132,17 @@ function loadOverTimeColumnsForCurrentTab(){
   return { createdCol: DETECTED_CRE_COL, resolvedCol: DETECTED_RES_COL };
 }
 function findSiteFullNameCols(){
-  let siteCodeCol=null, fullNameCol=null, shortCodeCol=null;
-  if(!D || !D.headers) return { siteCodeCol, fullNameCol, shortCodeCol };
+  let siteCodeCol=null, fullNameCol=null, shortCodeCol=null, activeSiteCol=null, activeCountCol=null;
+  if(!D || !D.headers) return { siteCodeCol, fullNameCol, shortCodeCol, activeSiteCol, activeCountCol };
   for(let h of D.headers){ let l=h.toLowerCase(); if(l.includes('opi site code')||l==='opi site code'){ siteCodeCol=h; break; } }
   if(!siteCodeCol){ for(let h of D.headers){ let l=h.toLowerCase(); if((l.includes('site')&&l.includes('code'))||l==='site code'){ siteCodeCol=h; break; } } }
   for(let h of D.headers){ let l=h.toLowerCase(); if(l==='full name' || l.includes('full name')){ fullNameCol=h; break; } }
   for(let h of D.headers){ let l=h.toLowerCase(); if(l==='short code' || l.includes('short code')){ shortCodeCol=h; break; } }
+  for(let h of D.headers){ let l=h.toLowerCase(); if(l==='active site' || l.includes('active site')){ activeSiteCol=h; break; } }
+  for(let h of D.headers){ let l=h.toLowerCase(); if(l==='active count' || l.includes('active count')){ activeCountCol=h; break; } }
   if(!shortCodeCol) shortCodeCol = siteCodeCol;
-  return { siteCodeCol, fullNameCol, shortCodeCol };
+  if(!activeSiteCol) activeSiteCol = shortCodeCol || siteCodeCol;
+  return { siteCodeCol, fullNameCol, shortCodeCol, activeSiteCol, activeCountCol };
 }
 function loadSiteColumnsForCurrentTab(){
   let found = findSiteFullNameCols();
@@ -8122,7 +8150,17 @@ function loadSiteColumnsForCurrentTab(){
   S.SITE_CODE_COL = saved.siteCode || S.SITE_CODE_COL || found.siteCodeCol || (D.headers ? D.headers[0] : '');
   S.SITE_FULLNAME_COL = saved.fullName || S.SITE_FULLNAME_COL || found.fullNameCol || (D.headers ? D.headers[0] : '');
   S.SITE_SHORTCODE_COL = saved.shortCode || S.SITE_SHORTCODE_COL || found.shortCodeCol || S.SITE_CODE_COL || (D.headers ? D.headers[0] : '');
-  return { siteCodeCol:S.SITE_CODE_COL, fullNameCol:S.SITE_FULLNAME_COL, shortCodeCol:S.SITE_SHORTCODE_COL };
+  S.SITE_ACTIVE_SITE_COL = saved.activeSite || S.SITE_ACTIVE_SITE_COL || found.activeSiteCol || S.SITE_SHORTCODE_COL || S.SITE_CODE_COL || (D.headers ? D.headers[0] : '');
+  S.SITE_ACTIVE_COUNT_COL = saved.activeCount || S.SITE_ACTIVE_COUNT_COL || found.activeCountCol || (D.headers ? (D.headers[1] || D.headers[0]) : '');
+  return { siteCodeCol:S.SITE_CODE_COL, fullNameCol:S.SITE_FULLNAME_COL, shortCodeCol:S.SITE_SHORTCODE_COL, activeSiteCol:S.SITE_ACTIVE_SITE_COL, activeCountCol:S.SITE_ACTIVE_COUNT_COL };
+}
+function normalizeSiteLookupKey(v){
+  return String(v==null?'':v).trim().toUpperCase();
+}
+function parseSiteActiveCount(v){
+  if(v==null) return 0;
+  let n=parseFloat(String(v).replace(/,/g,'').trim());
+  return isNaN(n) ? 0 : n;
 }
 function getSiteTicketCounts(rows, siteCodeCol, fullNameCol, shortCodeCol, lookupRows){
   let sourceRows = Array.isArray(lookupRows) && lookupRows.length ? lookupRows : rows;
@@ -8152,12 +8190,40 @@ function getSiteTicketCounts(rows, siteCodeCol, fullNameCol, shortCodeCol, looku
   });
   return Object.values(groups).sort((a,b)=>b.count-a.count || String(a.site).localeCompare(String(b.site)));
 }
+function getSiteComplaintPercentData(rows, siteCodeCol, fullNameCol, shortCodeCol, activeSiteCol, activeCountCol, lookupRows){
+  let complaintGroups=getSiteTicketCounts(rows, siteCodeCol, fullNameCol, shortCodeCol, lookupRows);
+  let sourceRows = Array.isArray(lookupRows) && lookupRows.length ? lookupRows : rows;
+  let activeMap={};
+  (sourceRows||[]).forEach(r=>{
+    let activeSiteKey=normalizeSiteLookupKey(r[activeSiteCol]);
+    if(!activeSiteKey) return;
+    let activeCount=parseSiteActiveCount(r[activeCountCol]);
+    if(!(activeSiteKey in activeMap) || activeCount > activeMap[activeSiteKey]) activeMap[activeSiteKey]=activeCount;
+  });
+  return complaintGroups.map(g=>{
+    let activeCount = activeMap[normalizeSiteLookupKey(g.site)] || activeMap[normalizeSiteLookupKey(g.shortCode)] || 0;
+    let complaintCount = Number(g.count||0);
+    let percentValue = activeCount>0 ? (complaintCount/activeCount)*100 : 0;
+    return {
+      site: g.site,
+      shortCode: g.shortCode || g.site,
+      fullName: g.fullName || '',
+      rows: g.rows || [],
+      complaintCount,
+      activeCount,
+      ratioText: complaintCount + '/' + activeCount,
+      percentValue,
+      percentText: percentValue.toFixed(1) + '%'
+    };
+  }).sort((a,b)=>b.percentValue-a.percentValue || b.complaintCount-a.complaintCount || String(a.site).localeCompare(String(b.site)));
+}
 function bindSiteGraphContext(card){
+
   if(!card) return;
   card.oncontextmenu=function(e){
     showAppContextMenu(e,[{icon:'⚙️',label:'Site Field Settings',onClick:openSiteGraphSettingsModal}]);
   };
-  card.title='Right-click to change site/full name/short code fields';
+  card.title='Right-click to change site/full name/short code/active site/active count fields';
 }
 function renderSiteOverviewInMain(){
   if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
@@ -8166,6 +8232,14 @@ function renderSiteOverviewInMain(){
   let sites=getSiteTicketCounts(F, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, (D&&D.rawData)||F);
   if(!sites.length) return;
   renderSiteTicketCountsCard(sites, cols);
+}
+function renderSiteComplaintPercentInMain(){
+  if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
+  let cols=loadSiteColumnsForCurrentTab();
+  if(!cols.siteCodeCol || !cols.activeSiteCol || !cols.activeCountCol) return;
+  let sites=getSiteComplaintPercentData(F, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, cols.activeSiteCol, cols.activeCountCol, (D&&D.rawData)||F);
+  if(!sites.length) return;
+  renderSiteComplaintPercentCard(sites, cols);
 }
 function renderSiteTicketCountsCard(sites, cols){
   let bId='siteTicketCanvas';
@@ -8198,6 +8272,36 @@ function renderSiteTicketCountsCard(sites, cols){
     CHART_META[zKey]={ title:'Site Ticket Counts', labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total, type:'site_summary', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[]}])) };
   },30);
 }
+function renderSiteComplaintPercentCard(sites, cols){
+  let bId='siteComplaintPercentCanvas';
+  let zKey='site_complaint_percent';
+  let limit=S.chartLimit||0;
+  let displaySites=limit>0?sites.slice(0,limit):sites.slice();
+  let chartLabels=displaySites.map(s=>s.site);
+  let chartValues=displaySites.map(s=>Number(s.percentValue||0));
+  let rowsHtml=displaySites.map((s,i)=>{ let fc=P[i%P.length]; let barPc=Math.max(0,Math.min(100,Number(s.percentValue||0))); return `
+      <tr onclick="showSiteComplaintPercentDetailsM('${escapeJs(s.site)}')">
+        <td class="c-link">${escapeHtml(s.site)}</td>
+        <td>${escapeHtml(s.fullName || '—')}</td>
+        <td><span class="cnt-p">${escapeHtml(s.ratioText)}</span></td>
+        <td><div class="bw"><div class="btt"><div class="bf" style="width:${barPc}%;background:${fc};"></div></div><span class="bn">${escapeHtml(s.percentText)}</span></div></td>
+      </tr>`; }).join('');
+  let area=document.getElementById('main');
+  let card=document.createElement('div');
+  card.className='cd';
+  card.id='card_'+zKey;
+  card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
+  if(isHidden(zKey)) card.style.display='none';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[2]};"></div><h3>Site Complaint Percent</h3></div><span class="c-tag" style="background:${TG[2]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  area.appendChild(card);
+  bindSiteGraphContext(card);
+  setTimeout(()=>{
+    let colors=chartLabels.map((_,i)=>P[i%P.length]);
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    CH[bId]=mkChart(bId,'bar',{labels:chartLabels,datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,chartLabels,false);
+    CHART_META[zKey]={ title:'Site Complaint Percent', labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total:chartValues.reduce((s,v)=>s+Number(v||0),0), type:'site_complaint_percent', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, activeSiteCol: cols.activeSiteCol, activeCountCol: cols.activeCountCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[],ratioText:s.ratioText,percentText:s.percentText,percentValue:Number(s.percentValue||0),activeCount:Number(s.activeCount||0),complaintCount:Number(s.complaintCount||0)}])) };
+  },30);
+}
 function showSiteTicketDetailsM(siteCode){
   let cols=loadSiteColumnsForCurrentTab();
   let baseRows=(F||[]).slice();
@@ -8207,6 +8311,20 @@ function showSiteTicketDetailsM(siteCode){
   let fullName=(hit&&hit.fullName)?(' - ' + hit.fullName):'';
   let omit=[cols.fullNameCol, cols.shortCodeCol].filter(Boolean);
   showRowsM(matches, 'Site Ticket Counts: ' + siteCode + fullName, omit);
+}
+function showSiteComplaintPercentDetailsM(siteCode){
+  let cols=loadSiteColumnsForCurrentTab();
+  let baseRows=(F||[]).slice();
+  let matches=baseRows.filter(r=>String(r[cols.siteCodeCol] ?? '').trim()===siteCode);
+  let groups=getSiteComplaintPercentData(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, cols.activeSiteCol, cols.activeCountCol, (D&&D.rawData)||baseRows);
+  let hit=groups.find(g=>g.site===siteCode);
+  let extra='';
+  if(hit){
+    if(hit.fullName) extra += ' - ' + hit.fullName;
+    extra += ' (' + hit.ratioText + ' · ' + hit.percentText + ')';
+  }
+  let omit=[cols.fullNameCol, cols.shortCodeCol].filter(Boolean);
+  showRowsM(matches, 'Site Complaint Percent: ' + siteCode + extra, omit);
 }
 
 function bindDuplicateGraphContext(card){
@@ -8244,6 +8362,7 @@ function renderEnterpriseSections(){
   renderTicketTrendSection();
   renderCpeComplaintSection();
   renderSiteOverviewInMain();
+  renderSiteComplaintPercentInMain();
   renderDuplicateOverviewInMain();
   renderOverTimeOverviewInMain();
 }
@@ -8442,6 +8561,7 @@ function openCpeModelModal(modelName) {
 function getExpandedTableColumnClass(zKey){
   if(zKey==='cpe_complaints') return 'expand-table-cpe';
   if(zKey==='site_summary') return 'expand-table-site';
+  if(zKey==='site_complaint_percent') return 'expand-table-site-pct';
   if(zKey==='dup_top_cust') return 'expand-table-dup';
   if(zKey==='ot_severity') return 'expand-table-ot';
   if(zKey==='trend_total') return 'expand-table-trend';
@@ -12132,13 +12252,13 @@ function openSiteGraphSettingsModal(){
   let m=document.createElement('div');
   m.id='graphFieldSettingsModal';
   m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
-  m.innerHTML=`<div style="width:min(560px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+  m.innerHTML=`<div style="width:min(620px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
     <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 10%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
       <div style="display:flex;align-items:flex-start;gap:12px;">
         <div style="width:42px;height:42px;border-radius:14px;background:rgba(59,130,246,.14);color:var(--blue);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-grid"/></svg></div>
         <div>
           <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">Site Graph Settings</div>
-          <div style="font-size:11.5px;color:var(--t2);margin-top:4px;">Choose Site Code, Full Name, and Short Code fields for the site ticket graph.</div>
+          <div style="font-size:11.5px;color:var(--t2);margin-top:4px;">Choose Site Code, Full Name, Short Code, Active Site, and Active Count fields for both site graphs.</div>
         </div>
       </div>
       <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
@@ -12147,6 +12267,8 @@ function openSiteGraphSettingsModal(){
       <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Site Code Field</label><select id="siteFieldSettingCode" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.siteCodeCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
       <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Full Name Field</label><select id="siteFieldSettingFull" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.fullNameCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
       <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Short Code Field</label><select id="siteFieldSettingShort" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.shortCodeCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Active Site Field</label><select id="siteFieldSettingActiveSite" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.activeSiteCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Active Count Field</label><select id="siteFieldSettingActiveCount" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.activeCountCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
     </div>
     <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:color-mix(in srgb,var(--bg3) 80%,var(--bg2));">
       <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
@@ -12159,11 +12281,15 @@ function applySiteGraphSettingsFromModal(){
   let code=document.getElementById('siteFieldSettingCode');
   let full=document.getElementById('siteFieldSettingFull');
   let short=document.getElementById('siteFieldSettingShort');
+  let activeSite=document.getElementById('siteFieldSettingActiveSite');
+  let activeCount=document.getElementById('siteFieldSettingActiveCount');
   if (!S.siteColsByTab) S.siteColsByTab = {};
   if (!S.siteColsByTab[D.tabName]) S.siteColsByTab[D.tabName] = {};
   if(code) S.siteColsByTab[D.tabName].siteCode = code.value;
   if(full) S.siteColsByTab[D.tabName].fullName = full.value;
   if(short) S.siteColsByTab[D.tabName].shortCode = short.value;
+  if(activeSite) S.siteColsByTab[D.tabName].activeSite = activeSite.value;
+  if(activeCount) S.siteColsByTab[D.tabName].activeCount = activeCount.value;
   saveSettings();
   if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
   closeGraphFieldSettingsModal();
@@ -12306,6 +12432,12 @@ function computeExpandedChartRowsByZKey(zKey, zd){
     let total=sites.reduce((s,x)=>s+(Number(x.count)||0),0);
     return { rows:sites.map((s,i)=>({label:s.site,key:s.site,fullName:s.fullName||'',value:Number(s.count||0),color:P[i%P.length],pct: total>0?((Number(s.count||0)/total)*100).toFixed(1):'0.0',records:s.rows||[]})) };
   }
+  if(zKey==='site_complaint_percent'){
+    let cols=loadSiteColumnsForCurrentTab();
+    let sites=getSiteComplaintPercentData(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, cols.activeSiteCol, cols.activeCountCol, (D&&D.rawData)||baseRows);
+    let limit=S.chartLimit||0; if(limit>0) sites=sites.slice(0,limit);
+    return { rows:sites.map((s,i)=>({label:s.site,key:s.site,fullName:s.fullName||'',ratioText:s.ratioText||'0/0',percentText:s.percentText||'0.0%',complaintCount:Number(s.complaintCount||0),activeCount:Number(s.activeCount||0),value:Number(s.percentValue||0),color:P[i%P.length],pct:s.percentText||'0.0%',records:s.rows||[]})) };
+  }
   if(zKey==='dup_top_cust'){
     let cols=loadDuplicateColumnsForCurrentTab();
     let dup=getDuplicateTicketsDataForCols(baseRows, cols.customerCol, cols.ticketCol);
@@ -12343,7 +12475,16 @@ function expandedRowClick(zKey,index){
     }
     return showSiteTicketDetailsM(label);
   }
-  if(zKey==='dup_top_cust'){
+  if(zKey==='site_complaint_percent'){
+    if(item.records){
+      let extra=item.fullName ? (' - ' + item.fullName) : '';
+      let suffix='';
+      if(item.ratioText || item.percentText) suffix=' (' + (item.ratioText||'0/0') + ' · ' + (item.percentText||'0.0%') + ')';
+      return showRowsM(item.records, 'Site Complaint Percent: ' + label + extra + suffix);
+    }
+    return showSiteComplaintPercentDetailsM(label);
+  }
+  if(zKey==='dup_top_cust'){ 
     if(item.records) return showRowsM(item.records, 'Duplicate Tickets: ' + label);
     return showDuplicateTicketsM(label);
   }
@@ -12397,6 +12538,9 @@ function renderExpandedDataTable(){
   if(zKey==='site_summary'){
     if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Site</th><th>Full Name</th><th>Tickets</th><th>Share</th></tr>'; }
     body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td title="${escapeHtml(r.fullName||'')}">${escapeHtml(r.fullName||'—')}</td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
+  }else if(zKey==='site_complaint_percent'){
+    if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr>'; }
+    body.innerHTML=rows.map((r,i)=>{ let barPc=Math.max(0,Math.min(100,Number(r.value||0))); return `<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td title="${escapeHtml(r.fullName||'')}">${escapeHtml(r.fullName||'—')}</td><td class="expand-value">${escapeHtml(r.ratioText||'0/0')}</td><td class="expand-share"><div class="bw"><div class="btt"><div class="bf" style="width:${barPc}%;background:${r.color};"></div></div><span class="bn">${escapeHtml(r.percentText||'0.0%')}</span></div></td></tr>`; }).join('');
   }else{
     if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Label</th><th>Value</th><th>Share</th></tr>'; }
     body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
@@ -12404,7 +12548,7 @@ function renderExpandedDataTable(){
   if(counter) counter.textContent = rows.length.toLocaleString() + ' rows';
   let panel=document.querySelector('.expand-data-panel');
   if(panel){
-    panel.classList.remove('expand-data-panel-cpe','expand-data-panel-site','expand-data-panel-dup','expand-data-panel-ot','expand-data-panel-trend','expand-data-panel-generic');
+    panel.classList.remove('expand-data-panel-cpe','expand-data-panel-site','expand-data-panel-site-pct','expand-data-panel-dup','expand-data-panel-ot','expand-data-panel-trend','expand-data-panel-generic');
     panel.classList.add('expand-data-panel-' + getExpandedTableColumnClass(EXPANDED_PAGE_STATE.zKey).replace('expand-table-',''));
   }
 }
