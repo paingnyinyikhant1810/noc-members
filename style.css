@@ -1201,12 +1201,26 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 
 
 /* ── Dashboard reference embed ────────────────── */
-#dashboardPage { padding: 1rem 0 0 !important; }
+html.dashboard-embed-active,
+body.dashboard-embed-active {
+  overflow: hidden !important;
+}
+body.dashboard-embed-active #dashboardPage {
+  height: calc(100vh - 96px) !important;
+  overflow: hidden !important;
+}
+#dashboardPage {
+  padding: 1rem 0 0 !important;
+}
 .dashboard-ref-wrap {
   width: 100%;
   height: calc(100vh - 132px);
   min-height: 760px;
   background: var(--bg);
+}
+body.dashboard-embed-active .dashboard-ref-wrap {
+  height: 100% !important;
+  min-height: 0 !important;
 }
 .dashboard-ref-frame {
   width: 100%;
@@ -1216,5 +1230,6 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
   background: #fff;
 }
 @media(max-width:768px){
+  body.dashboard-embed-active #dashboardPage { height: calc(100vh - 84px) !important; }
   .dashboard-ref-wrap { min-height: 680px; height: calc(100vh - 110px); }
 }
