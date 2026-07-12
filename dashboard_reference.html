@@ -7678,7 +7678,7 @@ function processFetchedTabData(d) {
   let savedOvr = (S.ovrColsByTab && S.ovrColsByTab[D.tabName]) ? S.ovrColsByTab[D.tabName] : {};
   DETECTED_CRE_COL = savedOvr.cre || null;
   DETECTED_RES_COL = savedOvr.res || null;
-  range=S.defaultRange||'all';subPeriod='all';COMPARE_PICKS=[];
+  range=S.defaultRange||'all';subPeriod = range!=='all' ? getCurrentSubPeriodValue(range) : 'all';COMPARE_PICKS=[];
   document.querySelectorAll('.tp-b').forEach(p=>{
     if (p.id !== 'cmpTab' && p.id !== 'dupTab' && p.id !== 'ovrTab' && p.id !== 'fltTab' && p.id !== 'pvtTab') {
       p.classList.toggle('on',p.dataset.r===range);
@@ -7777,6 +7777,15 @@ function getSubPeriodOptionsForRange(){
   }
   return opts;
 }
+function getCurrentSubPeriodValue(rangeType){
+  if(!dateCol) return 'all';
+  let now=new Date();
+  if(rangeType==='daily') return 'd_' + toLocalDateStr(now);
+  if(rangeType==='weekly') return 'w_' + toLocalDateStr(getWeekStart(now));
+  if(rangeType==='monthly') return 'm_' + now.getFullYear() + '_' + now.getMonth();
+  if(rangeType==='yearly') return 'y_' + now.getFullYear();
+  return 'all';
+}
 function updateSubPeriodUI(){
   let wrap=document.getElementById("spWrap"),sel=document.getElementById("spSel"),hint=document.getElementById('periodSelectionHint');
   if(range==='all'||!dateCol||D.isPivot||allDates.length===0){
@@ -7787,8 +7796,11 @@ function updateSubPeriodUI(){
   if(wrap) wrap.style.display='flex';
   if(hint) hint.style.display='none';
   let opts=getSubPeriodOptionsForRange();
+  let currentVal=getCurrentSubPeriodValue(range);
   sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.t}</option>`).join(''); if(typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects();
-  sel.value = subPeriod && opts.some(o=>o.v===subPeriod) ? subPeriod : 'all';
+  if(subPeriod && opts.some(o=>o.v===subPeriod)) sel.value=subPeriod;
+  else if(currentVal && opts.some(o=>o.v===currentVal)) { subPeriod=currentVal; sel.value=currentVal; }
+  else sel.value='all';
 }
 function onSubPeriodChange(){subPeriod=document.getElementById("spSel").value;applyFilter(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 let PERIOD_TRAY_OPEN=false;
@@ -7981,10 +7993,11 @@ function loadSiteColumnsForCurrentTab(){
   S.SITE_SHORTCODE_COL = saved.shortCode || S.SITE_SHORTCODE_COL || found.shortCodeCol || S.SITE_CODE_COL || (D.headers ? D.headers[0] : '');
   return { siteCodeCol:S.SITE_CODE_COL, fullNameCol:S.SITE_FULLNAME_COL, shortCodeCol:S.SITE_SHORTCODE_COL };
 }
-function getSiteTicketCounts(rows, siteCodeCol, fullNameCol, shortCodeCol){
+function getSiteTicketCounts(rows, siteCodeCol, fullNameCol, shortCodeCol, lookupRows){
+  let sourceRows = Array.isArray(lookupRows) && lookupRows.length ? lookupRows : rows;
   let codeToFull={};
   let shortToFull={};
-  (rows||[]).forEach(r=>{
+  (sourceRows||[]).forEach(r=>{
     let sc=String(r[shortCodeCol] ?? '').trim();
     let site=String(r[siteCodeCol] ?? '').trim();
     let fn=String(r[fullNameCol] ?? '').trim();
@@ -8019,7 +8032,7 @@ function renderSiteOverviewInMain(){
   if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
   let cols=loadSiteColumnsForCurrentTab();
   if(!cols.siteCodeCol) return;
-  let sites=getSiteTicketCounts(F, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol);
+  let sites=getSiteTicketCounts(F, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, (D&&D.rawData)||F);
   if(!sites.length) return;
   renderSiteTicketCountsCard(sites, cols);
 }
@@ -12148,7 +12161,7 @@ function computeExpandedChartRowsByZKey(zKey, zd){
   }
   if(zKey==='site_summary'){
     let cols=loadSiteColumnsForCurrentTab();
-    let sites=getSiteTicketCounts(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol);
+    let sites=getSiteTicketCounts(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, (D&&D.rawData)||baseRows);
     let limit=S.chartLimit||0; if(limit>0) sites=sites.slice(0,limit);
     let total=sites.reduce((s,x)=>s+(Number(x.count)||0),0);
     return { rows:sites.map((s,i)=>({label:s.site,key:s.site,fullName:s.fullName||'',value:Number(s.count||0),color:P[i%P.length],pct: total>0?((Number(s.count||0)/total)*100).toFixed(1):'0.0',records:s.rows||[]})) };
