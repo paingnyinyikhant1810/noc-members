@@ -12500,11 +12500,13 @@ function onExpandedCalendarSubChange(){
 function openExpandedChartPage(zKey,chartType){
   let zd=CHART_META[zKey]; if(!zd) return;
   closeExpandedChartPage(true);
-  let rows=getExpandedChartRows(zd);
-  let total = Number(zd.total || rows.reduce((s,r)=>s+r.value,0) || 0);
-  let defaultExpandedRange = (zKey==='trend_total') ? (range || 'all') : 'all';
-  let defaultExpandedSub = (zKey==='trend_total') ? (subPeriod || 'all') : 'all';
-  EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows, search:'', sortBy:(zKey==='trend_total'?'natural':'value'), sortDir:(zKey==='trend_total'?'asc':'desc'), range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
+  let defaultExpandedRange = range || 'all';
+  let defaultExpandedSub = subPeriod || 'all';
+  EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows:[], search:'', sortBy:(zKey==='trend_total'?'natural':'value'), sortDir:(zKey==='trend_total'?'asc':'desc'), range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
+  let initialComputed=computeExpandedChartRowsByZKey(zKey, zd) || { rows: [] };
+  EXPANDED_PAGE_STATE.rows=(initialComputed.rows||[]).slice();
+  EXPANDED_PAGE_STATE.runtimeMeta=initialComputed;
+  let total = EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.value)||0),0) || Number(zd.total||0);
   let showCalendar = !!dateCol;
   let page=document.createElement('div');
   page.id='expandChartPage';
