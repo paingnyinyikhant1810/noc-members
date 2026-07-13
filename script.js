@@ -1171,6 +1171,25 @@ async function saveDashboardSettings(){
 }
 
 function getDashboardEmbedCacheKey(id){ return `noc_embed_dashboard_data__${id}`; }
+function persistDashboardEmbedCache(id,item,data){
+  if(!id || !data) return null;
+  const raw = data.data || data;
+  const rows = extractDashboardRows(raw);
+  const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(raw?.sourceMeta?.headers) ? raw.sourceMeta.headers : (Array.isArray(raw?.values?.[0]) ? raw.values[0] : []));
+  const tabData = {
+    success:true,
+    tabName:(item && item.name) || data.name || 'Dashboard',
+    headers,
+    rawData:rows,
+    isPivot:false,
+    sourceMeta:data.sourceMeta || raw?.sourceMeta || { range:raw?.range||null, majorDimension:raw?.majorDimension||null, headers },
+    rowCount:data.rowCount || rows.length || 0,
+    prefetchedAt: Date.now(),
+    prefetchedVia:'direct-source-api'
+  };
+  try { localStorage.setItem(getDashboardEmbedCacheKey(id), JSON.stringify(tabData)); } catch(e) {}
+  return tabData;
+}
 async function startDashboardPrefetch(force=false){
   if(!isLeader()) return Promise.resolve([]);
   const items=(appData.dashboardItems||[]).filter(x=>canSee(x.min_role_required||'leader'));
@@ -1185,18 +1204,6 @@ async function startDashboardPrefetch(force=false){
       const sourceJson=await fallbackRes.json();
       const rows=extractDashboardRows(sourceJson);
       const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(sourceJson?.sourceMeta?.headers) ? sourceJson.sourceMeta.headers : (Array.isArray(sourceJson?.values?.[0]) ? sourceJson.values[0] : []));
-      const tabData = {
-        success:true,
-        tabName:item.name || 'Dashboard',
-        headers,
-        rawData:rows,
-        isPivot:false,
-        sourceMeta:sourceJson?.sourceMeta || { range:sourceJson?.range||null, majorDimension:sourceJson?.majorDimension||null, headers },
-        rowCount:rows.length || 0,
-        prefetchedAt: Date.now(),
-        prefetchedVia:'direct-source-api'
-      };
-      try { localStorage.setItem(getDashboardEmbedCacheKey(item.id), JSON.stringify(tabData)); } catch(e) {}
       dashboardCache[item.id] = {
         success:true,
         dashboardId:item.id,
@@ -1204,9 +1211,10 @@ async function startDashboardPrefetch(force=false){
         sourceUrl:getDashboardApi(item),
         rowCount:rows.length,
         extractedRowCount:rows.length,
-        sourceMeta:tabData.sourceMeta,
+        sourceMeta:sourceJson?.sourceMeta || { range:sourceJson?.range||null, majorDimension:sourceJson?.majorDimension||null, headers },
         data:sourceJson
       };
+      const tabData = persistDashboardEmbedCache(item.id, item, dashboardCache[item.id]);
       return tabData;
     } catch(e) {
       return null;
@@ -1314,12 +1322,16 @@ async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}=
 
 async function showDashboardItem(id,name='Dashboard'){
   if(!isLeader()) return showToast('Leader or above required','error');
-  if(!localStorage.getItem(getDashboardEmbedCacheKey(id)) && dashboardPrefetchPromise){
+  if(dashboardPrefetchPromise){
     try { await dashboardPrefetchPromise; } catch(e) {}
+  }
+  const item=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'};
+  if(!localStorage.getItem(getDashboardEmbedCacheKey(id)) && dashboardCache[id]){
+    persistDashboardEmbedCache(id, item, dashboardCache[id]);
   }
   setDashboardViewportMode(true);
   currentDashboardId=id;
-  currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'};
+  currentDashboardItem=item;
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
   el('dashboardPage').classList.remove('hidden');
   document.querySelectorAll('.nav-btn,[data-page]').forEach(b=>b.classList.remove('active'));
@@ -1330,7 +1342,8 @@ async function showDashboardItem(id,name='Dashboard'){
     const q=new URLSearchParams({
       dashboardId:String(id),
       dashboardName:currentDashboardItem.name||name||'Dashboard',
-      api:getDashboardApi(currentDashboardItem)
+      api:getDashboardApi(currentDashboardItem),
+      cacheOnly:'1'
     });
     const authHeader = (()=>{ try{return localStorage.getItem('authHeader')||'';}catch(e){return '';}})();
     frame.onload = () => {
