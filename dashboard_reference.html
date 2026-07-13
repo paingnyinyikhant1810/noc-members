@@ -4174,6 +4174,10 @@ body {
   justify-content: flex-start;
   margin: 0 0 14px;
 }
+.cmp-strip .mode-backbar {
+  width: auto;
+  margin: 0;
+}
 .mode-back-btn {
   min-width: 206px;
 }
@@ -6520,8 +6524,8 @@ body #drInfo .dr-b {
       <button type="button" class="btn-cmp-clear" onclick="clearComparePicks()" title="Clear picked periods">
         <span>✕</span> <span>Clear</span>
       </button>
-      <button type="button" class="btn-cmp-exit" onclick="toggleCompareMode()" title="Exit compare mode">
-        <span>⬅️</span> <span>Exit</span>
+      <button type="button" class="btn-cmp-exit" onclick="returnToHomePageFromGraph()" title="Back to dashboard">
+        <span>⬅️</span> <span>Back to Dashboard</span>
       </button>
     </div>
   </div>
@@ -8282,7 +8286,7 @@ function updateSubPeriodUI(){
   subPeriod = chosen || 'all';
   sel.value = subPeriod;
 }
-function onSubPeriodChange(){subPeriod=document.getElementById("spSel").value;applyFilter(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+function onSubPeriodChange(){subPeriod=document.getElementById("spSel").value;togglePeriodTray(false);applyFilter(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 let PERIOD_TRAY_OPEN=false;
 let TOOLS_TRAY_OPEN=false;
 function togglePeriodTray(forceState){
@@ -9420,6 +9424,7 @@ function toggleCompareMode(){
     let s = document.getElementById("cmpStrip"); if(s) s.classList.remove('on');
     let r = document.querySelector('.tp-b[data-r="'+range+'"]'); if(r) r.classList.add('on');
   }
+  toggleToolsTray(false);
   applyFilter();
 }
 
@@ -10279,16 +10284,16 @@ function rowsForPeriod(p){return D.rawData.filter(r=>{let d=parseLocalDate(r[dat
 
 function renderCompareDashboard(){
   let area=document.getElementById("main");
-  area.innerHTML = renderDashboardBackToolbar();
+  area.innerHTML = '';
   if(!COMPARE_PICKS.length){
-    area.innerHTML += `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-compare"/></svg></div><div class="e-t">Pick periods to compare</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Choose 2 or more ${COMPARE_GRAN}s from the strip above. Each chart will then show one series per period side-by-side.</p></div>`;
+    area.innerHTML = `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-compare"/></svg></div><div class="e-t">Pick periods to compare</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Choose 2 or more ${COMPARE_GRAN}s from the strip above. Each chart will then show one series per period side-by-side.</p></div>`;
     return;
   }
   if(COMPARE_PICKS.length===1){
-    area.innerHTML += `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-info"/></svg></div><div class="e-t">Pick at least one more period</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">You picked <strong>${escapeHtml(periodLabel(COMPARE_PICKS[0]))}</strong>. Add another to see the comparison.</p></div>`;
+    area.innerHTML = `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-info"/></svg></div><div class="e-t">Pick at least one more period</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">You picked <strong>${escapeHtml(periodLabel(COMPARE_PICKS[0]))}</strong>. Add another to see the comparison.</p></div>`;
     return;
   }
-  if(D.isPivot){area.innerHTML += '<div class="empty-s"><div class="e-t">Compare is not available for pivot tabs.</div></div>';return;}
+  if(D.isPivot){area.innerHTML = '<div class="empty-s"><div class="e-t">Compare is not available for pivot tabs.</div></div>';return;}
 
   // Per-period totals card (summary chart)
   renderPeriodTotalsCard();
@@ -10609,12 +10614,14 @@ function togglePivotBuilderMode() {
     updateSubPeriodUI();
     loadSavedPivotTables();
     PIVOT_VIEW_MODE = 'list';
+    toggleToolsTray(false);
     renderPivotBuilderDashboard();
     return;
   } else {
     if (pvtBtn) pvtBtn.classList.remove('on');
     let b = document.querySelector('.tp-b[data-r="'+range+'"]'); if(b) b.classList.add('on');
   }
+  toggleToolsTray(false);
   applyFilter();
 }
 
@@ -11912,6 +11919,7 @@ function toggleFilterMode(){
     let b = document.getElementById("fltTab"); if(b) b.classList.remove('on');
     let r = document.querySelector('.tp-b[data-r="'+range+'"]'); if(r) r.classList.add('on');
   }
+  toggleToolsTray(false);
   applyFilter();
 }
 
@@ -12431,6 +12439,10 @@ function renderSavedDashboardCharts(){
 function renderSavedFilterChart(sc,idx){
   let area=document.getElementById("main");
   let col=sc.config.columnName;
+  let totalVisible = SAVED_CHARTS.filter(x=>x.tabName===(D.tabName||'')).filter(x=>{
+    let sKey='saved_'+x.id;
+    return (HIDDEN_CHARTS[D.tabName||'']||[]).indexOf(sKey)<0 && savedChartHasData(x);
+  }).length;
   let allFilters=sc.config.allFilters||{};
   let bId='sfb_'+sc.id;
   let zKey='saved_'+sc.id;
@@ -12464,6 +12476,7 @@ function renderSavedFilterChart(sc,idx){
   let rowsHtml=displayL.map((lb,i)=>{let pc=tot>0?((displayV[i]/tot)*100).toFixed(1):0,fc=P[i%P.length];return `<tr onclick="openFilterDataM('${escapeJs(col)}','${escapeJs(lb)}')"><td class="c-link">${escapeHtml(lb)}</td><td><span class="cnt-p">${displayV[i]}</span></td><td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td></tr>`;}).join('');
 
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  if(totalVisible>1) card.style.cssText='flex:1 1 calc(50% - 8px);max-width:calc(50% - 8px);min-width:340px;';
   card.oncontextmenu = function(e) { onGraphCardRightClick(e, sc.id); };
   card.title = "Right-click card for options (Rename, Edit, Delete)";
   card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(sc.title)}</h3></div><span class="c-tag" style="background:var(--ac);">${sL.length}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:50px;">Count</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
@@ -13582,5 +13595,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1a663e92fe83f6e',t:'MTc4MzkyNTgxMg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
