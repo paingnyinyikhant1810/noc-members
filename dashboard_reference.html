@@ -6567,6 +6567,25 @@ body #drInfo .dr-b {
   max-height: none !important;
   overflow: auto !important;
 }
+.settings-extended-shell .st-sec {
+  padding: 12px 0 !important;
+}
+.settings-extended-shell .st-row {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  align-items: start !important;
+  gap: 8px !important;
+}
+.settings-extended-shell .st-row > div:first-child {
+  min-width: 0 !important;
+}
+.settings-extended-shell .sel-w,
+.settings-extended-shell .searchbox,
+.settings-extended-shell .ch-list {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
 .settings-extended-shell .modal-footer {
   padding: 14px 22px !important;
   border-top: 1px solid rgba(226,232,240,.78) !important;
@@ -12523,6 +12542,12 @@ function doRenderFilterChartsOnly(){
   chartsArea.style.gridTemplateColumns = colsToChart.length > 1 ? 'repeat(2, minmax(0, 1fr))' : '1fr';
   colsToChart.forEach((col,idx)=>renderFilterCategoryCardInto(chartsArea,col,idx,filteredRows));
   let cards=chartsArea.querySelectorAll('.cd');
+  cards.forEach(card=>{
+    card.style.width='100%';
+    card.style.maxWidth='100%';
+    card.style.minWidth='0';
+    card.style.gridColumn='auto';
+  });
   if(cards.length===1){
     cards[0].style.gridColumn='1 / -1';
   }else if(cards.length>1 && (cards.length % 2)===1){
@@ -14045,5 +14070,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1a77197f9c49c5c',t:'MTc4MzkzNjg1OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
