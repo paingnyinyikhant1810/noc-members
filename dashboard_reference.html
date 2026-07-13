@@ -6185,14 +6185,14 @@ body #drInfo .dr-b {
 /* ═══════════ GRAPH CARD HOVER POLISH PATCH V36 ═══════════ */
 .cd,
 .enterprise-card {
-  transition: transform .26s cubic-bezier(.22,1,.36,1), box-shadow .26s ease, border-color .26s ease, filter .26s ease !important;
+  transition: box-shadow .22s ease, border-color .22s ease, filter .22s ease !important;
 }
 .cd:hover,
 .enterprise-card:hover {
-  transform: translateY(-10px) scale(1.008) !important;
-  border-color: color-mix(in srgb, var(--ac) 30%, var(--border)) !important;
-  box-shadow: 0 28px 56px rgba(15,23,42,.18) !important;
-  filter: saturate(1.04);
+  transform: none !important;
+  border-color: color-mix(in srgb, var(--ac) 22%, var(--border)) !important;
+  box-shadow: 0 18px 38px rgba(15,23,42,.14) !important;
+  filter: none !important;
 }
 .cd:hover::before,
 .enterprise-card:hover::before {
@@ -6201,7 +6201,7 @@ body #drInfo .dr-b {
 .cd:hover .cb,
 .enterprise-card:hover .enterprise-body,
 .enterprise-card:hover .cb {
-  transform: translateY(-1px) !important;
+  transform: none !important;
 }
 .cd:hover .chd h3,
 .enterprise-card:hover .enterprise-title h2 {
@@ -6243,9 +6243,9 @@ body #drInfo .dr-b {
 [id^="card_saved_"]:hover,
 [id^="card_flt_"]:hover,
 [id^="card_pv_"]:hover {
-  transform: translateY(-10px) scale(1.008) !important;
-  border-color: color-mix(in srgb, var(--ac) 30%, var(--border)) !important;
-  box-shadow: 0 28px 56px rgba(15,23,42,.18) !important;
+  transform: none !important;
+  border-color: color-mix(in srgb, var(--ac) 22%, var(--border)) !important;
+  box-shadow: 0 18px 38px rgba(15,23,42,.14) !important;
 }
 
 /* ═══════════ TOP ICON COLOR UNIFY PATCH V37 ═══════════ */
@@ -7806,9 +7806,9 @@ function buildChartVisibilityList(){
   let html='';
   
   let defaultSortPriority = (k) => {
+    if (k === 'trend_total') return -110;
     if (k === 'cpe_complaints') return -100;
-    if (k === 'trend_total') return -90;
-    if (k === 'trend_main') return -80;
+    if (k === 'trend_main') return -90;
     return 0;
   };
   
@@ -7924,9 +7924,9 @@ function applyGraphOrderToDashboard() {
   let tabOrder = getGraphOrderForTab(tab);
   
   let defaultSortPriority = (k) => {
+    if (k === 'trend_total') return -110;
     if (k === 'cpe_complaints') return -100;
-    if (k === 'trend_total') return -90;
-    if (k === 'trend_main') return -80;
+    if (k === 'trend_main') return -90;
     return 0;
   };
   
