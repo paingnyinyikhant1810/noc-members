@@ -1178,22 +1178,34 @@ async function startDashboardPrefetch(force=false){
   dashboardPrefetchStarted=true;
   Promise.all(items.map(async (item) => {
     try {
-      const data = await fetchDashboardData(item.id,{force:true,silent:true});
-      if(!data) return null;
-      const raw = data.data || data;
-      const rows = extractDashboardRows(raw);
-      const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(raw?.sourceMeta?.headers) ? raw.sourceMeta.headers : (Array.isArray(raw?.values?.[0]) ? raw.values[0] : []));
+      if(!getDashboardApi(item)) return null;
+      const fallbackRes=await fetch(getDashboardApi(item), { headers:{ 'Accept':'application/json' } });
+      if(!fallbackRes.ok) return null;
+      const sourceJson=await fallbackRes.json();
+      const rows=extractDashboardRows(sourceJson);
+      const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(sourceJson?.sourceMeta?.headers) ? sourceJson.sourceMeta.headers : (Array.isArray(sourceJson?.values?.[0]) ? sourceJson.values[0] : []));
       const tabData = {
         success:true,
         tabName:item.name || 'Dashboard',
         headers,
         rawData:rows,
         isPivot:false,
-        sourceMeta:data.sourceMeta || raw?.sourceMeta || null,
-        rowCount:data.rowCount || rows.length || 0,
-        prefetchedAt: Date.now()
+        sourceMeta:sourceJson?.sourceMeta || { range:sourceJson?.range||null, majorDimension:sourceJson?.majorDimension||null, headers },
+        rowCount:rows.length || 0,
+        prefetchedAt: Date.now(),
+        prefetchedVia:'direct-source-api'
       };
       try { localStorage.setItem(getDashboardEmbedCacheKey(item.id), JSON.stringify(tabData)); } catch(e) {}
+      dashboardCache[item.id] = {
+        success:true,
+        dashboardId:item.id,
+        name:item.name,
+        sourceUrl:getDashboardApi(item),
+        rowCount:rows.length,
+        extractedRowCount:rows.length,
+        sourceMeta:tabData.sourceMeta,
+        data:sourceJson
+      };
       return tabData;
     } catch(e) {
       return null;
