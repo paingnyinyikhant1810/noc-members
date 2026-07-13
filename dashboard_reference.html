@@ -7672,7 +7672,7 @@ function persistUniversalStateLocalNow(){
 function saveSavedCharts(){
   localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'),JSON.stringify(SAVED_CHARTS));
   persistUniversalStateLocalNow();
-  if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();
+  if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true);
 }
 function addToDashboard(chartConfig){
   if(!chartConfig)return;
@@ -8077,7 +8077,7 @@ function loadSettings(){
   try { let savedApi = localStorage.getItem('noc_gas_api_url'); if (savedApi) GAS_WEB_APP_URL = savedApi; let inp = document.getElementById('gasApiUrlInput'); if (inp) inp.value = GAS_WEB_APP_URL; } catch(e) {}
   try{let h=localStorage.getItem(getScopedStorageKey('noc_hidden_charts')) || localStorage.getItem('noc_hidden_charts');if(h)HIDDEN_CHARTS=JSON.parse(h);}catch(e){HIDDEN_CHARTS={};}
 }
-function saveSettings(){localStorage.setItem(getScopedStorageKey('noc_settings_v2'),JSON.stringify(S)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+function saveSettings(){localStorage.setItem(getScopedStorageKey('noc_settings_v2'),JSON.stringify(S)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true);}
 function saveHidden(){localStorage.setItem(getScopedStorageKey('noc_hidden_charts'),JSON.stringify(HIDDEN_CHARTS)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true);}
 function getGraphOrderForTab(tab){
   let t = tab || (D && D.tabName) || '';
@@ -11034,7 +11034,7 @@ function saveSavedPivotTables() {
   try {
     localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(SAVED_PIVOT_TABLES));
     persistUniversalStateLocalNow();
-    if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();
+    if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true);
   } catch(e) {}
 }
 
