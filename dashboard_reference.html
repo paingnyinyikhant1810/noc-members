@@ -6839,7 +6839,8 @@ const DASH_EMBED = (() => {
     enabled: !!q.get('dashboardId'),
     dashboardId: q.get('dashboardId') || '',
     dashboardName: q.get('dashboardName') || 'Dashboard',
-    sourceApi: q.get('api') || ''
+    sourceApi: q.get('api') || '',
+    cacheOnly: q.get('cacheOnly') === '1'
   };
 })();
 function getDashboardScopeKey(){
@@ -6970,6 +6971,17 @@ async function fetchDashboardEmbedData(forceReload){
   if (!forceReload) {
     let cached = loadEmbedDashboardDataCache();
     if (cached) return cached;
+    if (DASH_EMBED.cacheOnly) {
+      return {
+        success:true,
+        tabName:DASH_EMBED.dashboardName,
+        headers:[],
+        rawData:[],
+        isPivot:false,
+        sourceMeta:{ cacheOnly:true, missingCache:true },
+        rowCount:0
+      };
+    }
   }
   if (DASH_EMBED_REMOTE_DATA_DISABLED) {
     let fallback = await fetchDashboardSourceApiFallback(forceReload);
@@ -6999,6 +7011,19 @@ async function fetchDashboardEmbedData(forceReload){
     return tabData;
   } catch(err) {
     DASH_EMBED_REMOTE_DATA_DISABLED = true;
+    if (DASH_EMBED.cacheOnly) {
+      let cached = loadEmbedDashboardDataCache();
+      if (cached) return cached;
+      return {
+        success:true,
+        tabName:DASH_EMBED.dashboardName,
+        headers:[],
+        rawData:[],
+        isPivot:false,
+        sourceMeta:{ cacheOnly:true, missingCache:true, error:String(err && err.message || err) },
+        rowCount:0
+      };
+    }
     let fallback = await fetchDashboardSourceApiFallback(forceReload);
     if (fallback) saveEmbedDashboardDataCache(fallback);
     return fallback;
