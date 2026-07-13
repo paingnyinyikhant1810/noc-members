@@ -6263,13 +6263,33 @@ body #drInfo .dr-b {
   grid-column: 1 / -1 !important;
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  gap: 14px !important;
-  align-items: start !important;
+  column-gap: 14px !important;
+  row-gap: 20px !important;
+  align-items: stretch !important;
+  grid-auto-rows: 1fr !important;
+  margin-top: 4px !important;
+  margin-bottom: 20px !important;
 }
 .created-graphs-grid > .cd {
   width: 100% !important;
   max-width: 100% !important;
   min-width: 0 !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  margin-bottom: 0 !important;
+}
+.created-graphs-grid > .cd .chd {
+  min-height: 56px !important;
+  align-items: flex-start !important;
+}
+.created-graphs-grid > .cd .cb {
+  flex: 1 1 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.ct.dashboard-stage {
+  row-gap: 20px !important;
 }
 @media (max-width: 1100px) {
   .created-graphs-grid {
@@ -8017,7 +8037,7 @@ function applyGraphOrderToDashboard() {
     return 0;
   };
   
-  allKeys.sort((a, b) => {
+  let sortFn = (a, b) => {
     let idxA = tabOrder.indexOf(a);
     let idxB = tabOrder.indexOf(b);
     if (idxA !== -1 && idxB !== -1) return idxA - idxB;
@@ -8026,32 +8046,31 @@ function applyGraphOrderToDashboard() {
     let prioDiff = defaultSortPriority(a) - defaultSortPriority(b);
     if (prioDiff !== 0) return prioDiff;
     return a.localeCompare(b);
-  });
+  };
+
+  let mainKeys = allKeys.filter(k => !String(k).startsWith('saved_')).sort(sortFn);
+  let savedKeys = allKeys.filter(k => String(k).startsWith('saved_')).sort(sortFn);
   
-  allKeys.forEach(k => {
+  mainKeys.forEach(k => {
     let card = getChartCardElement(k);
     if (!card) return;
-    let isSaved = String(k).startsWith('saved_');
-    if (isSaved && createdGrid) {
-      if (card.parentNode !== createdGrid) createdGrid.appendChild(card);
-      else createdGrid.appendChild(card);
-    } else {
-      if (card.parentNode !== mainArea) mainArea.appendChild(card);
-      else mainArea.appendChild(card);
-    }
+    mainArea.appendChild(card);
   });
-  
-  if (heading && createdGrid && heading.parentNode === mainArea && createdGrid.parentNode === mainArea) {
-    if (heading.nextElementSibling !== createdGrid) {
-      mainArea.insertBefore(heading, createdGrid);
-    }
-  } else if (heading && mainArea.contains(heading)) {
-    let firstSaved = mainArea.querySelector('[id^="card_saved_"]');
-    if (firstSaved && firstSaved.parentNode === mainArea) {
-      mainArea.insertBefore(heading, firstSaved);
-    } else if (heading.parentNode === mainArea) {
-      mainArea.appendChild(heading);
-    }
+
+  if (heading && createdGrid) {
+    mainArea.appendChild(heading);
+    mainArea.appendChild(createdGrid);
+    savedKeys.forEach(k => {
+      let card = getChartCardElement(k);
+      if (!card) return;
+      createdGrid.appendChild(card);
+    });
+  } else {
+    savedKeys.forEach(k => {
+      let card = getChartCardElement(k);
+      if (!card) return;
+      mainArea.appendChild(card);
+    });
   }
   applyHiddenStateToCurrentDashboard();
 }
