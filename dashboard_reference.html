@@ -7016,11 +7016,6 @@ async function fetchDashboardEmbedAppState(){
     await waitForEmbedAuth(2500);
   }
   const localKey = getScopedStorageKey('noc_universal_state');
-  if (DASH_EMBED_REMOTE_STATE_DISABLED) {
-    let simState = null;
-    try { simState = localStorage.getItem(localKey); } catch(e) {}
-    return { success: true, stateJson: simState || null, mode: 'local-fallback-dashboard-state' };
-  }
   const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/app-state';
   try {
     const res = await fetch(url, { credentials: 'same-origin', headers: getEmbedApiHeaders() });
@@ -7033,7 +7028,6 @@ async function fetchDashboardEmbedAppState(){
     }
     return { success: true, stateJson: json.stateJson || null, mode: 'remote-dashboard-state' };
   } catch(err) {
-    DASH_EMBED_REMOTE_STATE_DISABLED = true;
     let simState = null;
     try { simState = localStorage.getItem(localKey); } catch(e) {}
     return { success: true, stateJson: simState || null, mode: 'local-fallback-dashboard-state' };
@@ -7064,10 +7058,6 @@ async function apiCall(action, params = {}) {
       if (action === 'saveAppState') {
         const localKey = getScopedStorageKey('noc_universal_state');
         try { localStorage.setItem(localKey, params.stateJson || ''); } catch(e) {}
-        if (DASH_EMBED_REMOTE_STATE_DISABLED) {
-          resolve({ success: true, mode: 'local-fallback-dashboard-state' });
-          return;
-        }
         const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/app-state';
         fetch(url, {
           method: 'PUT',
@@ -7081,7 +7071,6 @@ async function apiCall(action, params = {}) {
           if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
           resolve({ success: true, mode: 'remote-dashboard-state', result: json });
         }).catch(() => {
-          DASH_EMBED_REMOTE_STATE_DISABLED = true;
           resolve({ success: true, mode: 'local-fallback-dashboard-state' });
         });
         return;
@@ -7929,7 +7918,7 @@ function getCurrentActiveMode() {
   return 'home';
 }
 
-function saveUniversalAppStateToCloud() {
+function saveUniversalAppStateToCloud(immediate) {
   let stateObj = buildUniversalStateSnapshot();
 
   // Immediate offline fast cache
@@ -7941,15 +7930,20 @@ function saveUniversalAppStateToCloud() {
     localStorage.setItem(getScopedStorageKey('noc_hidden_charts'), JSON.stringify(stateObj.hiddenCharts));
   } catch(e) {}
 
-  // Debounced cloud sync to Google Sheets backend
-  if (CLOUD_SYNC_TIMER) clearTimeout(CLOUD_SYNC_TIMER);
-  CLOUD_SYNC_TIMER = setTimeout(() => {
+  const doSync = () => {
     if (typeof apiCall === 'function') {
       apiCall('saveAppState', { stateJson: JSON.stringify(stateObj) })
         .then(res => console.log('Universal App State synced to Google Sheets Cloud DB permanently:', res))
         .catch(err => console.warn('Cloud Sync failed:', err));
     }
-  }, 1000);
+  };
+
+  if (CLOUD_SYNC_TIMER) clearTimeout(CLOUD_SYNC_TIMER);
+  if (immediate) {
+    doSync();
+    return;
+  }
+  CLOUD_SYNC_TIMER = setTimeout(doSync, 1000);
 }
 
 function loadUniversalAppStateFromCloud() {
@@ -8084,7 +8078,7 @@ function loadSettings(){
   try{let h=localStorage.getItem(getScopedStorageKey('noc_hidden_charts')) || localStorage.getItem('noc_hidden_charts');if(h)HIDDEN_CHARTS=JSON.parse(h);}catch(e){HIDDEN_CHARTS={};}
 }
 function saveSettings(){localStorage.setItem(getScopedStorageKey('noc_settings_v2'),JSON.stringify(S)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
-function saveHidden(){localStorage.setItem(getScopedStorageKey('noc_hidden_charts'),JSON.stringify(HIDDEN_CHARTS)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+function saveHidden(){localStorage.setItem(getScopedStorageKey('noc_hidden_charts'),JSON.stringify(HIDDEN_CHARTS)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true);}
 function getGraphOrderForTab(tab){
   let t = tab || (D && D.tabName) || '';
   if (S.graphOrderByTab && Array.isArray(S.graphOrderByTab[t])) return S.graphOrderByTab[t];
@@ -14087,5 +14081,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1a79b880ae49c5c',t:'MTc4MzkzODU3Ng=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
