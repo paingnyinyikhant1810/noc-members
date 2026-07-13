@@ -7196,26 +7196,28 @@ function onPivotCardRightClick(e, idx) {
   ]);
 }
 
+function getSavedFilterChartRows(sc) {
+  let pool = getActiveTicketPool();
+  if (!pool.length || !sc || sc.type !== 'filter') return [];
+  let allFilters = sc.config.allFilters || {};
+  let filterColumns = Object.keys(allFilters).filter(c => allFilters[c] && allFilters[c].length > 0);
+  let filteredRows = pool;
+  if (filterColumns.length > 0) {
+    filteredRows = pool.filter(r => {
+      return filterColumns.every(filterCol => {
+        let selVals = allFilters[filterCol];
+        let v = r[filterCol];
+        let k = (v != null && v.toString().trim() !== '') ? v.toString().trim() : '(Blank)';
+        return selVals.includes(k);
+      });
+    });
+  }
+  return filteredRows;
+}
 function savedChartHasData(sc) {
   let pool = getActiveTicketPool();
   if (!pool.length) return false;
-  
-  if (sc.type === 'filter') {
-    let allFilters = sc.config.allFilters || {};
-    let filterColumns = Object.keys(allFilters).filter(c => allFilters[c] && allFilters[c].length > 0);
-    let filteredRows = pool;
-    if (filterColumns.length > 0) {
-      filteredRows = pool.filter(r => {
-        return filterColumns.every(filterCol => {
-          let selVals = allFilters[filterCol];
-          let v = r[filterCol];
-          let k = (v != null && v.toString().trim() !== '') ? v.toString().trim() : '(Blank)';
-          return selVals.includes(k);
-        });
-      });
-    }
-    return filteredRows.length > 0;
-  }
+  if (sc.type === 'filter') return getSavedFilterChartRows(sc).length > 0;
   return true;
 }
 
@@ -7297,7 +7299,7 @@ function returnToHomePageFromGraph() {
   let activeRangeBtn = document.querySelector('.tp-b[data-r="'+range+'"]');
   if (activeRangeBtn) activeRangeBtn.classList.add('on');
   if (typeof updateSubPeriodUI === 'function') updateSubPeriodUI();
-  doRender();
+  if (typeof applyFilter === 'function') applyFilter(); else doRender();
   if (restoreState && restoreState.manualTrendAllowed && restoreState.trendGran && typeof switchTicketTrend === 'function') {
     setTimeout(() => {
       TREND_GRAN = restoreState.trendGran;
@@ -12977,6 +12979,26 @@ function computeExpandedChartRowsByZKey(zKey, zd){
     let total=dup.totalDupsCount||0;
     return { rows:list.map((d,i)=>({label:d.customer,key:d.customer,value:d.tickets.length,color:P[i%P.length],pct: total>0?((d.tickets.length/total)*100).toFixed(1):'0.0',records:d.tickets})) };
   }
+  if(String(zKey||'').startsWith('saved_') && zd && zd.type==='filter'){
+    let scId=String(zKey).substring(6);
+    let sc=SAVED_CHARTS.find(c=>String(c.id)===scId);
+    if(sc){
+      let col=sc.config.columnName;
+      let rows=getSavedFilterChartRows(sc);
+      let mp={};
+      rows.forEach(r=>{
+        let v=r[col];
+        let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';
+        if(!mp[k]) mp[k]={ label:k, key:k, value:0, color:P[Object.keys(mp).length%P.length], records:[] };
+        mp[k].value++;
+        mp[k].records.push(r);
+      });
+      let list=Object.values(mp).sort((a,b)=>b.value-a.value || String(a.label).localeCompare(String(b.label)));
+      let limit=S.chartLimit||0; if(limit>0) list=list.slice(0,limit);
+      let total=list.reduce((s,x)=>s+(Number(x.value)||0),0);
+      return { rows:list.map((x,i)=>({label:x.label,key:x.key,value:Number(x.value||0),color:P[i%P.length],pct: total>0?((Number(x.value||0)/total)*100).toFixed(1):'0.0',records:x.records||[]})) };
+    }
+  }
   if(zKey==='ot_severity' || (zd && zd.columnName==='_overtime')){
     let cols=loadOverTimeColumnsForCurrentTab();
     let ot=getOverTimeTicketsData(baseRows, cols.createdCol, cols.resolvedCol, false);
@@ -13040,6 +13062,10 @@ function expandedRowClick(zKey,index){
     }
     let rawIndex=(zd.labels||[]).indexOf(label);
     if(rawIndex>=0) return openTrendPeriodM(TREND_GRAN, zd.keys[rawIndex], zd.labels[rawIndex]);
+  }
+  if(zd.type==='filter'){
+    if(item.records) return showRowsM(item.records, (zd.title || 'Created Graph') + ': ' + label);
+    if(zd.columnName) return scheduleOpenDataM(zd.columnName, label);
   }
   if(zd.type==='trend' && zd.columnName) return scheduleOpenDateM(label);
   if(zd.type==='normal' && zd.columnName) return scheduleOpenDataM(zd.columnName, label);
@@ -13679,5 +13705,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1a6993408fc3f6e',t:'MTc4MzkyNzk5NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
