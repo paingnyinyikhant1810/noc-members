@@ -6279,6 +6279,9 @@ body #drInfo .dr-b {
   flex-direction: column !important;
   margin-bottom: 0 !important;
 }
+.created-graphs-grid > .cd:last-child:nth-child(odd) {
+  grid-column: 1 / -1 !important;
+}
 .created-graphs-grid > .cd .chd {
   min-height: 56px !important;
   align-items: flex-start !important;
@@ -6341,6 +6344,9 @@ body #drInfo .dr-b {
   display: flex !important;
   flex-direction: column !important;
   margin-bottom: 0 !important;
+}
+.filter-preview-grid > .cd:last-child:nth-child(odd) {
+  grid-column: 1 / -1 !important;
 }
 .filter-preview-grid > .cd .chd {
   min-height: 56px !important;
@@ -7592,7 +7598,40 @@ function renderDashboardBackToolbar(){
   return `<div class="mode-backbar"><button class="expand-back mode-back-btn" type="button" onclick="returnToHomePageFromGraph()"><svg class="ic"><use href="#i-x"/></svg> Back to Dashboard</button></div>`;
 }
 function loadSavedCharts(){try{let raw=localStorage.getItem(getScopedStorageKey('noc_saved_charts_v1')) || localStorage.getItem('noc_saved_charts_v1');if(raw)SAVED_CHARTS=JSON.parse(raw);}catch(e){SAVED_CHARTS=[];}}
-function saveSavedCharts(){localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'),JSON.stringify(SAVED_CHARTS)); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+function buildUniversalStateSnapshot(){
+  return {
+    savedCharts: typeof SAVED_CHARTS !== 'undefined' ? SAVED_CHARTS : [],
+    savedPivots: typeof SAVED_PIVOT_TABLES !== 'undefined' ? SAVED_PIVOT_TABLES : [],
+    settings: typeof S !== 'undefined' ? S : {},
+    hiddenCharts: typeof HIDDEN_CHARTS !== 'undefined' ? HIDDEN_CHARTS : {},
+    dropdownState: {
+      lastSelectedTab: (typeof D !== 'undefined' && D.tabName) ? D.tabName : '',
+      lastSelectedRange: typeof range !== 'undefined' ? range : 'all',
+      lastSelectedSubPeriod: typeof subPeriod !== 'undefined' ? subPeriod : 'all',
+      lastActiveMode: getCurrentActiveMode(),
+      dupState: { cust: typeof DETECTED_CUST_COL !== 'undefined' ? DETECTED_CUST_COL : '', tkt: typeof DETECTED_TKT_COL !== 'undefined' ? DETECTED_TKT_COL : '', search: typeof DUP_SEARCH_QUERY !== 'undefined' ? DUP_SEARCH_QUERY : '' },
+      ovrState: { cre: typeof DETECTED_CRE_COL !== 'undefined' ? DETECTED_CRE_COL : '', res: typeof DETECTED_RES_COL !== 'undefined' ? DETECTED_RES_COL : '' },
+      compareState: { gran: typeof COMPARE_GRAN !== 'undefined' ? COMPARE_GRAN : 'month', picks: typeof COMPARE_PICKS !== 'undefined' ? COMPARE_PICKS : [] },
+      filterState: { selections: typeof FILTER_SELECTIONS !== 'undefined' ? FILTER_SELECTIONS : {} }
+    },
+    timestamp: Date.now()
+  };
+}
+function persistUniversalStateLocalNow(){
+  try {
+    let stateObj = buildUniversalStateSnapshot();
+    localStorage.setItem(getScopedStorageKey('noc_universal_state'), JSON.stringify(stateObj));
+    localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'), JSON.stringify(stateObj.savedCharts));
+    localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(stateObj.savedPivots));
+    localStorage.setItem(getScopedStorageKey('noc_settings_v2'), JSON.stringify(stateObj.settings));
+    localStorage.setItem(getScopedStorageKey('noc_hidden_charts'), JSON.stringify(stateObj.hiddenCharts));
+  } catch(e) {}
+}
+function saveSavedCharts(){
+  localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'),JSON.stringify(SAVED_CHARTS));
+  persistUniversalStateLocalNow();
+  if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();
+}
 function addToDashboard(chartConfig){
   if(!chartConfig)return;
   let id='sc_'+Date.now()+'_'+Math.random().toString(36).substr(2,5);
@@ -7838,23 +7877,7 @@ function getCurrentActiveMode() {
 }
 
 function saveUniversalAppStateToCloud() {
-  let stateObj = {
-    savedCharts: typeof SAVED_CHARTS !== 'undefined' ? SAVED_CHARTS : [],
-    savedPivots: typeof SAVED_PIVOT_TABLES !== 'undefined' ? SAVED_PIVOT_TABLES : [],
-    settings: typeof S !== 'undefined' ? S : {},
-    hiddenCharts: typeof HIDDEN_CHARTS !== 'undefined' ? HIDDEN_CHARTS : {},
-    dropdownState: {
-      lastSelectedTab: (typeof D !== 'undefined' && D.tabName) ? D.tabName : '',
-      lastSelectedRange: typeof range !== 'undefined' ? range : 'all',
-      lastSelectedSubPeriod: typeof subPeriod !== 'undefined' ? subPeriod : 'all',
-      lastActiveMode: getCurrentActiveMode(),
-      dupState: { cust: typeof DETECTED_CUST_COL !== 'undefined' ? DETECTED_CUST_COL : '', tkt: typeof DETECTED_TKT_COL !== 'undefined' ? DETECTED_TKT_COL : '', search: typeof DUP_SEARCH_QUERY !== 'undefined' ? DUP_SEARCH_QUERY : '' },
-      ovrState: { cre: typeof DETECTED_CRE_COL !== 'undefined' ? DETECTED_CRE_COL : '', res: typeof DETECTED_RES_COL !== 'undefined' ? DETECTED_RES_COL : '' },
-      compareState: { gran: typeof COMPARE_GRAN !== 'undefined' ? COMPARE_GRAN : 'month', picks: typeof COMPARE_PICKS !== 'undefined' ? COMPARE_PICKS : [] },
-      filterState: { selections: typeof FILTER_SELECTIONS !== 'undefined' ? FILTER_SELECTIONS : {} }
-    },
-    timestamp: Date.now()
-  };
+  let stateObj = buildUniversalStateSnapshot();
 
   // Immediate offline fast cache
   try {
@@ -8007,8 +8030,8 @@ function loadSettings(){
   try { let savedApi = localStorage.getItem('noc_gas_api_url'); if (savedApi) GAS_WEB_APP_URL = savedApi; let inp = document.getElementById('gasApiUrlInput'); if (inp) inp.value = GAS_WEB_APP_URL; } catch(e) {}
   try{let h=localStorage.getItem(getScopedStorageKey('noc_hidden_charts')) || localStorage.getItem('noc_hidden_charts');if(h)HIDDEN_CHARTS=JSON.parse(h);}catch(e){HIDDEN_CHARTS={};}
 }
-function saveSettings(){localStorage.setItem(getScopedStorageKey('noc_settings_v2'),JSON.stringify(S)); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
-function saveHidden(){localStorage.setItem(getScopedStorageKey('noc_hidden_charts'),JSON.stringify(HIDDEN_CHARTS)); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+function saveSettings(){localStorage.setItem(getScopedStorageKey('noc_settings_v2'),JSON.stringify(S)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+function saveHidden(){localStorage.setItem(getScopedStorageKey('noc_hidden_charts'),JSON.stringify(HIDDEN_CHARTS)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 function getGraphOrderForTab(tab){
   let t = tab || (D && D.tabName) || '';
   if (S.graphOrderByTab && Array.isArray(S.graphOrderByTab[t])) return S.graphOrderByTab[t];
@@ -10939,6 +10962,7 @@ function loadSavedPivotTables() {
 function saveSavedPivotTables() {
   try {
     localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(SAVED_PIVOT_TABLES));
+    persistUniversalStateLocalNow();
     if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();
   } catch(e) {}
 }
