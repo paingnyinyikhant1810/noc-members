@@ -6324,6 +6324,33 @@ body #drInfo .dr-b {
 #createdGraphsHeading .enterprise-title p {
   margin-top: 2px !important;
 }
+.filter-preview-grid {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  column-gap: 16px !important;
+  row-gap: 20px !important;
+  align-items: stretch !important;
+  grid-auto-rows: 1fr !important;
+}
+.filter-preview-grid > .cd {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  margin-bottom: 0 !important;
+}
+.filter-preview-grid > .cd .chd {
+  min-height: 56px !important;
+  align-items: flex-start !important;
+}
+.filter-preview-grid > .cd .cb {
+  flex: 1 1 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
 .tools-tray {
   min-width: 212px !important;
   padding: 10px !important;
@@ -6394,15 +6421,15 @@ body #drInfo .dr-b {
 #fltTab {
   margin-left: 0 !important;
   border-left: none !important;
-  padding-left: 14px !important;
+  padding-left: 16px !important;
   padding-right: 12px !important;
-  column-gap: 10px !important;
+  column-gap: 12px !important;
 }
 .tools-tray .tool-item-btn .ic,
 #cmpTab .ic,
 #pvtTab .ic,
 #fltTab .ic {
-  margin: 0 !important;
+  margin: 0 0 0 2px !important;
 }
 @media (max-width: 768px) {
   .tools-tray {
@@ -6416,7 +6443,7 @@ body #drInfo .dr-b {
     min-height: 42px !important;
     height: 42px !important;
     border-radius: 12px !important;
-    padding-left: 12px !important;
+    padding-left: 14px !important;
   }
 }
 
@@ -6727,7 +6754,7 @@ body #drInfo .dr-b {
       <div class="modal-header"><h5 class="modal-title"><svg class="ic"><use href="#i-settings"/></svg> Settings</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
 
-        <div class="st-sec">
+        <div class="st-sec" style="display:none !important;">
           <div class="st-h"><svg class="ic ic-sm"><use href="#i-palette"/></svg> Appearance</div>
           <div class="st-row"><div><div class="st-lbl">Dark mode</div><div class="st-desc">Toggle between light and dark</div></div><div class="dm" id="dmT" onclick="toggleDark()"><div class="dm-d"></div></div></div>
           <div class="st-row"><div><div class="st-lbl">Color theme</div><div class="st-desc">Accent color used across the dashboard</div></div><div class="swatch-row" id="swRow"></div></div>
@@ -6868,34 +6895,73 @@ function refExtractRows(payload){
   };
   return walk(payload);
 }
-async function fetchDashboardEmbedData(forceReload){
-  if (DASH_EMBED.enabled && !getEmbedAuthHeader()) {
-    await waitForEmbedAuth(2500);
+let DASH_EMBED_REMOTE_DATA_DISABLED = false;
+let DASH_EMBED_REMOTE_STATE_DISABLED = false;
+async function fetchDashboardSourceApiFallback(forceReload){
+  if(!DASH_EMBED.sourceApi) throw new Error('Dashboard source API is missing.');
+  let src=DASH_EMBED.sourceApi;
+  if(forceReload){
+    src += (src.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + Date.now();
   }
-  const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/data' + (forceReload ? '?refresh=1' : '');
-  const res = await fetch(url, { credentials: 'same-origin', headers: getEmbedApiHeaders() });
+  const res = await fetch(src, { headers: { 'Accept': 'application/json' } });
   const txt = await res.text();
-  let json = {};
-  try { json = txt ? JSON.parse(txt) : {}; } catch(e) { throw new Error('Dashboard API returned non-JSON response.'); }
-  if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
-  const raw = json.data || json;
+  let raw = {};
+  try { raw = txt ? JSON.parse(txt) : {}; } catch(e) { throw new Error('Source API returned non-JSON response.'); }
+  if(!res.ok) throw new Error(raw.error || ('HTTP ' + res.status));
   const rows = refExtractRows(raw);
-  const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(raw?.sourceMeta?.headers) ? raw.sourceMeta.headers : []);
+  const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(raw?.sourceMeta?.headers) ? raw.sourceMeta.headers : (Array.isArray(raw?.values?.[0]) ? raw.values[0] : []));
   return {
     success: true,
     tabName: DASH_EMBED.dashboardName,
     headers,
     rawData: rows,
     isPivot: false,
-    sourceMeta: json.sourceMeta || raw?.sourceMeta || null,
-    rowCount: json.rowCount || rows.length || 0
+    sourceMeta: raw?.sourceMeta || { range: raw?.range || null, majorDimension: raw?.majorDimension || null, headers },
+    rowCount: rows.length || 0,
+    fallbackMode: 'direct-source-api'
   };
+}
+async function fetchDashboardEmbedData(forceReload){
+  if (DASH_EMBED.enabled && !getEmbedAuthHeader()) {
+    await waitForEmbedAuth(2500);
+  }
+  if (DASH_EMBED_REMOTE_DATA_DISABLED) {
+    return fetchDashboardSourceApiFallback(forceReload);
+  }
+  const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/data' + (forceReload ? '?refresh=1' : '');
+  try {
+    const res = await fetch(url, { credentials: 'same-origin', headers: getEmbedApiHeaders() });
+    const txt = await res.text();
+    let json = {};
+    try { json = txt ? JSON.parse(txt) : {}; } catch(e) { throw new Error('Dashboard API returned non-JSON response.'); }
+    if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+    const raw = json.data || json;
+    const rows = refExtractRows(raw);
+    const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(raw?.sourceMeta?.headers) ? raw.sourceMeta.headers : []);
+    return {
+      success: true,
+      tabName: DASH_EMBED.dashboardName,
+      headers,
+      rawData: rows,
+      isPivot: false,
+      sourceMeta: json.sourceMeta || raw?.sourceMeta || null,
+      rowCount: json.rowCount || rows.length || 0
+    };
+  } catch(err) {
+    DASH_EMBED_REMOTE_DATA_DISABLED = true;
+    return fetchDashboardSourceApiFallback(forceReload);
+  }
 }
 async function fetchDashboardEmbedAppState(){
   if (DASH_EMBED.enabled && !getEmbedAuthHeader()) {
     await waitForEmbedAuth(2500);
   }
   const localKey = getScopedStorageKey('noc_universal_state');
+  if (DASH_EMBED_REMOTE_STATE_DISABLED) {
+    let simState = null;
+    try { simState = localStorage.getItem(localKey); } catch(e) {}
+    return { success: true, stateJson: simState || null, mode: 'local-fallback-dashboard-state' };
+  }
   const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/app-state';
   try {
     const res = await fetch(url, { credentials: 'same-origin', headers: getEmbedApiHeaders() });
@@ -6908,6 +6974,7 @@ async function fetchDashboardEmbedAppState(){
     }
     return { success: true, stateJson: json.stateJson || null, mode: 'remote-dashboard-state' };
   } catch(err) {
+    DASH_EMBED_REMOTE_STATE_DISABLED = true;
     let simState = null;
     try { simState = localStorage.getItem(localKey); } catch(e) {}
     return { success: true, stateJson: simState || null, mode: 'local-fallback-dashboard-state' };
@@ -6938,6 +7005,10 @@ async function apiCall(action, params = {}) {
       if (action === 'saveAppState') {
         const localKey = getScopedStorageKey('noc_universal_state');
         try { localStorage.setItem(localKey, params.stateJson || ''); } catch(e) {}
+        if (DASH_EMBED_REMOTE_STATE_DISABLED) {
+          resolve({ success: true, mode: 'local-fallback-dashboard-state' });
+          return;
+        }
         const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/app-state';
         fetch(url, {
           method: 'PUT',
@@ -6951,6 +7022,7 @@ async function apiCall(action, params = {}) {
           if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
           resolve({ success: true, mode: 'remote-dashboard-state', result: json });
         }).catch(() => {
+          DASH_EMBED_REMOTE_STATE_DISABLED = true;
           resolve({ success: true, mode: 'local-fallback-dashboard-state' });
         });
         return;
@@ -7908,7 +7980,17 @@ function testGasApiUrl() {
 
 function loadSettings(){
   try{let raw=localStorage.getItem(getScopedStorageKey('noc_settings_v2')) || localStorage.getItem('noc_settings_v2');if(raw)Object.assign(S,JSON.parse(raw));}catch(e){}
-  if(localStorage.getItem('noc_dark')==='1')S.dark=true;
+  try {
+    let parentRoot = (window.parent && window.parent !== window && window.parent.document) ? window.parent.document.documentElement : null;
+    let parentTheme = parentRoot ? (parentRoot.getAttribute('data-theme') || '') : '';
+    let parentAccent = parentRoot ? (parentRoot.getAttribute('data-color') || parentRoot.getAttribute('data-acc') || '') : '';
+    let parentFont = parentRoot ? (parentRoot.getAttribute('data-font') || parentRoot.getAttribute('data-fs') || '') : '';
+    if (localStorage.getItem('noc_dark')==='1' || parentTheme==='dark') S.dark=true; else S.dark=false;
+    S.accent = localStorage.getItem('noc_color') || parentAccent || S.accent;
+    S.fontSize = localStorage.getItem('noc_font') || parentFont || S.fontSize;
+  } catch(e) {
+    if(localStorage.getItem('noc_dark')==='1')S.dark=true;
+  }
   S.defaultTab='';
   S.advSummary=true;
   S.trendChart=true;
@@ -7983,6 +8065,7 @@ function onChartLimitChange(val) {
 const ACCENTS=[{id:'indigo',c:'#4f46e5'},{id:'blue',c:'#2563eb'},{id:'green',c:'#16a34a'},{id:'rose',c:'#e11d48'},{id:'orange',c:'#ea580c'},{id:'teal',c:'#0d9488'}];
 function buildSwatchRow(){
   let row=document.getElementById("swRow");
+  if(!row) return;
   row.innerHTML=ACCENTS.map(a=>`<div class="sw ${a.id===S.accent?'on':''}" data-id="${a.id}" style="background:${a.c};" onclick="setAccent('${a.id}')" title="${a.id}"></div>`).join('');
 }
 function setAccent(id){S.accent=id;saveSettings();applyTheme();if(D.rawData)doRender();}
@@ -12252,7 +12335,8 @@ function renderFilterDashboard(){
   // Charts container — only rendered when Run Filter is clicked
   let chartsArea=document.createElement('div');
   chartsArea.id='filterChartsArea';
-  chartsArea.style.cssText='display:flex;flex-wrap:wrap;gap:16px;width:100%;';
+  chartsArea.className='filter-preview-grid';
+  chartsArea.style.cssText='display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px;row-gap:20px;width:100%;align-items:stretch;';
   area.appendChild(chartsArea);
   // Don't auto-render — wait for Run Filter button
 }
@@ -12339,7 +12423,7 @@ function doRenderFilterChartsOnly(){
 
   // Summary line
   let sumEl=document.createElement('div');
-  sumEl.className='dr-i';sumEl.style.cssText='flex:1 1 100%;padding:0;';
+  sumEl.className='dr-i';sumEl.style.cssText='grid-column:1 / -1;padding:0;';
   sumEl.innerHTML=`<span class="dr-b"><svg class="ic ic-sm"><use href="#i-grid"/></svg> Filtered: ${filteredRows.length.toLocaleString()} of ${(F.length||(D.rawData||[]).length).toLocaleString()} records (Range: ${cap(range)})</span>`;
   chartsArea.appendChild(sumEl);
 
@@ -12635,9 +12719,7 @@ function addFilterChartToDash(col,filterVals){
 function openFilterDataM(col,cat){
   let filteredRows=getFilterAppliedRows();
   let matches=filteredRows.filter(r=>{let v=r[col];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';return k===cat;});
-  let activeFilters=Object.keys(FILTER_SELECTIONS).filter(c=>FILTER_SELECTIONS[c]&&FILTER_SELECTIONS[c].length>0);
-  let filterDesc=activeFilters.map(c=>c+': '+FILTER_SELECTIONS[c].join(', ')).join(' | ');
-  let title='Filter: '+col+' → '+cat+(filterDesc?' ['+filterDesc+']':'');
+  let title=cat;
   showRowsM(matches,title);
 }
 
@@ -13147,10 +13229,11 @@ function computeExpandedChartRowsByZKey(zKey, zd){
         mp[k].value++;
         mp[k].records.push(r);
       });
-      let list=Object.values(mp).sort((a,b)=>b.value-a.value || String(a.label).localeCompare(String(b.label)));
-      let limit=S.chartLimit||0; if(limit>0) list=list.slice(0,limit);
-      let total=list.reduce((s,x)=>s+(Number(x.value)||0),0);
-      return { rows:list.map((x,i)=>({label:x.label,key:x.key,value:Number(x.value||0),color:P[i%P.length],pct: total>0?((Number(x.value||0)/total)*100).toFixed(1):'0.0',records:x.records||[]})) };
+      let fullList=Object.values(mp).sort((a,b)=>b.value-a.value || String(a.label).localeCompare(String(b.label)));
+      let fullTotal=fullList.reduce((s,x)=>s+(Number(x.value)||0),0);
+      let limit=S.chartLimit||0;
+      let list=limit>0 ? fullList.slice(0,limit) : fullList;
+      return { rows:list.map((x,i)=>({label:x.label,key:x.key,value:Number(x.value||0),color:P[i%P.length],pct: fullTotal>0?((Number(x.value||0)/fullTotal)*100).toFixed(1):'0.0',records:x.records||[]})) };
     }
   }
   if(zKey==='ot_severity' || (zd && zd.columnName==='_overtime')){
