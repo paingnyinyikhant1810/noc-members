@@ -6331,13 +6331,13 @@ body #drInfo .dr-b {
   column-gap: 16px !important;
   row-gap: 20px !important;
   align-items: stretch !important;
-  grid-auto-rows: 1fr !important;
+  grid-auto-rows: auto !important;
+  align-content: start !important;
 }
 .filter-preview-grid > .cd {
   width: 100% !important;
   max-width: 100% !important;
   min-width: 0 !important;
-  height: 100% !important;
   display: flex !important;
   flex-direction: column !important;
   margin-bottom: 0 !important;
@@ -7739,6 +7739,16 @@ document.addEventListener("DOMContentLoaded",()=>{
   settingsModal = createSafeModal(document.getElementById('settingsModal'));
 
   loadSettings();applyTheme();buildSwatchRow();bindSegs();loadSavedCharts();
+  setInterval(() => {
+    let prevTheme = document.documentElement.getAttribute('data-theme');
+    let prevAcc = document.documentElement.getAttribute('data-acc');
+    let prevFs = document.documentElement.getAttribute('data-fs');
+    syncPortalAppearanceFromParent();
+    if (prevTheme !== (S.dark?'dark':'light') || prevAcc !== S.accent || prevFs !== S.fontSize) {
+      applyTheme();
+      if (D && D.rawData) doRender();
+    }
+  }, 1200);
   
   showL("Loading dashboard from Google Sheets…");
   apiCall('getStartupBundle', { defaultTab: S.defaultTab }).then(bundle => {
@@ -8041,7 +8051,22 @@ function applyHiddenStateToCurrentDashboard(){
   });
   updateCreatedGraphsVisibility();
 }
+function syncPortalAppearanceFromParent(){
+  try {
+    let parentRoot = (window.parent && window.parent !== window && window.parent.document) ? window.parent.document.documentElement : null;
+    let parentTheme = parentRoot ? (parentRoot.getAttribute('data-theme') || '') : '';
+    let parentAccent = parentRoot ? (parentRoot.getAttribute('data-color') || parentRoot.getAttribute('data-acc') || '') : '';
+    let parentFont = parentRoot ? (parentRoot.getAttribute('data-font') || parentRoot.getAttribute('data-fs') || '') : '';
+    if (!parentTheme) parentTheme = localStorage.getItem('noc_dark')==='1' ? 'dark' : 'light';
+    if (!parentAccent) parentAccent = localStorage.getItem('noc_color') || localStorage.getItem('noc_acc') || S.accent || 'indigo';
+    if (!parentFont) parentFont = localStorage.getItem('noc_font') || S.fontSize || 'md';
+    S.dark = parentTheme === 'dark';
+    S.accent = parentAccent || S.accent;
+    S.fontSize = parentFont || S.fontSize;
+  } catch(e) {}
+}
 function applyTheme(){
+  syncPortalAppearanceFromParent();
   document.documentElement.setAttribute('data-theme',S.dark?'dark':'light');
   document.documentElement.setAttribute('data-acc',S.accent);
   document.documentElement.setAttribute('data-fs',S.fontSize);
@@ -12402,6 +12427,7 @@ function cancelEditing() {
 function doRenderFilterChartsOnly(){
   let chartsArea=document.getElementById('filterChartsArea');
   if(!chartsArea)return;
+  chartsArea.style.gridTemplateColumns = '1fr';
   // Destroy old charts
   chartsArea.querySelectorAll('canvas').forEach(c=>{let inst=Chart.getChart(c);if(inst)inst.destroy();});
   Object.keys(CHART_META).forEach(k=>{if(k.startsWith('flt_'))delete CHART_META[k];});
@@ -12428,6 +12454,7 @@ function doRenderFilterChartsOnly(){
   chartsArea.appendChild(sumEl);
 
   let colsToChart=getFilterChartColumns(cols);
+  chartsArea.style.gridTemplateColumns = colsToChart.length > 1 ? 'repeat(2, minmax(0, 1fr))' : '1fr';
   colsToChart.forEach((col,idx)=>renderFilterCategoryCardInto(chartsArea,col,idx,filteredRows));
 }
 
@@ -12752,6 +12779,10 @@ function renderSavedDashboardCharts(){
     area.appendChild(grid);
   }
   
+  let createdGrid=document.getElementById('createdGraphsGrid');
+  if(createdGrid){
+    createdGrid.style.gridTemplateColumns = visibleCharts.length > 1 ? 'repeat(2, minmax(0, 1fr))' : '1fr';
+  }
   // Render only visible charts with matching records
   visibleCharts.forEach((sc,idx)=>{
     if(sc.type==='filter')renderSavedFilterChart(sc,idx);
