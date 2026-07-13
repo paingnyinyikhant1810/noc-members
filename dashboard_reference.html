@@ -6968,26 +6968,9 @@ async function fetchDashboardEmbedData(forceReload){
   if (DASH_EMBED.enabled && !getEmbedAuthHeader()) {
     await waitForEmbedAuth(2500);
   }
-  if (!forceReload) {
-    let cached = loadEmbedDashboardDataCache();
-    if (cached) return cached;
-    if (DASH_EMBED.cacheOnly) {
-      return {
-        success:true,
-        tabName:DASH_EMBED.dashboardName,
-        headers:[],
-        rawData:[],
-        isPivot:false,
-        sourceMeta:{ cacheOnly:true, missingCache:true },
-        rowCount:0
-      };
-    }
-  }
-  if (DASH_EMBED_REMOTE_DATA_DISABLED) {
-    let fallback = await fetchDashboardSourceApiFallback(forceReload);
-    if (fallback) saveEmbedDashboardDataCache(fallback);
-    return fallback;
-  }
+  const cached = loadEmbedDashboardDataCache();
+  if (DASH_EMBED_REMOTE_DATA_DISABLED && cached && !forceReload) return cached;
+  if (DASH_EMBED.cacheOnly && cached && !forceReload) return cached;
   const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/data' + (forceReload ? '?refresh=1' : '');
   try {
     const res = await fetch(url, { credentials: 'same-origin', headers: getEmbedApiHeaders() });
@@ -7011,22 +6994,21 @@ async function fetchDashboardEmbedData(forceReload){
     return tabData;
   } catch(err) {
     DASH_EMBED_REMOTE_DATA_DISABLED = true;
-    if (DASH_EMBED.cacheOnly) {
-      let cached = loadEmbedDashboardDataCache();
-      if (cached) return cached;
-      return {
-        success:true,
-        tabName:DASH_EMBED.dashboardName,
-        headers:[],
-        rawData:[],
-        isPivot:false,
-        sourceMeta:{ cacheOnly:true, missingCache:true, error:String(err && err.message || err) },
-        rowCount:0
-      };
-    }
     let fallback = await fetchDashboardSourceApiFallback(forceReload);
-    if (fallback) saveEmbedDashboardDataCache(fallback);
-    return fallback;
+    if (fallback) {
+      saveEmbedDashboardDataCache(fallback);
+      return fallback;
+    }
+    if (cached && !forceReload) return cached;
+    return {
+      success:true,
+      tabName:DASH_EMBED.dashboardName,
+      headers:[],
+      rawData:[],
+      isPivot:false,
+      sourceMeta:{ missingCache:true, error:String(err && err.message || err) },
+      rowCount:0
+    };
   }
 }
 async function fetchDashboardEmbedAppState(){
@@ -8139,9 +8121,15 @@ function getCurrentDashboardGraphKeys(tab){
 function applyHiddenStateToCurrentDashboard(){
   let tab = (D && D.tabName) || '';
   let hidden = HIDDEN_CHARTS[tab] || [];
-  getCurrentDashboardGraphKeys(tab).forEach(k => {
+  let allKeys = Array.from(new Set([...(getCurrentDashboardGraphKeys(tab)||[]), ...hidden]));
+  allKeys.forEach(k => {
     let el = getChartCardElement(k);
-    if (el) el.style.display = hidden.indexOf(k) >= 0 ? 'none' : '';
+    if (!el) return;
+    if (hidden.indexOf(k) >= 0) el.style.setProperty('display','none','important');
+    else {
+      el.style.removeProperty('display');
+      el.style.display='';
+    }
   });
   updateCreatedGraphsVisibility();
 }
@@ -8466,10 +8454,10 @@ function toggleChartVis(zKey,visible){
   let el=getChartCardElement(zKey);
   if(el){
     if(visible){
-      el.style.display='';
       el.style.removeProperty('display');
+      el.style.display='';
     }else{
-      el.style.display='none';
+      el.style.setProperty('display','none','important');
     }
   }
   applyHiddenStateToCurrentDashboard();
@@ -8477,8 +8465,10 @@ function toggleChartVis(zKey,visible){
   if(D.rawData && !FILTER_MODE && !PIVOT_BUILDER_MODE && !COMPARE_MODE && !DUPLICATE_MODE && !OVERTIME_MODE) {
     doRender();
     setTimeout(()=>applyHiddenStateToCurrentDashboard(), 80);
+    setTimeout(()=>applyHiddenStateToCurrentDashboard(), 220);
   } else {
     setTimeout(()=>applyHiddenStateToCurrentDashboard(), 30);
+    setTimeout(()=>applyHiddenStateToCurrentDashboard(), 120);
   }
 }
 
@@ -14097,5 +14087,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1a79b880ae49c5c',t:'MTc4MzkzODU3Ng=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
