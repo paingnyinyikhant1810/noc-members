@@ -230,6 +230,7 @@ function doShowApp(){
   updateAdminUI();renderMobileInfoMenu();renderInfoDropdown();renderMobileDashboardMenu();renderDashboardDropdown();
   resetDashboardMode();
   navigateTo('home');
+  if(isLeader()) startDashboardPrefetch(true);
   startPolling(); // begin real-time background polling
 }
 
@@ -1168,13 +1169,36 @@ async function saveDashboardSettings(){
   isProcessing=false;
 }
 
+function getDashboardEmbedCacheKey(id){ return `noc_embed_dashboard_data__${id}`; }
 async function startDashboardPrefetch(force=false){
-  if(!isLeader() || !force) return; // disabled by default for stability; manual only
+  if(!isLeader()) return;
   const items=(appData.dashboardItems||[]).filter(x=>canSee(x.min_role_required||'leader'));
   if(!items.length) return;
-  if(dashboardPrefetchStarted&&!force) return;
+  if(dashboardPrefetchStarted && !force) return;
   dashboardPrefetchStarted=true;
-  fetch(`${API_URL}/dashboards/prefetch`,{ method:'POST', headers:getHeaders(), body:JSON.stringify({ids:items.map(x=>x.id)}) }).catch(()=>null);
+  Promise.all(items.map(async (item) => {
+    try {
+      const data = await fetchDashboardData(item.id,{force:true,silent:true});
+      if(!data) return null;
+      const raw = data.data || data;
+      const rows = extractDashboardRows(raw);
+      const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(raw?.sourceMeta?.headers) ? raw.sourceMeta.headers : (Array.isArray(raw?.values?.[0]) ? raw.values[0] : []));
+      const tabData = {
+        success:true,
+        tabName:item.name || 'Dashboard',
+        headers,
+        rawData:rows,
+        isPivot:false,
+        sourceMeta:data.sourceMeta || raw?.sourceMeta || null,
+        rowCount:data.rowCount || rows.length || 0,
+        prefetchedAt: Date.now()
+      };
+      try { localStorage.setItem(getDashboardEmbedCacheKey(item.id), JSON.stringify(tabData)); } catch(e) {}
+      return tabData;
+    } catch(e) {
+      return null;
+    }
+  })).catch(()=>null);
 }
 async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}={}){
   if(!id) return null;
