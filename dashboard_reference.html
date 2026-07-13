@@ -8004,6 +8004,8 @@ function saveNewGraphOrderFromSettings() {
 function applyGraphOrderToDashboard() {
   let mainArea = document.getElementById("main");
   if (!mainArea) return;
+  let createdGrid = document.getElementById('createdGraphsGrid');
+  let heading = document.getElementById('createdGraphsHeading');
   let tab = (D && D.tabName) || '';
   let allKeys = getCurrentDashboardGraphKeys(tab);
   let tabOrder = getGraphOrderForTab(tab);
@@ -8028,17 +8030,26 @@ function applyGraphOrderToDashboard() {
   
   allKeys.forEach(k => {
     let card = getChartCardElement(k);
-    if (card && card.parentNode === mainArea) {
-      mainArea.appendChild(card);
+    if (!card) return;
+    let isSaved = String(k).startsWith('saved_');
+    if (isSaved && createdGrid) {
+      if (card.parentNode !== createdGrid) createdGrid.appendChild(card);
+      else createdGrid.appendChild(card);
+    } else {
+      if (card.parentNode !== mainArea) mainArea.appendChild(card);
+      else mainArea.appendChild(card);
     }
   });
   
-  let heading = document.getElementById('createdGraphsHeading');
-  if (heading && mainArea.contains(heading)) {
+  if (heading && createdGrid && heading.parentNode === mainArea && createdGrid.parentNode === mainArea) {
+    if (heading.nextElementSibling !== createdGrid) {
+      mainArea.insertBefore(heading, createdGrid);
+    }
+  } else if (heading && mainArea.contains(heading)) {
     let firstSaved = mainArea.querySelector('[id^="card_saved_"]');
-    if (firstSaved) {
+    if (firstSaved && firstSaved.parentNode === mainArea) {
       mainArea.insertBefore(heading, firstSaved);
-    } else {
+    } else if (heading.parentNode === mainArea) {
       mainArea.appendChild(heading);
     }
   }
