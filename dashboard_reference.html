@@ -10145,7 +10145,7 @@ function renderOverTimeTrendCard(otRowsAll) {
       }]
     }, gc, tc, labels, false);
     CHART_META[zKey] = {
-      title: 'OverTime Tickets Over Time',
+      title: title,
       labels: labels,
       shortLabels: labels,
       datasets: [{ data: values, backgroundColor: col }],
@@ -10162,6 +10162,8 @@ function renderOverTimeTrendCard(otRowsAll) {
 function renderOverTimeSeverityCard(counts, totalOtCount) {
   let bId = 'otSeverityCanvas';
   let zKey = 'ot_severity';
+  let baseTitle = 'OverTime Severity Distribution';
+  let title = getGraphDisplayTitle(zKey, baseTitle);
   let tiers = ['lt36','36_50','50_68','gt68'];
   let chartLabels = ['Below 36h', '36–50.4h', '50.4–68.4h', '>68.4h'];
   let chartValues = [counts['lt36'], counts['36_50'], counts['50_68'], counts['gt68']];
@@ -10193,7 +10195,7 @@ function renderOverTimeSeverityCard(counts, totalOtCount) {
     <div class="chd">
       <div class="chd-l">
         <div class="cd-dot" style="background:${colors[0]};"></div>
-        <h3>OverTime Severity Distribution</h3>
+        <h3>${escapeHtml(title)}</h3>
       </div>
       <span class="c-tag" style="background:${colors[0]};">${totalOtCount} Total OverTime</span>
       <div class="cd-actions">
@@ -10242,7 +10244,7 @@ function renderOverTimeSeverityCard(counts, totalOtCount) {
       }]
     }, gc, tc, chartLabels, false);
     CHART_META[zKey] = {
-      title: 'OverTime Severity Distribution',
+      title: title,
       labels: chartLabels,
       shortLabels: chartLabels,
       datasets: [{
@@ -10762,7 +10764,7 @@ function renderPivotBuilderDashboard() {
   killCH(); CHART_META = {};
 
   if (!D || !D.rawData || D.rawData.length === 0) {
-    area.innerHTML = '<div class="empty-s"><div class="e-t">No data available</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Please select a tab with data first.</p></div>';
+    area.innerHTML = renderDashboardBackToolbar() + '<div class="empty-s"><div class="e-t">No data available</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Please select a tab with data first.</p></div>';
     hideL();
     return;
   }
