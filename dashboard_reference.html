@@ -6534,14 +6534,14 @@ body #drInfo .dr-b {
   backdrop-filter: blur(18px) saturate(1.03);
 }
 .settings-extended-shell {
-  width: min(1120px, calc(100vw - 32px));
-  max-width: min(1120px, calc(100vw - 32px));
-  height: calc(100vh - 32px);
+  width: min(620px, calc(100vw - 32px));
+  max-width: min(620px, calc(100vw - 32px));
+  height: auto;
   max-height: calc(100vh - 32px);
   display: flex;
 }
 .settings-extended-shell .modal-content {
-  height: 100% !important;
+  height: auto !important;
   width: 100% !important;
   max-height: calc(100vh - 32px) !important;
   border-radius: 28px !important;
@@ -6575,9 +6575,9 @@ body #drInfo .dr-b {
 @media (max-width: 768px) {
   .settings-extended-page { padding: 8px; }
   .settings-extended-shell {
-    width: calc(100vw - 16px);
-    max-width: calc(100vw - 16px);
-    height: calc(100vh - 16px);
+    width: min(620px, calc(100vw - 16px));
+    max-width: min(620px, calc(100vw - 16px));
+    height: auto;
     max-height: calc(100vh - 16px);
   }
   .settings-extended-shell .modal-content {
@@ -6829,6 +6829,23 @@ function getDashboardScopeKey(){
 function getScopedStorageKey(base){
   return base + '__' + getDashboardScopeKey();
 }
+function getEmbedDashboardDataCacheKey(){
+  return 'noc_embed_dashboard_data__' + getDashboardScopeKey();
+}
+function loadEmbedDashboardDataCache(){
+  try {
+    let raw = localStorage.getItem(getEmbedDashboardDataCacheKey());
+    if (!raw) return null;
+    let parsed = JSON.parse(raw);
+    if (parsed && parsed.rawData && Array.isArray(parsed.rawData)) return parsed;
+  } catch(e) {}
+  return null;
+}
+function saveEmbedDashboardDataCache(tabData){
+  try {
+    localStorage.setItem(getEmbedDashboardDataCacheKey(), JSON.stringify(tabData));
+  } catch(e) {}
+}
 
 let EMBED_AUTH_HEADER = '';
 window.addEventListener('message', function(ev){
@@ -6931,8 +6948,14 @@ async function fetchDashboardEmbedData(forceReload){
   if (DASH_EMBED.enabled && !getEmbedAuthHeader()) {
     await waitForEmbedAuth(2500);
   }
+  if (!forceReload) {
+    let cached = loadEmbedDashboardDataCache();
+    if (cached) return cached;
+  }
   if (DASH_EMBED_REMOTE_DATA_DISABLED) {
-    return fetchDashboardSourceApiFallback(forceReload);
+    let fallback = await fetchDashboardSourceApiFallback(forceReload);
+    if (fallback) saveEmbedDashboardDataCache(fallback);
+    return fallback;
   }
   const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/data' + (forceReload ? '?refresh=1' : '');
   try {
@@ -6944,7 +6967,7 @@ async function fetchDashboardEmbedData(forceReload){
     const raw = json.data || json;
     const rows = refExtractRows(raw);
     const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(raw?.sourceMeta?.headers) ? raw.sourceMeta.headers : []);
-    return {
+    let tabData = {
       success: true,
       tabName: DASH_EMBED.dashboardName,
       headers,
@@ -6953,9 +6976,13 @@ async function fetchDashboardEmbedData(forceReload){
       sourceMeta: json.sourceMeta || raw?.sourceMeta || null,
       rowCount: json.rowCount || rows.length || 0
     };
+    saveEmbedDashboardDataCache(tabData);
+    return tabData;
   } catch(err) {
     DASH_EMBED_REMOTE_DATA_DISABLED = true;
-    return fetchDashboardSourceApiFallback(forceReload);
+    let fallback = await fetchDashboardSourceApiFallback(forceReload);
+    if (fallback) saveEmbedDashboardDataCache(fallback);
+    return fallback;
   }
 }
 async function fetchDashboardEmbedAppState(){
@@ -8074,6 +8101,18 @@ function applyHiddenStateToCurrentDashboard(){
   });
   updateCreatedGraphsVisibility();
 }
+function normalizePortalAccent(v){
+  let x=String(v||'').trim().toLowerCase();
+  if(!x) return '';
+  let map={ purple:'indigo', indigo:'indigo', blue:'blue', green:'green', orange:'orange', red:'rose', rose:'rose', teal:'teal' };
+  return map[x] || x;
+}
+function normalizePortalFont(v){
+  let x=String(v||'').trim().toLowerCase();
+  if(!x) return '';
+  let map={ s:'sm', sm:'sm', m:'md', md:'md', l:'lg', lg:'lg', xl:'xl' };
+  return map[x] || x;
+}
 function syncPortalAppearanceFromParent(){
   try {
     let parentRoot = (window.parent && window.parent !== window && window.parent.document) ? window.parent.document.documentElement : null;
@@ -8083,6 +8122,8 @@ function syncPortalAppearanceFromParent(){
     if (!parentTheme) parentTheme = localStorage.getItem('noc_dark')==='1' ? 'dark' : 'light';
     if (!parentAccent) parentAccent = localStorage.getItem('noc_color') || localStorage.getItem('noc_acc') || S.accent || 'indigo';
     if (!parentFont) parentFont = localStorage.getItem('noc_font') || S.fontSize || 'md';
+    parentAccent = normalizePortalAccent(parentAccent);
+    parentFont = normalizePortalFont(parentFont);
     S.dark = parentTheme === 'dark';
     S.accent = parentAccent || S.accent;
     S.fontSize = parentFont || S.fontSize;
@@ -8963,7 +9004,7 @@ function renderSiteTicketCountsCard(sites, cols){
   card.id='card_'+zKey;
   card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
   if(isHidden(zKey)) card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[1]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[1]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th style="width:60px;">Tickets</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[1]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[1]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th style="width:60px;">Tickets</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   area.appendChild(card);
   bindSiteTicketGraphContext(card);
   setTimeout(()=>{
@@ -8995,7 +9036,7 @@ function renderSiteComplaintPercentCard(sites, cols){
   card.id='card_'+zKey;
   card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
   if(isHidden(zKey)) card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[2]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[2]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[2]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[2]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   area.appendChild(card);
   bindSiteComplaintPercentGraphContext(card);
   setTimeout(()=>{
@@ -9214,7 +9255,7 @@ function renderCpeComplaintSection(){
         <div class="col-lg-7">
           <div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('cpe_complaints','bar')">
             <canvas id="cpeComplaintChart"></canvas>
-            <span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span>
+            
           </div>
         </div>
         <div class="col-lg-5">
@@ -9662,7 +9703,7 @@ function renderTrendCard(){
   let zKey='trend_main';let area=document.getElementById("main");
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   if(isHidden(zKey))card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>Tickets over time</h3></div><span class="c-tag" style="background:var(--ac);">${t.values.reduce((a,b)=>a+b,0)} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','line')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','line')"><canvas id="trC"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> click to expand</span></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>Tickets over time</h3></div><span class="c-tag" style="background:var(--ac);">${t.values.reduce((a,b)=>a+b,0)} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','line')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','line')"><canvas id="trC"></canvas></div></div>`;
   area.appendChild(card);
   setTimeout(()=>{
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
@@ -9697,7 +9738,7 @@ function pvChart(title,cols,lc,idx){
   let tot=pV.reduce((a,b)=>a+b,0);let zKey='pv_'+idx;
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   if(isHidden(zKey))card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${tot.toLocaleString()}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${tot.toLocaleString()}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div>`;
   area.appendChild(card);
   setTimeout(()=>{
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
@@ -9734,7 +9775,7 @@ function renderCategoryCard(col,idx,rows){
   let area=document.getElementById("main");
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   if(isHidden(zKey))card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(col)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${sL.length}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:50px;">Count</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(col)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${sL.length}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:50px;">Count</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   area.appendChild(card);
   setTimeout(()=>{
     let short=displayL.map(l=>l.length>15?l.substring(0,12)+'…':l),colors=displayL.map((_,i)=>P[i%P.length]);
@@ -10106,7 +10147,7 @@ function renderDuplicateTrendCard(dupRows) {
     <div class="cb">
       <div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','line')">
         <canvas id="dupTrendChartCanvas"></canvas>
-        <span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> click to expand</span>
+        
       </div>
     </div>
   `;
@@ -10197,7 +10238,7 @@ function renderTopCustomersCard(duplicates, totalDupsCount) {
         <div class="col-lg-7">
           <div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')">
             <canvas id="${bId}"></canvas>
-            <span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span>
+            
           </div>
         </div>
         <div class="col-lg-5">
@@ -10492,7 +10533,7 @@ function renderOverTimeTrendCard(otRowsAll) {
     <div class="cb">
       <div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','line')">
         <canvas id="otTrendChartCanvas"></canvas>
-        <span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> click to expand</span>
+        
       </div>
     </div>
   `;
@@ -10578,7 +10619,7 @@ function renderOverTimeSeverityCard(counts, totalOtCount) {
         <div class="col-lg-7">
           <div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')">
             <canvas id="${bId}"></canvas>
-            <span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span>
+            
           </div>
         </div>
         <div class="col-lg-5">
@@ -10680,7 +10721,7 @@ function renderPeriodTotalsCard(){
   let total=values.reduce((a,b)=>a+b,0);
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   if(isHidden(zKey))card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:var(--ac);">${total.toLocaleString()} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:340px;min-height:340px;"><canvas id="cmpTotB"></canvas><span class="chb-lb">click bar for records</span></div><div class="mini-data-grid">${labels.map((lb,i)=>`<div class="mini-data-item"><span>${escapeHtml(lb)}</span><span>${values[i].toLocaleString()}</span></div>`).join('')}</div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:var(--ac);">${total.toLocaleString()} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:340px;min-height:340px;"><canvas id="cmpTotB"></canvas></div><div class="mini-data-grid">${labels.map((lb,i)=>`<div class="mini-data-item"><span>${escapeHtml(lb)}</span><span>${values[i].toLocaleString()}</span></div>`).join('')}</div></div>`;
   card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
   area.appendChild(card);
   setTimeout(()=>{
@@ -10717,7 +10758,7 @@ function renderCompareCategoryCard(col,idx){
 
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   if(isHidden(zKey))card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${cats.length} categories</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;"><canvas id="ccB${idx}"></canvas><span class="chb-lb">click bar for records</span></div><div class="mini-data-grid">${cats.slice(0,8).map((c,i)=>`<div class="mini-data-item"><span>${escapeHtml(c)}</span><span>${union[c].toLocaleString()}</span></div>`).join('')}</div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${cats.length} categories</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;"><canvas id="ccB${idx}"></canvas></div><div class="mini-data-grid">${cats.slice(0,8).map((c,i)=>`<div class="mini-data-item"><span>${escapeHtml(c)}</span><span>${union[c].toLocaleString()}</span></div>`).join('')}</div></div>`;
   card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
   area.appendChild(card);
   setTimeout(()=>{
@@ -12451,6 +12492,7 @@ function cancelEditing() {
 function doRenderFilterChartsOnly(){
   let chartsArea=document.getElementById('filterChartsArea');
   if(!chartsArea)return;
+  chartsArea.innerHTML='';
   chartsArea.style.gridTemplateColumns = '1fr';
   // Destroy old charts
   chartsArea.querySelectorAll('canvas').forEach(c=>{let inst=Chart.getChart(c);if(inst)inst.destroy();});
@@ -12480,6 +12522,12 @@ function doRenderFilterChartsOnly(){
   let colsToChart=getFilterChartColumns(cols);
   chartsArea.style.gridTemplateColumns = colsToChart.length > 1 ? 'repeat(2, minmax(0, 1fr))' : '1fr';
   colsToChart.forEach((col,idx)=>renderFilterCategoryCardInto(chartsArea,col,idx,filteredRows));
+  let cards=chartsArea.querySelectorAll('.cd');
+  if(cards.length===1){
+    cards[0].style.gridColumn='1 / -1';
+  }else if(cards.length>1 && (cards.length % 2)===1){
+    cards[cards.length-1].style.gridColumn='1 / -1';
+  }
 }
 
 /* Update active chips + button badges without touching dropdowns */
@@ -12704,7 +12752,7 @@ function renderFilterCategoryCardInto(container,col,idx,filteredRows){
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   if(isHidden(zKey))card.style.display='none';
   let btnText = editingChartId ? 'Update Chart' : 'Add to Dashboard';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${hasActiveFilter?'var(--teal)':DT[idx%DT.length]};"></div><h3>${escapeHtml(col)}</h3>${hasActiveFilter?'<span class="pv-tg" style="background:rgba(20,184,166,.12);color:var(--teal);">Filtered</span>':''}</div><span class="c-tag" style="background:${hasActiveFilter?'var(--teal)':TG[idx%TG.length]};">${sL.length}</span><div class="cd-actions"><button class="btn-add-dash" onclick="event.stopPropagation();addFilterChartToDash('${escapeJs(col)}',${JSON.stringify(filterVals).replace(/"/g,'&quot;')})"><svg class="ic ic-sm"><use href="#i-check"/></svg> ${btnText}</button><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:50px;">Count</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${hasActiveFilter?'var(--teal)':DT[idx%DT.length]};"></div><h3>${escapeHtml(col)}</h3>${hasActiveFilter?'<span class="pv-tg" style="background:rgba(20,184,166,.12);color:var(--teal);">Filtered</span>':''}</div><span class="c-tag" style="background:${hasActiveFilter?'var(--teal)':TG[idx%TG.length]};">${sL.length}</span><div class="cd-actions"><button class="btn-add-dash" onclick="event.stopPropagation();addFilterChartToDash('${escapeJs(col)}',${JSON.stringify(filterVals).replace(/"/g,'&quot;')})"><svg class="ic ic-sm"><use href="#i-check"/></svg> ${btnText}</button><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:50px;">Count</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   container.appendChild(card);
   setTimeout(()=>{
     let short=displayL.map(l=>l.length>15?l.substring(0,12)+'…':l),colors=displayL.map((_,i)=>P[i%P.length]);
@@ -12856,7 +12904,7 @@ function renderSavedFilterChart(sc,idx){
   if(totalVisible>1) card.style.cssText='width:100%;max-width:100%;min-width:0;';
   card.oncontextmenu = function(e) { onGraphCardRightClick(e, sc.id); };
   card.title = "Right-click card for options (Rename, Edit, Delete)";
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(sc.title)}</h3></div><span class="c-tag" style="background:var(--ac);">${sL.length}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:50px;">Count</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(sc.title)}</h3></div><span class="c-tag" style="background:var(--ac);">${sL.length}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:50px;">Count</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   area.appendChild(card);
   setTimeout(()=>{
     let short=displayL.map(l=>l.length>15?l.substring(0,12)+'…':l),colors=displayL.map((_,i)=>P[i%P.length]);
