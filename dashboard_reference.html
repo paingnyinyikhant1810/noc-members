@@ -4157,6 +4157,26 @@ body {
 [data-theme="dark"] .expand-back {
   background: rgba(26,29,46,.86);
 }
+.expand-back:hover {
+  transform: translateY(-2px);
+  color: var(--ac);
+  border-color: color-mix(in srgb, var(--ac) 24%, var(--border));
+  background: color-mix(in srgb, var(--ac) 7%, rgba(255,255,255,.96));
+  box-shadow: 0 14px 28px rgba(15,23,42,.12);
+}
+[data-theme="dark"] .expand-back:hover {
+  background: color-mix(in srgb, var(--ac) 12%, rgba(26,29,46,.92));
+}
+.mode-backbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 0 0 14px;
+}
+.mode-back-btn {
+  min-width: 206px;
+}
 .expand-title-wrap {
   display: flex;
   align-items: center;
@@ -7088,6 +7108,15 @@ function onGraphCardRightClick(e, scId) {
     }
   ]);
 }
+function openDefaultGraphContextMenu(e, zKey, fallbackTitle, extraItems){
+  let items=[{
+    icon:'✏️',
+    label:'Rename',
+    onClick:()=>renameDefaultGraph(zKey, fallbackTitle)
+  }];
+  if(Array.isArray(extraItems) && extraItems.length) items=items.concat(extraItems);
+  showAppContextMenu(e, items);
+}
 
 function onPivotCardRightClick(e, idx) {
   let pvt = SAVED_PIVOT_TABLES[idx];
@@ -7247,6 +7276,32 @@ let FILTER_OPEN_DROPDOWN=null;
 let SAVED_CHARTS=[]; // [{id, title, type:'filter'|'pivot', config:{...}, tabName}]
 let editingChartId = null; // Track which chart is being edited
 let namingModalCallback = null; // Callback for naming modal
+function getGraphTitleStoreForTab(tab){
+  let t=tab || (D && D.tabName) || '';
+  if(!S.graphNamesByTab || typeof S.graphNamesByTab!=='object') S.graphNamesByTab={};
+  if(!S.graphNamesByTab[t] || typeof S.graphNamesByTab[t]!=='object') S.graphNamesByTab[t]={};
+  return S.graphNamesByTab[t];
+}
+function getGraphDisplayTitle(zKey, fallbackTitle){
+  let store=getGraphTitleStoreForTab();
+  return store[zKey] || fallbackTitle;
+}
+function setGraphDisplayTitle(zKey, title){
+  let store=getGraphTitleStoreForTab();
+  store[zKey]=title;
+  saveSettings();
+}
+function renameDefaultGraph(zKey, fallbackTitle){
+  showNamingModal(getGraphDisplayTitle(zKey, fallbackTitle), function(newTitle){
+    setGraphDisplayTitle(zKey, newTitle);
+    if (CHART_META && CHART_META[zKey]) CHART_META[zKey].title = newTitle;
+    if (D && D.rawData) doRender();
+    showAppToast('Graph Renamed Successfully!', 'success');
+  });
+}
+function renderDashboardBackToolbar(){
+  return `<div class="mode-backbar"><button class="expand-back mode-back-btn" type="button" onclick="returnToHomePageFromGraph()"><svg class="ic"><use href="#i-x"/></svg> Back to Dashboard</button></div>`;
+}
 function loadSavedCharts(){try{let raw=localStorage.getItem('noc_saved_charts_v1');if(raw)SAVED_CHARTS=JSON.parse(raw);}catch(e){SAVED_CHARTS=[];}}
 function saveSavedCharts(){localStorage.setItem('noc_saved_charts_v1',JSON.stringify(SAVED_CHARTS)); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 function addToDashboard(chartConfig){
@@ -8489,16 +8544,20 @@ function getSiteComplaintPercentData(rows, siteCodeCol, fullNameCol, shortCodeCo
 function bindSiteTicketGraphContext(card){
   if(!card) return;
   card.oncontextmenu=function(e){
-    showAppContextMenu(e,[{icon:'⚙️',label:'Site Ticket Graph Settings',onClick:openSiteTicketGraphSettingsModal}]);
+    openDefaultGraphContextMenu(e,'site_summary','Site Ticket Counts',[
+      {icon:'⚙️',label:'Site Ticket Graph Settings',onClick:openSiteTicketGraphSettingsModal}
+    ]);
   };
-  card.title='Right-click to change site code / full name / short code fields';
+  card.title='Right-click to rename or change site code / full name / short code fields';
 }
 function bindSiteComplaintPercentGraphContext(card){
   if(!card) return;
   card.oncontextmenu=function(e){
-    showAppContextMenu(e,[{icon:'⚙️',label:'Site Complaint Percent Settings',onClick:openSiteComplaintPercentGraphSettingsModal}]);
+    openDefaultGraphContextMenu(e,'site_complaint_percent','Site Complaint Percent',[
+      {icon:'⚙️',label:'Site Complaint Percent Settings',onClick:openSiteComplaintPercentGraphSettingsModal}
+    ]);
   };
-  card.title='Right-click to change active site / active count fields';
+  card.title='Right-click to rename or change active site / active count fields';
 }
 function bindSiteGraphContext(card){
   bindSiteTicketGraphContext(card);
@@ -8522,6 +8581,8 @@ function renderSiteComplaintPercentInMain(){
 function renderSiteTicketCountsCard(sites, cols){
   let bId='siteTicketCanvas';
   let zKey='site_summary';
+  let baseTitle='Site Ticket Counts';
+  let title=getGraphDisplayTitle(zKey, baseTitle);
   let limit=S.chartLimit||0;
   let displaySites=limit>0?sites.slice(0,limit):sites.slice();
   let chartLabels=displaySites.map(s=>s.site);
@@ -8540,19 +8601,21 @@ function renderSiteTicketCountsCard(sites, cols){
   card.id='card_'+zKey;
   card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
   if(isHidden(zKey)) card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[1]};"></div><h3>Site Ticket Counts</h3></div><span class="c-tag" style="background:${TG[1]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th style="width:60px;">Tickets</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[1]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[1]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th style="width:60px;">Tickets</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   area.appendChild(card);
   bindSiteTicketGraphContext(card);
   setTimeout(()=>{
     let colors=chartLabels.map((_,i)=>P[i%P.length]);
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
     CH[bId]=mkChart(bId,'bar',{labels:chartLabels,datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,chartLabels,false);
-    CHART_META[zKey]={ title:'Site Ticket Counts', labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total, type:'site_summary', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[]}])) };
+    CHART_META[zKey]={ title, labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total, type:'site_summary', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[]}])) };
   },30);
 }
 function renderSiteComplaintPercentCard(sites, cols){
   let bId='siteComplaintPercentCanvas';
   let zKey='site_complaint_percent';
+  let baseTitle='Site Complaint Percent';
+  let title=getGraphDisplayTitle(zKey, baseTitle);
   let limit=S.chartLimit||0;
   let displaySites=limit>0?sites.slice(0,limit):sites.slice();
   let chartLabels=displaySites.map(s=>s.site);
@@ -8570,7 +8633,7 @@ function renderSiteComplaintPercentCard(sites, cols){
   card.id='card_'+zKey;
   card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
   if(isHidden(zKey)) card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[2]};"></div><h3>Site Complaint Percent</h3></div><span class="c-tag" style="background:${TG[2]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[2]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[2]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas><span class="chb-lb"><svg class="ic ic-sm"><use href="#i-expand"/></svg> expand</span></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   area.appendChild(card);
   bindSiteComplaintPercentGraphContext(card);
   setTimeout(()=>{
@@ -8603,7 +8666,7 @@ function renderSiteComplaintPercentCard(sites, cols){
         }
       }
     });
-    CHART_META[zKey]={ title:'Site Complaint Percent', labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total:chartValues.reduce((s,v)=>s+Number(v||0),0), type:'site_complaint_percent', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, activeSiteCol: cols.activeSiteCol, activeCountCol: cols.activeCountCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[],ratioText:s.ratioText,percentText:s.percentText,percentValue:Number(s.percentValue||0),activeCount:Number(s.activeCount||0),complaintCount:Number(s.complaintCount||0)}])) };
+    CHART_META[zKey]={ title, labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total:chartValues.reduce((s,v)=>s+Number(v||0),0), type:'site_complaint_percent', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, activeSiteCol: cols.activeSiteCol, activeCountCol: cols.activeCountCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[],ratioText:s.ratioText,percentText:s.percentText,percentValue:Number(s.percentValue||0),activeCount:Number(s.activeCount||0),complaintCount:Number(s.complaintCount||0)}])) };
   },30);
 }
 function showSiteTicketDetailsM(siteCode){
@@ -8631,19 +8694,23 @@ function showSiteComplaintPercentDetailsM(siteCode){
   showRowsM(matches, 'Site Complaint Percent: ' + siteCode + extra, omit);
 }
 
-function bindDuplicateGraphContext(card){
+function bindDuplicateGraphContext(card,zKey,fallbackTitle){
   if(!card)return;
   card.oncontextmenu=function(e){
-    showAppContextMenu(e,[{icon:'⚙️',label:'Duplicate Field Settings',onClick:openDuplicateGraphSettingsModal}]);
+    openDefaultGraphContextMenu(e,zKey||'dup_top_cust',fallbackTitle||'Top Customers with Duplicate Tickets',[
+      {icon:'⚙️',label:'Duplicate Field Settings',onClick:openDuplicateGraphSettingsModal}
+    ]);
   };
-  card.title='Right-click to change duplicate source fields';
+  card.title='Right-click to rename or change duplicate source fields';
 }
-function bindOverTimeGraphContext(card){
+function bindOverTimeGraphContext(card,zKey,fallbackTitle){
   if(!card)return;
   card.oncontextmenu=function(e){
-    showAppContextMenu(e,[{icon:'⚙️',label:'OverTime Field Settings',onClick:openOverTimeGraphSettingsModal}]);
+    openDefaultGraphContextMenu(e,zKey||'ot_severity',fallbackTitle||'OverTime Severity Distribution',[
+      {icon:'⚙️',label:'OverTime Field Settings',onClick:openOverTimeGraphSettingsModal}
+    ]);
   };
-  card.title='Right-click to change overtime source fields';
+  card.title='Right-click to rename or change overtime source fields';
 }
 function renderDuplicateOverviewInMain(){
   if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
@@ -8674,6 +8741,9 @@ function renderEnterpriseSections(){
 function renderCpeComplaintSection(){
   let area = document.getElementById('main');
   if (!area) return;
+  let zKey='cpe_complaints';
+  let baseTitle="CPE Model's Complaint Counts";
+  let title=getGraphDisplayTitle(zKey, baseTitle);
   
   let pool = typeof currentTicketPool === 'function' ? currentTicketPool() : F;
   if (!pool || !pool.length) return;
@@ -8770,7 +8840,7 @@ function renderCpeComplaintSection(){
     <div class="chd">
       <div class="chd-l">
         <div class="cd-dot" style="background:var(--green);"></div>
-        <h3>CPE Model's Complaint Counts</h3>
+        <h3>${escapeHtml(title)}</h3>
       </div>
       <span class="c-tag" style="background:var(--green);">${activeModels.length} models</span>
       <div class="cd-actions">
@@ -8799,6 +8869,7 @@ function renderCpeComplaintSection(){
     </div>
   `;
   
+  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
   area.appendChild(card);
   
   setTimeout(() => {
@@ -8812,7 +8883,7 @@ function renderCpeComplaintSection(){
     let colors = activeModels.map((_, i) => P[i % P.length]);
     
     CHART_META['cpe_complaints'] = {
-      title: 'CPE Complaint Count Graph (Unique Devices)',
+      title: title,
       labels: activeModels,
       shortLabels: activeModels,
       datasets: [{ label: 'Unique Devices', data: activeCounts, backgroundColor: colors }],
@@ -9036,9 +9107,13 @@ function renderTicketTrendSection(){
   let showManual = range==='all';
   let effectiveGran=getEffectiveTotalTrendGran(TREND_GRAN);
   let granLabel = effectiveGran==='daily' ? 'Day by Day' : (effectiveGran==='weekly' ? 'Week by Week' : 'Month by Month');
+  let zKey='trend_total';
+  let baseTitle='Total Ticket Numbers';
+  let title=getGraphDisplayTitle(zKey, baseTitle);
   let card=document.createElement('div');card.className='enterprise-card';card.id='card_trend_total';card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
   if (typeof isHidden === 'function' && isHidden('trend_total')) card.style.display = 'none';
-  card.innerHTML=`<div class="enterprise-head"><div class="enterprise-title"><div class="badge-ico"><svg class="ic"><use href="#i-trend"/></svg></div><div><h2>Total Ticket Numbers</h2></div></div>${showManual?`<div class="pill-tabs" id="ticketTrendTabs"><button class="${TREND_GRAN==='daily'?'on':''}" onclick="switchTicketTrend('daily')">Daily View</button><button class="${TREND_GRAN==='weekly'?'on':''}" onclick="switchTicketTrend('weekly')">Weekly View</button><button class="${TREND_GRAN==='monthly'?'on':''}" onclick="switchTicketTrend('monthly')">Monthly View</button></div>`:`<span class="c-tag" style="background:rgba(99,102,241,.10);color:var(--ac);border:1px solid rgba(99,102,241,.16);">${granLabel}</span>`}</div><div class="enterprise-body"><div class="chart-xl" onclick="openZoom('trend_total','bar')" style="cursor:pointer; height:260px;"><canvas id="totalTicketTrendChart"></canvas></div></div>`;
+  card.innerHTML=`<div class="enterprise-head"><div class="enterprise-title"><div class="badge-ico"><svg class="ic"><use href="#i-trend"/></svg></div><div><h2>${escapeHtml(title)}</h2></div></div>${showManual?`<div class="pill-tabs" id="ticketTrendTabs"><button class="${TREND_GRAN==='daily'?'on':''}" onclick="switchTicketTrend('daily')">Daily View</button><button class="${TREND_GRAN==='weekly'?'on':''}" onclick="switchTicketTrend('weekly')">Weekly View</button><button class="${TREND_GRAN==='monthly'?'on':''}" onclick="switchTicketTrend('monthly')">Monthly View</button></div>`:`<span class="c-tag" style="background:rgba(99,102,241,.10);color:var(--ac);border:1px solid rgba(99,102,241,.16);">${granLabel}</span>`}</div><div class="enterprise-body"><div class="chart-xl" onclick="openZoom('trend_total','bar')" style="cursor:pointer; height:260px;"><canvas id="totalTicketTrendChart"></canvas></div></div>`;
+  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
   area.appendChild(card);
   setTimeout(()=>buildTicketTrendChart(TREND_GRAN),20);
 }
@@ -9047,13 +9122,14 @@ function buildTicketTrendChart(gran){
   let canvas=document.getElementById('totalTicketTrendChart');if(!canvas)return;
   if(CH.totalTicketTrendChart){try{CH.totalTicketTrendChart.destroy();}catch(e){}}
   let actualGran=getEffectiveTotalTrendGran(gran);
+  let title=getGraphDisplayTitle('trend_total','Total Ticket Numbers');
   let baseRows = (typeof currentTicketPool === 'function' ? currentTicketPool() : F);
   let a=aggregateTickets(actualGran,baseRows);
   let gc=S.dark?'rgba(255,255,255,.07)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b',col=cssVar('--ac');
   let colors=a.labels.map((_,i)=>P[i%P.length]);
   
   CHART_META['trend_total'] = {
-    title: 'Total Ticket Numbers (' + actualGran.toUpperCase() + ' View)',
+    title: title,
     labels: a.labels,
     keys: a.keys,
     shortLabels: a.labels,
@@ -9623,6 +9699,9 @@ function renderDuplicateDashboard() {
 
 function renderDuplicateTrendCard(dupRows) {
   if (!dateCol || !dupRows.length) return;
+  let zKey = 'dup_trend';
+  let baseTitle = 'Duplicate Tickets Over Time';
+  let title = getGraphDisplayTitle(zKey, baseTitle);
   let mp = {};
   dupRows.forEach(r => {
     let d = parseLocalDate(r[dateCol]);
@@ -9634,7 +9713,6 @@ function renderDuplicateTrendCard(dupRows) {
   if (labels.length === 0) return;
   let values = labels.map(k => mp[k]);
   
-  let zKey = 'dup_trend';
   let area = document.getElementById("main");
   let card = document.createElement('div');
   card.className = 'cd';
@@ -9647,7 +9725,7 @@ function renderDuplicateTrendCard(dupRows) {
     <div class="chd">
       <div class="chd-l">
         <div class="cd-dot" style="background:var(--ac);"></div>
-        <h3>Duplicate Tickets Over Time</h3>
+        <h3>${escapeHtml(title)}</h3>
       </div>
       <span class="c-tag" style="background:var(--ac);">${totalDupsInPeriod.toLocaleString()} total</span>
       <div class="cd-actions">
@@ -9662,7 +9740,7 @@ function renderDuplicateTrendCard(dupRows) {
     </div>
   `;
   area.appendChild(card);
-  bindDuplicateGraphContext(card);
+  bindDuplicateGraphContext(card,zKey,baseTitle);
   
   setTimeout(() => {
     let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
@@ -9682,7 +9760,7 @@ function renderDuplicateTrendCard(dupRows) {
       }]
     }, gc, tc, labels, false);
     CHART_META[zKey] = {
-      title: 'Duplicate Tickets Over Time',
+      title: title,
       labels: labels,
       shortLabels: labels,
       datasets: [{ data: values, backgroundColor: col }],
@@ -9699,6 +9777,8 @@ function renderDuplicateTrendCard(dupRows) {
 function renderTopCustomersCard(duplicates, totalDupsCount) {
   let bId = 'dupTopCustCanvas';
   let zKey = 'dup_top_cust';
+  let baseTitle='Top Customers with Duplicate Tickets';
+  let title=getGraphDisplayTitle(zKey, baseTitle);
   
   let limit = S.chartLimit || 0;
   let topDuplicates = limit > 0 ? duplicates.slice(0, limit) : duplicates.slice();
@@ -9734,7 +9814,7 @@ function renderTopCustomersCard(duplicates, totalDupsCount) {
     <div class="chd">
       <div class="chd-l">
         <div class="cd-dot" style="background:${DT[0]};"></div>
-        <h3>Top Customers with Duplicate Tickets</h3>
+        <h3>${escapeHtml(title)}</h3>
       </div>
       <span class="c-tag" style="background:${TG[0]};">${duplicates.length} Customers</span>
       <div class="cd-actions">
@@ -9769,7 +9849,7 @@ function renderTopCustomersCard(duplicates, totalDupsCount) {
     </div>
   `;
   area.appendChild(card);
-  bindDuplicateGraphContext(card);
+  bindDuplicateGraphContext(card,zKey,baseTitle);
   
   setTimeout(() => {
     let short = chartLabels.slice();
@@ -9788,7 +9868,7 @@ function renderTopCustomersCard(duplicates, totalDupsCount) {
     }, gc, tc, chartLabels, false);
     
     CHART_META[zKey] = {
-      title: 'Top Customers with Duplicate Tickets',
+      title: title,
       labels: chartLabels,
       shortLabels: short,
       datasets: [{
@@ -10008,6 +10088,9 @@ function renderOverTimeDashboard() {
 
 function renderOverTimeTrendCard(otRowsAll) {
   if (!dateCol || !otRowsAll.length) return;
+  let zKey = 'ot_trend';
+  let baseTitle = 'OverTime Tickets Over Time';
+  let title = getGraphDisplayTitle(zKey, baseTitle);
   let mp = {};
   otRowsAll.forEach(r => {
     let d = parseLocalDate(r[dateCol]);
@@ -10018,7 +10101,6 @@ function renderOverTimeTrendCard(otRowsAll) {
   let labels = Object.keys(mp).sort();
   if (labels.length === 0) return;
   let values = labels.map(k => mp[k]);
-  let zKey = 'ot_trend';
   let area = document.getElementById("main");
   let card = document.createElement('div');
   card.className = 'cd';
@@ -10029,7 +10111,7 @@ function renderOverTimeTrendCard(otRowsAll) {
     <div class="chd">
       <div class="chd-l">
         <div class="cd-dot" style="background:var(--ac);"></div>
-        <h3>OverTime Tickets Over Time</h3>
+        <h3>${escapeHtml(title)}</h3>
       </div>
       <span class="c-tag" style="background:var(--ac);">${totalOtInPeriod.toLocaleString()} total</span>
       <div class="cd-actions">
@@ -10044,7 +10126,7 @@ function renderOverTimeTrendCard(otRowsAll) {
     </div>
   `;
   area.appendChild(card);
-  bindOverTimeGraphContext(card);
+  bindOverTimeGraphContext(card,zKey,baseTitle);
   setTimeout(() => {
     let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
     let tc = S.dark ? '#94a3b8' : '#6b7280';
@@ -10146,7 +10228,7 @@ function renderOverTimeSeverityCard(counts, totalOtCount) {
     </div>
   `;
   area.appendChild(card);
-  bindOverTimeGraphContext(card);
+  bindOverTimeGraphContext(card,zKey,baseTitle);
   setTimeout(() => {
     let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
     let tc = S.dark ? '#94a3b8' : '#6b7280';
@@ -10195,15 +10277,16 @@ function rowsForPeriod(p){return D.rawData.filter(r=>{let d=parseLocalDate(r[dat
 
 function renderCompareDashboard(){
   let area=document.getElementById("main");
+  area.innerHTML = renderDashboardBackToolbar();
   if(!COMPARE_PICKS.length){
-    area.innerHTML=`<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-compare"/></svg></div><div class="e-t">Pick periods to compare</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Choose 2 or more ${COMPARE_GRAN}s from the strip above. Each chart will then show one series per period side-by-side.</p></div>`;
+    area.innerHTML += `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-compare"/></svg></div><div class="e-t">Pick periods to compare</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Choose 2 or more ${COMPARE_GRAN}s from the strip above. Each chart will then show one series per period side-by-side.</p></div>`;
     return;
   }
   if(COMPARE_PICKS.length===1){
-    area.innerHTML=`<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-info"/></svg></div><div class="e-t">Pick at least one more period</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">You picked <strong>${escapeHtml(periodLabel(COMPARE_PICKS[0]))}</strong>. Add another to see the comparison.</p></div>`;
+    area.innerHTML += `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-info"/></svg></div><div class="e-t">Pick at least one more period</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">You picked <strong>${escapeHtml(periodLabel(COMPARE_PICKS[0]))}</strong>. Add another to see the comparison.</p></div>`;
     return;
   }
-  if(D.isPivot){area.innerHTML='<div class="empty-s"><div class="e-t">Compare is not available for pivot tabs.</div></div>';return;}
+  if(D.isPivot){area.innerHTML += '<div class="empty-s"><div class="e-t">Compare is not available for pivot tabs.</div></div>';return;}
 
   // Per-period totals card (summary chart)
   renderPeriodTotalsCard();
@@ -10215,6 +10298,8 @@ function renderCompareDashboard(){
 
 function renderPeriodTotalsCard(){
   let zKey='cmp_totals';
+  let baseTitle='Tickets per period';
+  let title=getGraphDisplayTitle(zKey, baseTitle);
   let area=document.getElementById("main");
   let labels=COMPARE_PICKS.map(periodLabel);
   let values=COMPARE_PICKS.map(p=>rowsForPeriod(p).length);
@@ -10222,12 +10307,13 @@ function renderPeriodTotalsCard(){
   let total=values.reduce((a,b)=>a+b,0);
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   if(isHidden(zKey))card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>Tickets per period</h3></div><span class="c-tag" style="background:var(--ac);">${total.toLocaleString()} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:340px;min-height:340px;"><canvas id="cmpTotB"></canvas><span class="chb-lb">click bar for records</span></div><div class="mini-data-grid">${labels.map((lb,i)=>`<div class="mini-data-item"><span>${escapeHtml(lb)}</span><span>${values[i].toLocaleString()}</span></div>`).join('')}</div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:var(--ac);">${total.toLocaleString()} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:340px;min-height:340px;"><canvas id="cmpTotB"></canvas><span class="chb-lb">click bar for records</span></div><div class="mini-data-grid">${labels.map((lb,i)=>`<div class="mini-data-item"><span>${escapeHtml(lb)}</span><span>${values[i].toLocaleString()}</span></div>`).join('')}</div></div>`;
+  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
   area.appendChild(card);
   setTimeout(()=>{
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
     CH['cmpTotB']=mkPeriodChart('cmpTotB','bar',labels,values,colors,gc,tc);
-    CHART_META[zKey]={title:'Tickets per period',labels,shortLabels:labels,datasets:[{data:values,backgroundColor:colors}],pieLabels:labels,pieValues:values,pieColors:colors,total,type:'cmpTotals',columnName:null,periods:COMPARE_PICKS.slice()};
+    CHART_META[zKey]={title,labels,shortLabels:labels,datasets:[{data:values,backgroundColor:colors}],pieLabels:labels,pieValues:values,pieColors:colors,total,type:'cmpTotals',columnName:null,periods:COMPARE_PICKS.slice()};
   },30);
 }
 function mkPeriodChart(id,type,labels,values,colors,gc,tc){
@@ -10243,6 +10329,8 @@ function mkPeriodChart(id,type,labels,values,colors,gc,tc){
 
 function renderCompareCategoryCard(col,idx){
   let zKey='cmp_cat_'+idx;
+  let baseTitle=col;
+  let title=getGraphDisplayTitle(zKey, baseTitle);
   let area=document.getElementById("main");
   // Build map: per period -> per category count
   let perPeriod=COMPARE_PICKS.map(p=>{let mp={};rowsForPeriod(p).forEach(r=>{let v=r[col];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';mp[k]=(mp[k]||0)+1;});return mp;});
@@ -10256,7 +10344,8 @@ function renderCompareCategoryCard(col,idx){
 
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   if(isHidden(zKey))card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(col)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${cats.length} categories</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;"><canvas id="ccB${idx}"></canvas><span class="chb-lb">click bar for records</span></div><div class="mini-data-grid">${cats.slice(0,8).map((c,i)=>`<div class="mini-data-item"><span>${escapeHtml(c)}</span><span>${union[c].toLocaleString()}</span></div>`).join('')}</div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${cats.length} categories</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;"><canvas id="ccB${idx}"></canvas><span class="chb-lb">click bar for records</span></div><div class="mini-data-grid">${cats.slice(0,8).map((c,i)=>`<div class="mini-data-item"><span>${escapeHtml(c)}</span><span>${union[c].toLocaleString()}</span></div>`).join('')}</div></div>`;
+  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
   area.appendChild(card);
   setTimeout(()=>{
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
@@ -10268,7 +10357,7 @@ function renderCompareCategoryCard(col,idx){
     };
     opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:9}}},x:{grid:{display:false},ticks:{color:tc,font:{size:9},maxRotation:0}}};
     CH['ccB'+idx]=createSafeChart(document.getElementById('ccB'+idx),{type:'bar',data:{labels,datasets},options:opts});
-    CHART_META[zKey]={title:col+' (compare)',labels:cats,shortLabels:labels,datasets,pieLabels:cats,pieValues:cats.map(c=>union[c]),pieColors:cats.map((_,i)=>P[i%P.length]),total,type:'cmpCategory',columnName:col,periods:COMPARE_PICKS.slice()};
+    CHART_META[zKey]={title,labels:cats,shortLabels:labels,datasets,pieLabels:cats,pieValues:cats.map(c=>union[c]),pieColors:cats.map((_,i)=>P[i%P.length]),total,type:'cmpCategory',columnName:col,periods:COMPARE_PICKS.slice()};
   },30);
 }
 
@@ -10692,6 +10781,7 @@ function renderPivotBuilderDashboard() {
 /* ═══ VIEW 1: RENDERED PIVOT TABLES (TIGHT SHEET STYLE WITH WRAPPING HEIGHT & NO SHEET TABS) ═══ */
 function renderPivotLibraryView(area) {
   let libHtml = `
+    ${renderDashboardBackToolbar()}
     <div class="pvt-builder-container">
       ${LATEST_TOAST_MSG ? `
       <div id="pvt-success-notif" style="background:rgba(16,185,129,0.15);color:var(--green);border:1px solid rgba(16,185,129,0.35);padding:10px 16px;border-radius:8px;font-size:13.5px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow-sm);">
@@ -10817,6 +10907,7 @@ function deleteSavedPivotTable(idx) {
 function renderPivotBuilderView(area) {
   let isEdit = PivotStateEngine.editingIndex !== null && PivotStateEngine.editingIndex >= 0 && SAVED_PIVOT_TABLES[PivotStateEngine.editingIndex];
   let html = `
+    ${renderDashboardBackToolbar()}
     <div class="pvt-builder-container">
       <div class="pvt-builder-header" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:var(--shadow-sm);margin-bottom:18px;">
         <div class="pvt-hdr-left" style="display:flex;align-items:center;gap:14px;">
@@ -11846,12 +11937,12 @@ function getColumnUniqueValues(col){
 
 function renderFilterDashboard(){
   let area=document.getElementById("main");
-  area.innerHTML='';
+  area.innerHTML=renderDashboardBackToolbar();
   killCH();CHART_META={};
   
   // Check if data is loaded
   if (!D || !D.rawData || D.rawData.length===0) {
-    area.innerHTML='<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-inbox"/></svg></div><div class="e-t">No data available</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Please select a tab with data first.</p></div>';
+    area.innerHTML+= '<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-inbox"/></svg></div><div class="e-t">No data available</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Please select a tab with data first.</p></div>';
     hideL();
     return;
   }
@@ -11859,7 +11950,7 @@ function renderFilterDashboard(){
   console.log('Rendering filter dashboard with', D.rawData.length, 'rows');
 
   let cols=getFilterableColumns();
-  if(!cols.length){area.innerHTML='<div class="empty-s"><div class="e-t">No filterable columns found.</div></div>';return;}
+  if(!cols.length){area.innerHTML += '<div class="empty-s"><div class="e-t">No filterable columns found.</div></div>';return;}
 
   // Build filter bar (stays stable — not re-rendered on checkbox change)
   let barDiv=document.createElement('div');
@@ -11894,7 +11985,7 @@ function renderFilterDashboard(){
     btnHtml += '<svg style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Cancel Edit</button>';
   } else {
     btnHtml += '<button onclick="returnToHomePageFromGraph()" class="btn-cancel-edit">';
-    btnHtml += '<svg style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg> Exit </button>';
+    btnHtml += '<svg style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg> Back to Dashboard </button>';
   }
   btnHtml += '</div>';
   
