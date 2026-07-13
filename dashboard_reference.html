@@ -6388,15 +6388,35 @@ body #drInfo .dr-b {
 .tools-tray .tool-item-btn:hover {
   transform: translateY(-1px) !important;
 }
+.tools-tray .tool-item-btn,
+#cmpTab,
+#pvtTab,
+#fltTab {
+  margin-left: 0 !important;
+  border-left: none !important;
+  padding-left: 14px !important;
+  padding-right: 12px !important;
+  column-gap: 10px !important;
+}
+.tools-tray .tool-item-btn .ic,
+#cmpTab .ic,
+#pvtTab .ic,
+#fltTab .ic {
+  margin: 0 !important;
+}
 @media (max-width: 768px) {
   .tools-tray {
     min-width: min(86vw, 236px) !important;
     padding: 8px !important;
   }
-  .tools-tray .tool-item-btn {
+  .tools-tray .tool-item-btn,
+  #cmpTab,
+  #pvtTab,
+  #fltTab {
     min-height: 42px !important;
     height: 42px !important;
     border-radius: 12px !important;
+    padding-left: 12px !important;
   }
 }
 
@@ -6622,7 +6642,7 @@ body #drInfo .dr-b {
       <div class="tools-tray" id="toolsTray">
         <div class="tools-tray-head"><svg class="ic ic-sm"><use href="#i-grid"/></svg> Tools</div>
         <div class="tp tool-nav vertical-tool-nav">
-          <button class="tp-b cmp tool-btn tool-item-btn" id="cmpTab" data-tip="Compare" style="margin-left:0 !important;border-left:none !important;padding-left:0 !important;" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg><span class="tool-item-label">Compare</span><span class="cnt" id="cmpCnt">0</span></button>
+          <button class="tp-b cmp tool-btn tool-item-btn" id="cmpTab" data-tip="Compare" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg><span class="tool-item-label">Compare</span><span class="cnt" id="cmpCnt">0</span></button>
           <button class="tp-b pvt tool-btn tool-item-btn" id="pvtTab" data-tip="Pivot" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg><span class="tool-item-label">Pivot</span></button>
           <button class="tp-b flt tool-btn tool-item-btn" id="fltTab" data-tip="Create Graph" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg><span class="tool-item-label">Create Graph</span></button>
         </div>
@@ -7373,6 +7393,7 @@ function returnToHomePageFromGraph() {
     range = restoreState.range;
     subPeriod = restoreState.subPeriod;
     TREND_GRAN = restoreState.trendGran || TREND_GRAN;
+    RETURN_MODE_STATE_ON_NEXT_PROCESS = { ...restoreState };
     PRE_COMPARE_STATE = null;
   }
   if (typeof resetAllAnalyticalModes === 'function') {
@@ -7409,6 +7430,7 @@ let COMPARE_MODE=false;
 let COMPARE_GRAN='month'; // day | week | month | year
 let COMPARE_PICKS=[];      // array of period keys like 'm_2026_5'
 let PRE_COMPARE_STATE=null;
+let RETURN_MODE_STATE_ON_NEXT_PROCESS=null;
 let DUPLICATE_MODE=false;
 let DETECTED_CUST_COL=null;
 let DETECTED_TKT_COL=null;
@@ -8202,23 +8224,14 @@ function toggleChartVis(zKey,visible){
 }
 
 function updateCreatedGraphsVisibility(){
-  // Check if any created graphs are visible in settings
-  let createdGraphItems = document.querySelectorAll('.ch-item[data-created-graph="true"]');
-  let anyVisible = false;
-  createdGraphItems.forEach(item => {
-    let checkbox = item.querySelector('input[type="checkbox"]');
-    if (checkbox && checkbox.checked) {
-      anyVisible = true;
-    }
-  });
-  
-  // Settings header should ALWAYS be visible (don't hide it)
-  // Only the dashboard heading should hide/show based on visibility
-  
-  // Keep heading visible whenever this tab has created graph items; hide grid only if none are visible
+  let tab = (D && D.tabName) || '';
+  let tabCharts = SAVED_CHARTS.filter(sc=>sc.tabName===tab);
+  let hidden = HIDDEN_CHARTS[tab] || [];
+  let anyVisible = tabCharts.some(sc => hidden.indexOf('saved_' + sc.id) < 0 && savedChartHasData(sc));
+
   let dashboardHeading = document.getElementById('createdGraphsHeading');
   if (dashboardHeading) {
-    dashboardHeading.style.display = createdGraphItems.length ? '' : 'none';
+    dashboardHeading.style.display = tabCharts.length ? '' : 'none';
   }
   let dashboardGrid = document.getElementById('createdGraphsGrid');
   if (dashboardGrid) {
@@ -8318,7 +8331,16 @@ function processFetchedTabData(d) {
   let savedOvr = (S.ovrColsByTab && S.ovrColsByTab[D.tabName]) ? S.ovrColsByTab[D.tabName] : {};
   DETECTED_CRE_COL = savedOvr.cre || null;
   DETECTED_RES_COL = savedOvr.res || null;
-  range=S.defaultRange||'all';subPeriod = range==='all' ? 'all' : '';COMPARE_PICKS=[];
+  if (RETURN_MODE_STATE_ON_NEXT_PROCESS) {
+    range = RETURN_MODE_STATE_ON_NEXT_PROCESS.range || (S.defaultRange||'all');
+    subPeriod = RETURN_MODE_STATE_ON_NEXT_PROCESS.subPeriod || (range==='all' ? 'all' : '');
+    TREND_GRAN = RETURN_MODE_STATE_ON_NEXT_PROCESS.trendGran || TREND_GRAN;
+    RETURN_MODE_STATE_ON_NEXT_PROCESS = null;
+  } else {
+    range=S.defaultRange||'all';
+    subPeriod = range==='all' ? 'all' : '';
+  }
+  COMPARE_PICKS=[];
   document.querySelectorAll('.tp-b').forEach(p=>{
     if (p.id !== 'cmpTab' && p.id !== 'dupTab' && p.id !== 'ovrTab' && p.id !== 'fltTab' && p.id !== 'pvtTab') {
       p.classList.toggle('on',p.dataset.r===range);
