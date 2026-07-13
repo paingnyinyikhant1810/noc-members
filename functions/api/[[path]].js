@@ -352,12 +352,18 @@ export const onRequest = async (context) => {
         message TEXT,
         synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`,
+      `CREATE TABLE IF NOT EXISTS dashboard_app_state (
+        dashboard_item_id INTEGER PRIMARY KEY,
+        state_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_items_sort ON dashboard_items(sort_order)`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_items_active ON dashboard_items(is_active)`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_cache_chunks_item ON dashboard_cache_chunks(dashboard_item_id, chunk_index)`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_pages_item ON dashboard_pages(dashboard_item_id, sort_order)`,
       `CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_page ON dashboard_widgets(dashboard_page_id, sort_order)`,
-      `CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC)`
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_dashboard_app_state_item ON dashboard_app_state(dashboard_item_id)`
     ];
 
     for (const sql of stmts) {
@@ -1012,6 +1018,41 @@ export const onRequest = async (context) => {
       dashboardId: dashId,
       settings: normalized
     });
+  }
+
+  const dashAppStateMatch = path.match(/^dashboards\/(\d+)\/app-state$/);
+  if (dashAppStateMatch && method === "GET") {
+    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    const dashId = parseInt(dashAppStateMatch[1], 10);
+    const item = await getDashboardItem(dashId);
+    if (!item) return err("Dashboard item not found", 404);
+    if (!isAdmin && (item.is_active !== 1 || (ROLE_RANK[item.min_role_required] ?? 1) > uRank)) {
+      return err("Access denied", 403);
+    }
+    const row = await env.DB.prepare(`SELECT state_json, updated_at FROM dashboard_app_state WHERE dashboard_item_id=?`).bind(dashId).first();
+    return ok({ success: true, dashboardId: dashId, stateJson: row?.state_json || null, updatedAt: row?.updated_at || null });
+  }
+  if (dashAppStateMatch && method === "PUT") {
+    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
+    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
+    const dashId = parseInt(dashAppStateMatch[1], 10);
+    const item = await getDashboardItem(dashId);
+    if (!item) return err("Dashboard item not found", 404);
+    if (!isAdmin && (item.is_active !== 1 || (ROLE_RANK[item.min_role_required] ?? 1) > uRank)) {
+      return err("Access denied", 403);
+    }
+    let body;
+    try { body = await request.json(); } catch { return err("Invalid JSON"); }
+    const stateJson = typeof body.stateJson === 'string' ? body.stateJson : JSON.stringify(body.stateJson || body || {});
+    await env.DB.prepare(`
+      INSERT INTO dashboard_app_state (dashboard_item_id, state_json, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(dashboard_item_id) DO UPDATE SET
+        state_json = excluded.state_json,
+        updated_at = datetime('now')
+    `).bind(dashId, stateJson).run();
+    return ok({ success: true, dashboardId: dashId, updatedAt: new Date().toISOString() });
   }
 
   if (path === "dashboards/prefetch" && method === "POST") {
