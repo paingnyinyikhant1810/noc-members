@@ -6790,6 +6790,12 @@ const DASH_EMBED = (() => {
     sourceApi: q.get('api') || ''
   };
 })();
+function getDashboardScopeKey(){
+  return (DASH_EMBED && DASH_EMBED.dashboardId) ? String(DASH_EMBED.dashboardId) : 'global';
+}
+function getScopedStorageKey(base){
+  return base + '__' + getDashboardScopeKey();
+}
 
 let EMBED_AUTH_HEADER = '';
 window.addEventListener('message', function(ev){
@@ -6885,6 +6891,28 @@ async function fetchDashboardEmbedData(forceReload){
     rowCount: json.rowCount || rows.length || 0
   };
 }
+async function fetchDashboardEmbedAppState(){
+  if (DASH_EMBED.enabled && !getEmbedAuthHeader()) {
+    await waitForEmbedAuth(2500);
+  }
+  const localKey = getScopedStorageKey('noc_universal_state');
+  const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/app-state';
+  try {
+    const res = await fetch(url, { credentials: 'same-origin', headers: getEmbedApiHeaders() });
+    const txt = await res.text();
+    let json = {};
+    try { json = txt ? JSON.parse(txt) : {}; } catch(e) { throw new Error('Dashboard App State API returned non-JSON response.'); }
+    if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+    if (json && json.stateJson) {
+      try { localStorage.setItem(localKey, json.stateJson); } catch(e) {}
+    }
+    return { success: true, stateJson: json.stateJson || null, mode: 'remote-dashboard-state' };
+  } catch(err) {
+    let simState = null;
+    try { simState = localStorage.getItem(localKey); } catch(e) {}
+    return { success: true, stateJson: simState || null, mode: 'local-fallback-dashboard-state' };
+  }
+}
 
 async function apiCall(action, params = {}) {
   return new Promise((resolve, reject) => {
@@ -6898,24 +6926,37 @@ async function apiCall(action, params = {}) {
         return;
       }
       if (action === 'getStartupBundle') {
-        fetchDashboardEmbedData(false).then(tabData => {
+        Promise.all([fetchDashboardEmbedData(false), fetchDashboardEmbedAppState()]).then(([tabData, appState]) => {
           resolve({
             tabNames: [DASH_EMBED.dashboardName],
             tabData: tabData,
-            appState: { success: true, stateJson: localStorage.getItem('noc_universal_state') || null }
+            appState: appState
           });
         }).catch(reject);
         return;
       }
       if (action === 'saveAppState') {
-        try { localStorage.setItem('noc_universal_state', params.stateJson || ''); } catch(e) {}
-        resolve({ success: true, mode: 'local-embed-state' });
+        const localKey = getScopedStorageKey('noc_universal_state');
+        try { localStorage.setItem(localKey, params.stateJson || ''); } catch(e) {}
+        const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/app-state';
+        fetch(url, {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', ...getEmbedApiHeaders() },
+          body: JSON.stringify({ stateJson: params.stateJson || '' })
+        }).then(async (res) => {
+          const txt = await res.text();
+          let json = {};
+          try { json = txt ? JSON.parse(txt) : {}; } catch(e) { json = {}; }
+          if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+          resolve({ success: true, mode: 'remote-dashboard-state', result: json });
+        }).catch(() => {
+          resolve({ success: true, mode: 'local-fallback-dashboard-state' });
+        });
         return;
       }
       if (action === 'loadAppState') {
-        let simState = null;
-        try { simState = localStorage.getItem('noc_universal_state'); } catch(e) {}
-        resolve({ success: true, stateJson: simState || null });
+        fetchDashboardEmbedAppState().then(resolve).catch(reject);
         return;
       }
       if (action === 'clearCache') {
@@ -7478,8 +7519,8 @@ function renameDefaultGraph(zKey, fallbackTitle){
 function renderDashboardBackToolbar(){
   return `<div class="mode-backbar"><button class="expand-back mode-back-btn" type="button" onclick="returnToHomePageFromGraph()"><svg class="ic"><use href="#i-x"/></svg> Back to Dashboard</button></div>`;
 }
-function loadSavedCharts(){try{let raw=localStorage.getItem('noc_saved_charts_v1');if(raw)SAVED_CHARTS=JSON.parse(raw);}catch(e){SAVED_CHARTS=[];}}
-function saveSavedCharts(){localStorage.setItem('noc_saved_charts_v1',JSON.stringify(SAVED_CHARTS)); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+function loadSavedCharts(){try{let raw=localStorage.getItem(getScopedStorageKey('noc_saved_charts_v1')) || localStorage.getItem('noc_saved_charts_v1');if(raw)SAVED_CHARTS=JSON.parse(raw);}catch(e){SAVED_CHARTS=[];}}
+function saveSavedCharts(){localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'),JSON.stringify(SAVED_CHARTS)); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 function addToDashboard(chartConfig){
   if(!chartConfig)return;
   let id='sc_'+Date.now()+'_'+Math.random().toString(36).substr(2,5);
@@ -7735,11 +7776,11 @@ function saveUniversalAppStateToCloud() {
 
   // Immediate offline fast cache
   try {
-    localStorage.setItem('noc_universal_state', JSON.stringify(stateObj));
-    localStorage.setItem('noc_saved_charts_v1', JSON.stringify(stateObj.savedCharts));
-    localStorage.setItem('noc_saved_pivots_v7', JSON.stringify(stateObj.savedPivots));
-    localStorage.setItem('noc_settings_v2', JSON.stringify(stateObj.settings));
-    localStorage.setItem('noc_hidden_charts', JSON.stringify(stateObj.hiddenCharts));
+    localStorage.setItem(getScopedStorageKey('noc_universal_state'), JSON.stringify(stateObj));
+    localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'), JSON.stringify(stateObj.savedCharts));
+    localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(stateObj.savedPivots));
+    localStorage.setItem(getScopedStorageKey('noc_settings_v2'), JSON.stringify(stateObj.settings));
+    localStorage.setItem(getScopedStorageKey('noc_hidden_charts'), JSON.stringify(stateObj.hiddenCharts));
   } catch(e) {}
 
   // Debounced cloud sync to Google Sheets backend
@@ -7765,12 +7806,12 @@ function loadUniversalAppStateFromCloud() {
           let changed = false;
           if (cloudState.savedCharts && Array.isArray(cloudState.savedCharts)) {
             SAVED_CHARTS = cloudState.savedCharts;
-            localStorage.setItem('noc_saved_charts_v1', JSON.stringify(SAVED_CHARTS));
+            localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'), JSON.stringify(SAVED_CHARTS));
             changed = true;
           }
           if (cloudState.savedPivots && Array.isArray(cloudState.savedPivots)) {
             SAVED_PIVOT_TABLES = cloudState.savedPivots;
-            localStorage.setItem('noc_saved_pivots_v7', JSON.stringify(SAVED_PIVOT_TABLES));
+            localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(SAVED_PIVOT_TABLES));
             changed = true;
           }
           if (cloudState.settings && typeof cloudState.settings === 'object') {
@@ -7778,14 +7819,14 @@ function loadUniversalAppStateFromCloud() {
             S.defaultTab='';
             S.advSummary=true;
             S.trendChart=true;
-            localStorage.setItem('noc_settings_v2', JSON.stringify(S));
+            localStorage.setItem(getScopedStorageKey('noc_settings_v2'), JSON.stringify(S));
             if (typeof applyTheme === 'function') applyTheme();
             if (typeof buildSwatchRow === 'function') buildSwatchRow();
             changed = true;
           }
           if (cloudState.hiddenCharts && typeof cloudState.hiddenCharts === 'object') {
             HIDDEN_CHARTS = cloudState.hiddenCharts;
-            localStorage.setItem('noc_hidden_charts', JSON.stringify(HIDDEN_CHARTS));
+            localStorage.setItem(getScopedStorageKey('noc_hidden_charts'), JSON.stringify(HIDDEN_CHARTS));
             changed = true;
           }
           
@@ -7866,16 +7907,16 @@ function testGasApiUrl() {
 }
 
 function loadSettings(){
-  try{let raw=localStorage.getItem('noc_settings_v2');if(raw)Object.assign(S,JSON.parse(raw));}catch(e){}
+  try{let raw=localStorage.getItem(getScopedStorageKey('noc_settings_v2')) || localStorage.getItem('noc_settings_v2');if(raw)Object.assign(S,JSON.parse(raw));}catch(e){}
   if(localStorage.getItem('noc_dark')==='1')S.dark=true;
   S.defaultTab='';
   S.advSummary=true;
   S.trendChart=true;
   try { let savedApi = localStorage.getItem('noc_gas_api_url'); if (savedApi) GAS_WEB_APP_URL = savedApi; let inp = document.getElementById('gasApiUrlInput'); if (inp) inp.value = GAS_WEB_APP_URL; } catch(e) {}
-  try{let h=localStorage.getItem('noc_hidden_charts');if(h)HIDDEN_CHARTS=JSON.parse(h);}catch(e){HIDDEN_CHARTS={};}
+  try{let h=localStorage.getItem(getScopedStorageKey('noc_hidden_charts')) || localStorage.getItem('noc_hidden_charts');if(h)HIDDEN_CHARTS=JSON.parse(h);}catch(e){HIDDEN_CHARTS={};}
 }
-function saveSettings(){localStorage.setItem('noc_settings_v2',JSON.stringify(S)); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
-function saveHidden(){localStorage.setItem('noc_hidden_charts',JSON.stringify(HIDDEN_CHARTS)); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+function saveSettings(){localStorage.setItem(getScopedStorageKey('noc_settings_v2'),JSON.stringify(S)); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+function saveHidden(){localStorage.setItem(getScopedStorageKey('noc_hidden_charts'),JSON.stringify(HIDDEN_CHARTS)); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
 function getGraphOrderForTab(tab){
   let t = tab || (D && D.tabName) || '';
   if (S.graphOrderByTab && Array.isArray(S.graphOrderByTab[t])) return S.graphOrderByTab[t];
@@ -10780,15 +10821,16 @@ let LATEST_TOAST_MSG = "";
 
 function loadSavedPivotTables() {
   try {
-    let raw = localStorage.getItem('noc_saved_pivots_v7');
+    let raw = localStorage.getItem(getScopedStorageKey('noc_saved_pivots_v7')) || localStorage.getItem('noc_saved_pivots_v7');
     if (raw) SAVED_PIVOT_TABLES = JSON.parse(raw);
+    else SAVED_PIVOT_TABLES = [];
   } catch(e) {
     SAVED_PIVOT_TABLES = [];
   }
 }
 function saveSavedPivotTables() {
   try {
-    localStorage.setItem('noc_saved_pivots_v7', JSON.stringify(SAVED_PIVOT_TABLES));
+    localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(SAVED_PIVOT_TABLES));
     if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();
   } catch(e) {}
 }
