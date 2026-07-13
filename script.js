@@ -36,6 +36,7 @@ let dashboardAutoRetryDone = false;
 let dashboardCache = {};
 let dashboardFetchPromises = {};
 let dashboardPrefetchStarted = false;
+let dashboardPrefetchPromise = null;
 let dashboardChartInstances = [];
 let dashboardLoadPulseTimer = null;
 let dashboardRenderRaf = null;
@@ -1171,12 +1172,12 @@ async function saveDashboardSettings(){
 
 function getDashboardEmbedCacheKey(id){ return `noc_embed_dashboard_data__${id}`; }
 async function startDashboardPrefetch(force=false){
-  if(!isLeader()) return;
+  if(!isLeader()) return Promise.resolve([]);
   const items=(appData.dashboardItems||[]).filter(x=>canSee(x.min_role_required||'leader'));
-  if(!items.length) return;
-  if(dashboardPrefetchStarted && !force) return;
+  if(!items.length) return Promise.resolve([]);
+  if(dashboardPrefetchStarted && !force && dashboardPrefetchPromise) return dashboardPrefetchPromise;
   dashboardPrefetchStarted=true;
-  Promise.all(items.map(async (item) => {
+  dashboardPrefetchPromise = Promise.all(items.map(async (item) => {
     try {
       if(!getDashboardApi(item)) return null;
       const fallbackRes=await fetch(getDashboardApi(item), { headers:{ 'Accept':'application/json' } });
@@ -1210,7 +1211,8 @@ async function startDashboardPrefetch(force=false){
     } catch(e) {
       return null;
     }
-  })).catch(()=>null);
+  })).catch(()=>[]);
+  return dashboardPrefetchPromise;
 }
 async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}={}){
   if(!id) return null;
@@ -1312,6 +1314,9 @@ async function fetchDashboardData(id,{force=false,silent=false,onProgress=null}=
 
 async function showDashboardItem(id,name='Dashboard'){
   if(!isLeader()) return showToast('Leader or above required','error');
+  if(!localStorage.getItem(getDashboardEmbedCacheKey(id)) && dashboardPrefetchPromise){
+    try { await dashboardPrefetchPromise; } catch(e) {}
+  }
   setDashboardViewportMode(true);
   currentDashboardId=id;
   currentDashboardItem=(appData.dashboardItems||[]).find(x=>x.id===id)||{id,name,icon:'fa-chart-line'};
