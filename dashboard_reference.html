@@ -6367,9 +6367,21 @@ body #drInfo .dr-b {
 .created-graphs-grid > .cd:last-child:nth-child(odd) {
   grid-column: 1 / -1 !important;
 }
-.created-graphs-grid > .cd .chd {
+.created-graphs-grid > .cd .chd,
+.compare-created-graphs-grid > .cd .chd {
   min-height: 56px !important;
-  align-items: flex-start !important;
+  align-items: center !important;
+}
+.created-graphs-grid > .cd .chd-l,
+.compare-created-graphs-grid > .cd .chd-l {
+  align-items: center !important;
+  min-height: 24px !important;
+}
+.created-graphs-grid > .cd .chd h3,
+.compare-created-graphs-grid > .cd .chd h3 {
+  display: inline-flex !important;
+  align-items: center !important;
+  line-height: 1.2 !important;
 }
 .created-graphs-grid > .cd .cb {
   flex: 1 1 auto !important;
@@ -6542,6 +6554,7 @@ body #drInfo .dr-b {
 
 /* ═══════════ TOP ICON COLOR UNIFY PATCH V37 ═══════════ */
 .dashboard-item-badge {
+  order: -30;
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
@@ -6783,6 +6796,7 @@ body #drInfo .dr-b {
     <div class="hdr-s" id="subLbl" style="display:none;"></div>
   </div>
   <div class="hdr-r" style="display:flex; flex-direction:row; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; width:auto;">
+    <div class="dashboard-item-badge" id="dashboardItemBadge" title="Current Dashboard Item"></div>
     <div class="period-launch-wrap" id="periodLaunchWrap">
       <button class="icon-btn period-toggle-btn" id="periodToggleBtn" title="Date Range" onclick="togglePeriodTray()"><svg class="ic"><use href="#i-calendar"/></svg></button>
       <div class="period-tray" id="periodTray">
@@ -6824,7 +6838,6 @@ body #drInfo .dr-b {
     <div class="palette-settings-wrap">
       <button class="icon-btn palette-settings-btn" id="setBtn" title="Settings" onclick="openSettings()"><svg class="ic"><use href="#i-settings"/></svg></button>
     </div>
-    <div class="dashboard-item-badge" id="dashboardItemBadge" title="Current Dashboard Item"></div>
   </div>
 </header>
 
@@ -13889,16 +13902,15 @@ function renderExpandedDataTable(){
     table.style.display='none';
     let labels=rows.map(r=>r.label);
     let periods=zd.periods||[];
-    let totalRows=rows.filter(r=>Number(r.value||0)>0);
-    let totalTotal=totalRows.reduce((s,r)=>s+Number(r.value||0),0);
-    sectionHtml += `<div class="compare-breakdown-section"><div class="compare-breakdown-title">Total Breakdown</div><table class="expand-table expand-table-generic"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${totalRows.map((r)=>`<tr onclick="expandedRowClick('${escapeJs(zKey)}',${rows.indexOf(r)})"><td><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${totalTotal>0?((Number(r.value||0)/totalTotal)*100).toFixed(1):'0.0'}%</td></tr>`).join('')}</tbody></table></div>`;
-    let holder=document.createElement('div');
     let sectionHtml=periods.map((p,di)=>{
       let secRows=labels.map((lb,i)=>{ let idx=(zd.labels||[]).indexOf(lb); let val=idx>=0 ? Number((((zd.datasets||[])[di]||{}).data||[])[idx]||0) : 0; return {label:lb,value:val,records:(zd.recordsMap&&zd.recordsMap[p]&&zd.recordsMap[p][lb])?zd.recordsMap[p][lb]:[]}; }).filter(r=>r.value>0);
       let secTotal=secRows.reduce((s,r)=>s+r.value,0);
       return `<div class="compare-breakdown-section"><div class="compare-breakdown-title">${escapeHtml(periodLabel(p))}</div><table class="expand-table expand-table-generic"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${secRows.map((r)=>`<tr onclick="showRowsM((CHART_META['${zKey}'].recordsMap['${escapeJs(p)}']['${escapeJs(r.label)}'])||[],'${escapeJs(zd.title || 'Compare Graph')} · ${escapeJs(r.label)} · ${escapeJs(periodLabel(p))}')"><td><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${secTotal>0?((Number(r.value||0)/secTotal)*100).toFixed(1):'0.0'}%</td></tr>`).join('')}</tbody></table></div>`;
     }).join('');
-    
+    let totalRows=rows.filter(r=>Number(r.value||0)>0);
+    let totalTotal=totalRows.reduce((s,r)=>s+Number(r.value||0),0);
+    sectionHtml += `<div class="compare-breakdown-section"><div class="compare-breakdown-title">Total Breakdown</div><table class="expand-table expand-table-generic"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${totalRows.map((r)=>`<tr onclick="expandedRowClick('${escapeJs(zKey)}',${rows.indexOf(r)})"><td><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${totalTotal>0?((Number(r.value||0)/totalTotal)*100).toFixed(1):'0.0'}%</td></tr>`).join('')}</tbody></table></div>`;
+    let holder=document.createElement('div');
     holder.className='compare-breakdown-wrap';
     holder.innerHTML=sectionHtml;
     wrap.appendChild(holder);
@@ -14510,7 +14522,7 @@ function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 function escapeHtml(s){if(s==null)return '';return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
 function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-inbox"/></svg></div><div class="e-t">No records found</div><p style="font-size:11px;color:var(--t3);margin-top:6px;">Try a different period or data tab</p></div>`;}
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a11b096539fabc78',t:'MTc4MjQ2NDU4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
+
 <!-- Modern Naming Modal -->
 <div id="namingModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;align-items:center;justify-content:center;">
   <div style="background:var(--bg2);border-radius:12px;padding:24px;max-width:500px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
@@ -14550,5 +14562,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1aeab4f0a78b486',t:'MTc4NDAxMjYyMw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1aecdb559aa6be2',t:'MTc4NDAxNDAzMg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
