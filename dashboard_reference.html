@@ -7849,8 +7849,8 @@ document.addEventListener("DOMContentLoaded",()=>{
         if (cloudState.hiddenCharts) HIDDEN_CHARTS = cloudState.hiddenCharts;
         if (cloudState.dropdownState) {
           let ds = cloudState.dropdownState;
-          if (ds.lastSelectedRange) range = ds.lastSelectedRange;
-          if (ds.lastSelectedSubPeriod) subPeriod = ds.lastSelectedSubPeriod;
+          /* Do NOT restore lastSelectedRange / lastSelectedSubPeriod here.
+             Startup must respect S.defaultRange so Default period works reliably. */
           if (ds.compareState) { COMPARE_GRAN = ds.compareState.gran || 'month'; COMPARE_PICKS = ds.compareState.picks || []; }
           if (ds.filterState && ds.filterState.selections) FILTER_SELECTIONS = ds.filterState.selections;
           if (ds.dupState) { DUP_SEARCH_QUERY = ds.dupState.search || ''; DETECTED_CUST_COL = ds.dupState.cust || null; DETECTED_TKT_COL = ds.dupState.tkt || null; }
@@ -7938,14 +7938,10 @@ function saveUniversalAppStateToCloud(immediate, reason) {
         .then(res => {
           console.log('Universal App State synced to Google Sheets Cloud DB permanently:', res);
           if (immediate && typeof hideL === 'function') hideL();
-          if (!reason || typeof showAppToast !== 'function') return;
-          if (res && res.mode === 'remote-dashboard-state') showAppToast(reason + ' synced online.', 'success');
-          else showAppToast(reason + ' saved locally.', 'info');
         })
         .catch(err => {
           console.warn('Cloud Sync failed:', err);
           if (immediate && typeof hideL === 'function') hideL();
-          if (reason && typeof showAppToast === 'function') showAppToast(reason + ' local save only.', 'info');
         });
     }
   };
@@ -7962,9 +7958,6 @@ function loadUniversalAppStateFromCloud() {
   if (typeof apiCall !== 'function') return;
   apiCall('loadAppState')
     .then(res => {
-      if (res && res.mode === 'remote-dashboard-state' && typeof showAppToast === 'function') {
-        showAppToast('Dashboard state synced from online storage.', 'success');
-      }
       if (res && res.success && res.stateJson) {
         try {
           let cloudState = JSON.parse(res.stateJson);
@@ -7999,11 +7992,8 @@ function loadUniversalAppStateFromCloud() {
           
           if (cloudState.dropdownState && typeof cloudState.dropdownState === 'object') {
             let ds = cloudState.dropdownState;
-            if (ds.lastSelectedRange) {
-              range = ds.lastSelectedRange;
-              document.querySelectorAll('.tp-b[data-r]').forEach(p => p.classList.toggle('on', p.dataset.r === range));
-            }
-            if (ds.lastSelectedSubPeriod) subPeriod = ds.lastSelectedSubPeriod;
+            /* Do NOT restore lastSelectedRange / lastSelectedSubPeriod from cloud here.
+               Default period setting should remain the source of truth on load. */
             if (ds.compareState) {
               if (typeof COMPARE_GRAN !== 'undefined') COMPARE_GRAN = ds.compareState.gran || 'month';
               if (typeof COMPARE_PICKS !== 'undefined') COMPARE_PICKS = ds.compareState.picks || [];
@@ -8250,7 +8240,15 @@ function bindSegs(){
   let defTabSel=document.getElementById("defTabSel");
   if(defTabSel) defTabSel.addEventListener('change',e=>{S.defaultTab=e.target.value;saveSettings();});
   let defRangeSel=document.getElementById("defRangeSel");
-  if(defRangeSel) defRangeSel.addEventListener('change',e=>{S.defaultRange=e.target.value;saveSettings();});
+  if(defRangeSel) defRangeSel.addEventListener('change',e=>{
+    S.defaultRange=e.target.value;
+    saveSettings();
+    range=S.defaultRange||'all';
+    subPeriod = range==='all' ? 'all' : '';
+    document.querySelectorAll('.tp-b[data-r]').forEach(p=>p.classList.toggle('on', p.dataset.r===range));
+    if(typeof updateSubPeriodUI==='function') updateSubPeriodUI();
+    if(D && D.rawData && typeof applyFilter==='function') applyFilter();
+  });
   document.querySelectorAll('#cmpGranSeg button').forEach(b=>{
     b.addEventListener('click',()=>{
       document.querySelectorAll('#cmpGranSeg button').forEach(x=>x.classList.remove('on'));
@@ -14147,5 +14145,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1acfc7d39388965',t:'MTc4Mzk5NDk3Ng=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
