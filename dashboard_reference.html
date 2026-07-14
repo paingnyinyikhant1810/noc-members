@@ -281,6 +281,9 @@
     .btt{flex:1;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;}
     .bf{height:100%;border-radius:2px;}
     .bn{font-size:10px;font-weight:600;color:var(--t3);min-width:34px;text-align:right;}
+    .compare-breakdown-wrap{display:grid;gap:14px;}
+    .compare-breakdown-section{border:1px solid var(--border);border-radius:12px;background:var(--bg2);overflow:hidden;}
+    .compare-breakdown-title{padding:10px 12px;background:var(--bg3);color:var(--t1);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;border-bottom:1px solid var(--border);}
 
     /* Pivot */
     .pv-w{border-radius:6px;overflow:hidden;border:1px solid var(--border);}
@@ -6940,7 +6943,7 @@ function updateDashboardItemBadge(){
     return;
   }
   el.style.display='inline-flex';
-  el.textContent = name;
+  el.textContent = name + ' Dashboard';
 }
 function getEmbedDashboardDataCacheKey(){
   return 'noc_embed_dashboard_data__' + getDashboardScopeKey();
@@ -10915,6 +10918,7 @@ function renderCompareMainCard(zKey, baseTitle, periodMaps, countLabel, sourceKe
   let area=document.getElementById('main');
   let rowsHtml=bundle.cats.map((cat,i)=>{ let pc=bundle.total>0?((Number(bundle.union[cat]||0)/bundle.total)*100).toFixed(1):'0.0'; let fc=P[i%P.length]; return `<tr onclick="showRowsM((CHART_META['${zKey}']&&CHART_META['${zKey}'].recordsByCategory&&CHART_META['${zKey}'].recordsByCategory[${JSON.stringify(cat)}])||[],'${escapeJs(baseTitle)}: ${escapeJs(cat)}')"><td class="c-link">${escapeHtml(cat)}</td><td><span class="cnt-p">${Number(bundle.union[cat]||0).toLocaleString()}</span></td><td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td></tr>`; }).join('');
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  card.style.cssText='flex:1 1 100%;width:100%;max-width:100%;grid-column:1 / -1;';
   if(isHidden(zKey)) card.style.display='none';
   card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[0]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[0]};">${escapeHtml(countLabel || (bundle.cats.length + ' categories'))}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;"><canvas id="${zKey}_canvas"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:60px;">Total</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,sourceKey || zKey,baseTitle);
@@ -13681,7 +13685,7 @@ function getExpandedChartRows(zd){
   let computed=computeExpandedChartRowsByZKey(EXPANDED_PAGE_STATE.zKey || (zd && zd.type) || '', zd);
   return computed && computed.rows ? computed.rows : [];
 }
-function expandedRowClick(zKey,index){
+function expandedRowClick(zKey,index,datasetIndex){
   let rows = getFilteredExpandedRows();
   let item=rows[index]; if(!item) return;
   let zd=CHART_META[zKey]; if(!zd) return;
@@ -13707,6 +13711,11 @@ function expandedRowClick(zKey,index){
     return showDuplicateTicketsM(label);
   }
   if(zd.type==='cmpCategory'){
+    if(typeof datasetIndex==='number' && zd.recordsMap && zd.periods && zd.periods[datasetIndex]){
+      let p=zd.periods[datasetIndex];
+      let recs=(zd.recordsMap[p] && zd.recordsMap[p][label]) ? zd.recordsMap[p][label] : [];
+      return showRowsM(recs, (zd.title || 'Compare Graph') + ' · ' + label + ' · ' + periodLabel(p));
+    }
     if(item.records) return showRowsM(item.records, (zd.title || 'Compare Graph') + ': ' + label);
   }
   if(zKey==='ot_severity' || zd.columnName==='_overtime'){
@@ -13757,10 +13766,32 @@ function renderExpandedDataTable(){
   let body=document.getElementById('expandTableBody');
   let counter=document.getElementById('expandRowsMeta');
   let table=document.querySelector('.expand-table');
-  if(!body) return;
+  let wrap=document.querySelector('.expand-table-wrap');
+  if(!body || !table || !wrap) return;
+  let custom=wrap.querySelector('.compare-breakdown-wrap');
+  if(custom) custom.remove();
+  table.style.display='table';
   let rows=getFilteredExpandedRows();
   let zKey=EXPANDED_PAGE_STATE.zKey;
-  if(zKey==='site_summary'){
+  let zd=CHART_META[zKey] || null;
+  if(zd && zd.type==='cmpCategory'){
+    table.style.display='none';
+    let labels=rows.map(r=>r.label);
+    let periods=zd.periods||[];
+    let sectionHtml=periods.map((p,di)=>{
+      let secRows=labels.map((lb,i)=>{ let idx=(zd.labels||[]).indexOf(lb); let val=idx>=0 ? Number((((zd.datasets||[])[di]||{}).data||[])[idx]||0) : 0; return {label:lb,value:val,records:(zd.recordsMap&&zd.recordsMap[p]&&zd.recordsMap[p][lb])?zd.recordsMap[p][lb]:[]}; }).filter(r=>r.value>0);
+      let secTotal=secRows.reduce((s,r)=>s+r.value,0);
+      return `<div class="compare-breakdown-section"><div class="compare-breakdown-title">${escapeHtml(periodLabel(p))}</div><table class="expand-table expand-table-generic"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${secRows.map((r)=>`<tr onclick="showRowsM((CHART_META['${zKey}'].recordsMap['${escapeJs(p)}'][${JSON.stringify(r.label)}])||[],'${escapeJs(zd.title || 'Compare Graph')} · ${escapeJs(r.label)} · ${escapeJs(periodLabel(p))}')"><td><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${secTotal>0?((Number(r.value||0)/secTotal)*100).toFixed(1):'0.0'}%</td></tr>`).join('')}</tbody></table></div>`;
+    }).join('');
+    let totalRows=rows.filter(r=>Number(r.value||0)>0);
+    let totalTotal=totalRows.reduce((s,r)=>s+Number(r.value||0),0);
+    sectionHtml += `<div class="compare-breakdown-section"><div class="compare-breakdown-title">Total Breakdown</div><table class="expand-table expand-table-generic"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${totalRows.map((r)=>`<tr onclick="expandedRowClick('${escapeJs(zKey)}',${rows.indexOf(r)})"><td><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${totalTotal>0?((Number(r.value||0)/totalTotal)*100).toFixed(1):'0.0'}%</td></tr>`).join('')}</tbody></table></div>`;
+    let holder=document.createElement('div');
+    holder.className='compare-breakdown-wrap';
+    holder.innerHTML=sectionHtml;
+    wrap.appendChild(holder);
+    if(counter) counter.textContent = rows.length.toLocaleString() + ' categories';
+  }else if(zKey==='site_summary'){
     if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Site</th><th>Full Name</th><th>Tickets</th><th>Share</th></tr>'; }
     body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td title="${escapeHtml(r.fullName||'')}">${escapeHtml(r.fullName||'—')}</td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
   }else if(zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low'){
@@ -13770,7 +13801,7 @@ function renderExpandedDataTable(){
     if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Label</th><th>Value</th><th>Share</th></tr>'; }
     body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
   }
-  if(counter) counter.textContent = rows.length.toLocaleString() + ' rows';
+  if(counter && !(zd && zd.type==='cmpCategory')) counter.textContent = rows.length.toLocaleString() + ' rows';
   let panel=document.querySelector('.expand-data-panel');
   if(panel){
     panel.classList.remove('expand-data-panel-cpe','expand-data-panel-site','expand-data-panel-site-pct','expand-data-panel-dup','expand-data-panel-ot','expand-data-panel-trend','expand-data-panel-generic');
@@ -13797,6 +13828,22 @@ function createExpandedChartData(zd, chartType){
   let labels=rows.map(r=>r.label);
   let values=rows.map(r=>r.value);
   let colors=rows.map(r=>r.color);
+  if(zd && zd.type==='cmpCategory'){
+    let fullLabels = (zd.labels||[]).slice();
+    let periods = zd.periods || [];
+    let datasets = (zd.datasets||[]).map((ds,di)=>({
+      label: periods[di] ? periodLabel(periods[di]) : (ds.label || ('Series ' + (di+1))),
+      data: labels.map(lb=>{ let idx=fullLabels.indexOf(lb); return idx>=0 ? Number((ds.data||[])[idx]||0) : 0; }),
+      backgroundColor:P[di%P.length],
+      borderColor:P[di%P.length],
+      borderRadius:8,
+      borderSkipped:false,
+      maxBarThickness:34,
+      categoryPercentage:.72,
+      barPercentage:.82
+    }));
+    return { type:'bar', data:{ labels: labels, datasets } };
+  }
   if(chartType==='line'){
     return { type:'line', data:{ labels: wrapAxisLabels(labels,12), datasets:[{ label: zd.title, data: values, borderColor: colors[0]||cssVar('--ac'), backgroundColor: (colors[0]||cssVar('--ac')) + '22', fill:true, tension:.32, pointRadius:3, pointHoverRadius:4, borderWidth:2.2 }] } };
   }
@@ -13820,15 +13867,27 @@ function renderExpandedChart(){
   }else{
     cfg=createExpandedChartData(zd, EXPANDED_PAGE_STATE.chartType||'bar');
   }
+  let isCmpExpanded = zd && zd.type==='cmpCategory';
   cfg.options={
     responsive:true,
     maintainAspectRatio:false,
     animation:{duration:320},
-    plugins:{ legend:{display:false}, valueLabels:{display:true,fontSize:11}, tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}} },
+    plugins:{ legend:{display:isCmpExpanded,position:'top',labels:{color:tc,font:{family:'Inter',size:11,weight:'700'},boxWidth:10,padding:8}}, valueLabels:{display:true,fontSize:11}, tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}} },
     scales:{ y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:11,weight:'700'}}}, x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:9,weight:'700'},autoSkip:false,maxRotation:(EXPANDED_PAGE_STATE.chartType==='line'?24:90),minRotation:(EXPANDED_PAGE_STATE.chartType==='line'?24:90),padding:4}} },
-    onClick:(e,els)=>{ if(els&&els.length) expandedRowClick(EXPANDED_PAGE_STATE.zKey, els[0].index); },
+    onClick:(e,els)=>{ if(els&&els.length){ let di = els[0].datasetIndex || 0; expandedRowClick(EXPANDED_PAGE_STATE.zKey, els[0].index, di); } },
     onHover:(e,els)=>{ e.native.target.style.cursor=els&&els.length?'pointer':'default'; }
   };
+  if(isCmpExpanded){
+    cfg.options.plugins.tooltip.callbacks={
+      title:(ctx)=>{
+        let i=ctx[0].dataIndex; let rows=getFilteredExpandedRows(); return rows[i] ? rows[i].label : '';
+      },
+      label:(ctx)=>{
+        let p=(zd.periods&&zd.periods[ctx.datasetIndex]) ? periodLabel(zd.periods[ctx.datasetIndex]) : (ctx.dataset.label||'');
+        return p + ': ' + Number(ctx.parsed.y||0).toLocaleString();
+      }
+    };
+  }
   if(EXPANDED_PAGE_STATE.zKey==='site_complaint_percent' || EXPANDED_PAGE_STATE.zKey==='site_complaint_percent_high' || EXPANDED_PAGE_STATE.zKey==='site_complaint_percent_low'){
     cfg.options.plugins.valueLabels={display:true,fontSize:10,formatter:(val)=>Number(val||0).toFixed(1)};
     cfg.options.plugins.tooltip.callbacks={
@@ -14378,5 +14437,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae6bdcdf33d98b',t:'MTc4NDAxMDAyNA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae824badd51dad',t:'MTc4NDAxMDk0Mw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
