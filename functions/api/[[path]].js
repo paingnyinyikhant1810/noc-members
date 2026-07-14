@@ -1,1661 +1,14181 @@
-// functions/api/[[path]].js — NOC Portal v5
-// Includes:
-// ✅ Sticky notes stored in D1 (CRUD per user)
-// ✅ Updates: all roles can create; delete scoped to creator (admin deletes any)
-// ✅ Info cards / categories: min_role_required permission
-// ✅ changePassword endpoint (all roles, self only)
-// ✅ Dashboard item CRUD
-// ✅ Dashboard cache + chunk storage for large JSON payloads
-// ✅ Per-dashboard settings + prefetch routes
-
-export const onRequest = async (context) => {
-  try {
-  const { request, env } = context;
-  const url    = new URL(request.url);
-  const path   = url.pathname.replace('/api/', '').replace(/\/$/, '');
-  const method = request.method.toUpperCase();
-
-  // ── CORS ───────────────────────────────────────────────────────────────────
-  const cors = {
-    "Access-Control-Allow-Origin" : "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type",
-  };
-  if (method === "OPTIONS") return new Response(null, { headers: cors });
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const ok  = (d, s = 200) => new Response(JSON.stringify(d), {
-    status: s,
-    headers: { "Content-Type": "application/json", ...cors }
-  });
-  const err = (m, s = 400) => ok({ error: m }, s);
-
-  const ROLE_RANK = { admin: 4, leader: 3, member: 2, intern: 1 };
-  const rankExpr  = (col) =>
-    `CASE ${col} WHEN 'admin' THEN 4 WHEN 'leader' THEN 3 WHEN 'member' THEN 2 ELSE 1 END`;
-  const rbacWhere = (col, rank) => `${rankExpr(col)} <= ${rank}`;
-
-  const safeJson = (v, fallback = null) => {
-    try { return JSON.parse(v); } catch { return fallback; }
-  };
-
-  // ── Auth ───────────────────────────────────────────────────────────────────
-  const getAuth = async () => {
-    const auth = request.headers.get("Authorization") ?? "";
-    if (!auth.startsWith("Basic ")) return null;
-
-    try {
-      const dec  = atob(auth.slice(6));
-      const sep  = dec.indexOf(":");
-      const u    = dec.slice(0, sep);
-      const p    = dec.slice(sep + 1);
-
-      const user = await env.DB.prepare(
-        "SELECT * FROM users WHERE username=? AND password=?"
-      ).bind(u, p).first();
-
-      if (user) {
-        // Best effort only — do not fail auth if last_seen column does not exist yet
-        try {
-          await env.DB.prepare(
-            "UPDATE users SET last_seen = datetime('now') WHERE id = ?"
-          ).bind(user.id).run();
-        } catch (_) { /* ignore presence update errors */ }
-      }
-
-      return user;
-    } catch {
-      return null;
-    }
-  };
-
-  // ── Dashboard helpers ──────────────────────────────────────────────────────
-  const DEFAULT_DASHBOARD_SETTINGS = {
-    showCards: {
-      totalTickets: true,
-      avgResolve: true,
-      closedRate: true,
-      quickSummary: true,
-      trendChart: true,
-      statusChart: true,
-      problemChart: true,
-      siteChart: true,
-      rootCauseChart: true,
-      repeatChart: true,
-    },
-    limits: {
-      trendPoints: 10,
-      statusCount: 5,
-      problemCount: 5,
-      siteCount: 5,
-      rootCauseCount: 6,
-      repeatCount: 5,
-    },
-    graphTypes: {
-      trendChart: 'line',
-      statusChart: 'doughnut',
-      problemChart: 'bar',
-      siteChart: 'bar',
-      rootCauseChart: 'bar',
-      repeatChart: 'list',
-    },
-    defaultGrouping: 'day'
-  };
-
-  const cloneDashDefaults = () => JSON.parse(JSON.stringify(DEFAULT_DASHBOARD_SETTINGS));
-
-  const DEFAULT_DASHBOARD_PAGES = [
-    { slug:'summary', name:'Summary', icon:'fa-gauge-high' },
-    { slug:'trend', name:'Trend', icon:'fa-chart-line' },
-    { slug:'root-cause', name:'Root Cause', icon:'fa-bug' },
-    { slug:'site', name:'Site', icon:'fa-network-wired' },
-    { slug:'customer', name:'Customer', icon:'fa-users' },
-    { slug:'raw-data', name:'Raw Data', icon:'fa-table' },
-  ];
-
-  const ensureDefaultDashboardPages = async (dashboardItemId) => {
-    const existing = (await env.DB.prepare("SELECT id FROM dashboard_pages WHERE dashboard_item_id=? LIMIT 1").bind(dashboardItemId).all()).results ?? [];
-    if (existing.length) return;
-    for (let i = 0; i < DEFAULT_DASHBOARD_PAGES.length; i++) {
-      const page = DEFAULT_DASHBOARD_PAGES[i];
-      await env.DB.prepare(`
-        INSERT INTO dashboard_pages (dashboard_item_id, slug, name, icon, sort_order)
-        VALUES (?, ?, ?, ?, ?)
-      `).bind(dashboardItemId, page.slug, page.name, page.icon, i).run();
-    }
-  };
-
-  const normalizeDashboardSettings = (raw) => {
-    const base = cloneDashDefaults();
-    const parsed = typeof raw === 'string' ? (safeJson(raw, {}) || {}) : (raw || {});
-    const show = parsed.showCards || parsed.show || {};
-    const limits = parsed.limits || {};
-    const graphTypes = parsed.graphTypes || {};
-
-    for (const key of Object.keys(base.showCards)) {
-      if (typeof show[key] === 'boolean') base.showCards[key] = show[key];
-    }
-    for (const key of Object.keys(base.limits)) {
-      const v = Number(limits[key]);
-      if (Number.isFinite(v) && v > 0) base.limits[key] = Math.round(v);
-    }
-    for (const key of Object.keys(base.graphTypes)) {
-      if (typeof graphTypes[key] === 'string' && graphTypes[key].trim()) {
-        base.graphTypes[key] = graphTypes[key].trim();
-      }
-    }
-    if (['day', 'week', 'month', 'year'].includes(parsed.defaultGrouping)) {
-      base.defaultGrouping = parsed.defaultGrouping;
-    }
-    return base;
-  };
-
-  const sheetValuesToObjects = (values) => {
-    if (!Array.isArray(values) || values.length < 2) return [];
-    const headers = (values[0] || []).map((h) => String(h ?? '').trim());
-    return values
-      .slice(1)
-      .filter((row) => Array.isArray(row) && row.some((cell) => String(cell ?? '').trim() !== ''))
-      .map((row) => {
-        const obj = {};
-        headers.forEach((header, idx) => {
-          obj[header || `Column_${idx + 1}`] = row[idx] ?? '';
-        });
-        return obj;
-      });
-  };
-
-  const extractDashboardRows = (payload) => {
-    const isRowArray = (arr) => Array.isArray(arr) && (!arr.length || typeof arr[0] === 'object');
-    const isSheetMatrix = (arr) => Array.isArray(arr) && arr.length >= 2 && Array.isArray(arr[0]) && Array.isArray(arr[1]);
-    const findRows = (node, depth = 0) => {
-      if (depth > 6 || node == null) return [];
-      if (isRowArray(node)) return node;
-      if (isSheetMatrix(node)) return sheetValuesToObjects(node);
-      if (typeof node !== 'object') return [];
-      if (isSheetMatrix(node.values)) return sheetValuesToObjects(node.values);
-
-      const preferred = ['rows', 'data', 'result', 'items', 'records', 'payload', 'values'];
-      for (const key of preferred) {
-        if (node[key] !== undefined) {
-          const hit = findRows(node[key], depth + 1);
-          if (hit.length || Array.isArray(node[key])) return hit;
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Primary CDN: cdnjs (Whitelisted & Trusted for Google Apps Script usercontent iframes & Enterprise Firewalls) -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet" onerror="this.onerror=null;this.href='https://unpkg.com/bootstrap@5.3.0/dist/css/bootstrap.min.css';">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://unpkg.com/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js';document.head.appendChild(s);"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://unpkg.com/chart.js@4.4.1/dist/chart.umd.js';document.head.appendChild(s);"></script>
+  
+  <!-- Secondary Fallback: jsdelivr -->
+  <script>
+/* ═══════════ UNIVERSAL ACCESSIBILITY & FOCUS ENGINE ═══════════ */
+(function() {
+  var origSetAttr = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name, value) {
+    if ((name === 'aria-hidden' || name === 'ariaHidden') && String(value) === 'true') {
+      if (document.activeElement && document.activeElement !== document.body && this.contains(document.activeElement)) {
+        if (typeof document.activeElement.blur === 'function') {
+          document.activeElement.blur();
         }
       }
-
-      for (const key of Object.keys(node)) {
-        const hit = findRows(node[key], depth + 1);
-        if (hit.length) return hit;
-      }
-      return [];
-    };
-    return findRows(payload);
-  };
-
-
-  const normalizeKey = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-  const parseFlexibleDate = (value) => {
-    if (!value) return null;
-    if (value instanceof Date && !isNaN(value)) return value;
-    const s = String(value).trim();
-    const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[,\sT]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-    if (m) {
-      const [, yy, mm, dd, hh='0', mi='0', ss='0'] = m;
-      const d = new Date(Number(yy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss));
-      return isNaN(d) ? null : d;
     }
-    const native = new Date(s.replace(',', ''));
-    return isNaN(native) ? null : native;
+    return origSetAttr.apply(this, arguments);
   };
-  const formatBucket = (date, groupBy='day') => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    if (groupBy === 'year') return `${y}`;
-    if (groupBy === 'month') return `${y}-${m}`;
-    if (groupBy === 'week') {
-      const wd = new Date(date); const day = (wd.getDay() + 6) % 7; wd.setDate(wd.getDate() - day); wd.setHours(0,0,0,0);
-      const utc = new Date(Date.UTC(wd.getFullYear(), wd.getMonth(), wd.getDate()));
-      utc.setUTCDate(utc.getUTCDate() + 4 - (utc.getUTCDay() || 7));
-      const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
-      const isoWeek = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
-      return `${wd.getFullYear()}-W${String(isoWeek).padStart(2, '0')}`;
+  document.addEventListener('hide.bs.modal', function(e) {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
     }
-    return `${y}-${m}-${d}`;
-  };
-  const incMap = (map, key) => {
-    const k = String(key || 'Unknown').trim() || 'Unknown';
-    map[k] = (map[k] || 0) + 1;
-  };
-  const sortMap = (map) => Object.entries(map).sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]));
-  const sortTrendMap = (map) => Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0]));
-  const buildDashboardSummary = (rows) => {
-    const statusCount={}, issueCount={}, siteCount={}, rootCount={}, queueCount={}, townshipCount={}, repeatCount={};
-    const trendDay={}, trendWeek={}, trendMonth={}, trendYear={};
-    let resolvedCount=0,totalResolutionHours=0,overtimeCount=0,closedCount=0,openCount=0;
-    const overtimeHours = 8;
-
-    rows.forEach((row) => {
-      const status = row['Status'] ?? row['status'] ?? 'Unknown';
-      const statusKey = normalizeKey(status);
-      incMap(statusCount, status);
-      if (statusKey.includes('closed') || statusKey.includes('resolved')) closedCount++; else openCount++;
-      incMap(issueCount, row['Ticket Problem'] ?? row['ticket problem'] ?? row['Problem'] ?? 'Unknown');
-      incMap(siteCount, row['Opi Site Code'] ?? row['Opi Site code'] ?? row['opi site code'] ?? 'Unknown');
-      incMap(rootCount, row['Service Root Cause'] ?? row['Root Cause Category'] ?? row['Root Cause'] ?? 'Unknown');
-      incMap(queueCount, row['Queue'] ?? row['queue'] ?? 'Unknown');
-      incMap(townshipCount, row['Township'] ?? row['township'] ?? 'Unknown');
-      const repeatKey = row['Local Service ID'] ?? row['CPE ID'] ?? '';
-      if (repeatKey) incMap(repeatCount, repeatKey);
-
-      const created = parseFlexibleDate(row['Created'] ?? row['Date Created'] ?? row['created'] ?? '');
-      const resolved = parseFlexibleDate(row['Resolved'] ?? row['resolved'] ?? '');
-      if (created) {
-        incMap(trendDay, formatBucket(created, 'day'));
-        incMap(trendWeek, formatBucket(created, 'week'));
-        incMap(trendMonth, formatBucket(created, 'month'));
-        incMap(trendYear, formatBucket(created, 'year'));
+  }, true);
+  document.addEventListener('hidden.bs.modal', function(e) {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+  }, true);
+  document.addEventListener('click', function(e) {
+    var dismissBtn = e.target.closest('[data-bs-dismiss="modal"], .btn-close, .btn-mc, .btn-pvt-action, [onclick*="close"], [onclick*="hide"], [onclick*="Cancel"]');
+    if (dismissBtn) {
+      setTimeout(function() {
+        if (document.activeElement && typeof document.activeElement.blur === 'function') {
+          var m = document.activeElement.closest('.modal');
+          if (m && (m.getAttribute('aria-hidden') === 'true' || m.style.display === 'none' || !m.classList.contains('show'))) {
+            document.activeElement.blur();
+          }
+        }
+      }, 10);
+    }
+  }, true);
+})();
+    window.addEventListener('DOMContentLoaded', function() {
+      if (typeof bootstrap === 'undefined') {
+        console.warn('Primary Bootstrap CDN rate-limited/reset; injecting jsdelivr fallback...');
+        var s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js';
+        document.head.appendChild(s);
       }
-      if (created && resolved && resolved >= created) {
-        const hrs = (resolved - created) / 36e5;
-        totalResolutionHours += hrs;
-        resolvedCount++;
-        if (hrs > overtimeHours) overtimeCount++;
+      if (typeof Chart === 'undefined') {
+        console.warn('Primary Chart.js CDN rate-limited/reset; injecting jsdelivr fallback...');
+        var s2 = document.createElement('script');
+        s2.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+        document.head.appendChild(s2);
       }
     });
+  </script>
 
-    const totalRows = rows.length;
-    const repeatEntries = sortMap(repeatCount).filter(([,v])=>v>1);
-    return {
-      totalRows,
-      closedCount,
-      openCount,
-      resolvedCount,
-      avgResolutionHours: resolvedCount ? totalResolutionHours / resolvedCount : 0,
-      overtimeCount,
-      closedRate: totalRows ? (closedCount / totalRows) * 100 : 0,
-      repeatCustomers: repeatEntries.length,
-      topProblems: sortMap(issueCount),
-      topSites: sortMap(siteCount),
-      topRootCauses: sortMap(rootCount),
-      topQueues: sortMap(queueCount),
-      topTownships: sortMap(townshipCount),
-      statusSeries: sortMap(statusCount),
-      repeatEntries,
-      trendBy: {
-        day: sortTrendMap(trendDay),
-        week: sortTrendMap(trendWeek),
-        month: sortTrendMap(trendMonth),
-        year: sortTrendMap(trendYear),
-      }
-    };
-  };
-
-  const ensureDashboardTables = async () => {
-    const stmts = [
-      `CREATE TABLE IF NOT EXISTS dashboard_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        slug TEXT NOT NULL UNIQUE,
-        icon TEXT NOT NULL DEFAULT 'fa-chart-line',
-        api_url TEXT NOT NULL,
-        min_role_required TEXT NOT NULL DEFAULT 'leader',
-        overtime_hours REAL NOT NULL DEFAULT 8,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        is_active INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )`,
-      `CREATE TABLE IF NOT EXISTS dashboard_cache (
-        dashboard_item_id INTEGER PRIMARY KEY,
-        dashboard_name TEXT NOT NULL,
-        source_url TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        row_count INTEGER NOT NULL DEFAULT 0,
-        last_synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        last_error TEXT
-      )`,
-      `CREATE TABLE IF NOT EXISTS dashboard_cache_chunks (
-        dashboard_item_id INTEGER NOT NULL,
-        chunk_index INTEGER NOT NULL,
-        payload_chunk TEXT NOT NULL,
-        PRIMARY KEY (dashboard_item_id, chunk_index)
-      )`,
-      `CREATE TABLE IF NOT EXISTS dashboard_item_settings (
-        dashboard_item_id INTEGER PRIMARY KEY,
-        settings_json TEXT NOT NULL,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )`,
-      `CREATE TABLE IF NOT EXISTS dashboard_pages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        dashboard_item_id INTEGER NOT NULL,
-        slug TEXT NOT NULL,
-        name TEXT NOT NULL,
-        icon TEXT DEFAULT 'fa-layer-group',
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )`,
-      `CREATE TABLE IF NOT EXISTS dashboard_widgets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        dashboard_page_id INTEGER NOT NULL,
-        widget_type TEXT NOT NULL,
-        title TEXT,
-        settings_json TEXT,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )`,
-      `CREATE TABLE IF NOT EXISTS dashboard_sync_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        dashboard_item_id INTEGER NOT NULL,
-        sync_status TEXT NOT NULL,
-        row_count INTEGER NOT NULL DEFAULT 0,
-        message TEXT,
-        synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )`,
-      `CREATE TABLE IF NOT EXISTS dashboard_app_state (
-        dashboard_item_id INTEGER PRIMARY KEY,
-        state_json TEXT NOT NULL,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_dashboard_items_sort ON dashboard_items(sort_order)`,
-      `CREATE INDEX IF NOT EXISTS idx_dashboard_items_active ON dashboard_items(is_active)`,
-      `CREATE INDEX IF NOT EXISTS idx_dashboard_cache_chunks_item ON dashboard_cache_chunks(dashboard_item_id, chunk_index)`,
-      `CREATE INDEX IF NOT EXISTS idx_dashboard_pages_item ON dashboard_pages(dashboard_item_id, sort_order)`,
-      `CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_page ON dashboard_widgets(dashboard_page_id, sort_order)`,
-      `CREATE INDEX IF NOT EXISTS idx_dashboard_logs_item_time ON dashboard_sync_logs(dashboard_item_id, synced_at DESC)`,
-      `CREATE INDEX IF NOT EXISTS idx_dashboard_app_state_item ON dashboard_app_state(dashboard_item_id)`
-    ];
-
-    for (const sql of stmts) {
-      await env.DB.prepare(sql).run();
+  <style>
+    :root{
+      --bg:#f8fafc;--bg2:#ffffff;--bg3:#f1f5f9;--border:#e2e8f0;
+      --t1:#0f172a;--t2:#64748b;--t3:#94a3b8;
+      --ac:#6366f1;--ac2:#8b5cf6;--ac-bg:#eef2ff;
+      --red:#ef4444;--green:#10b981;--blue:#3b82f6;--orange:#f59e0b;--pink:#ec4899;--teal:#14b8a6;
+      --shadow-sm:0 1px 2px 0 rgba(0,0,0,0.05);
+      --shadow:0 1px 3px 0 rgba(0,0,0,0.1),0 1px 2px -1px rgba(0,0,0,0.1);
+      --shadow-md:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -2px rgba(0,0,0,0.1);
+      --shadow-lg:0 10px 15px -3px rgba(0,0,0,0.1),0 4px 6px -4px rgba(0,0,0,0.1);
+      --r:10px;--fs:12px;
+      --transition:all 0.2s cubic-bezier(0.4,0,0.2,1);
     }
+    [data-theme="dark"]{--bg:#0f1117;--bg2:#1a1d2e;--bg3:#252836;--border:#2d3148;--t1:#f1f5f9;--t2:#94a3b8;--t3:#64748b;--ac-bg:rgba(99,102,241,.14);--shadow:0 1px 2px rgba(0,0,0,.3);}
+    [data-acc="indigo"]{--ac:#4f46e5;--ac2:#7c3aed;--ac-bg:#eef2ff;}
+    [data-acc="indigo"][data-theme="dark"]{--ac:#818cf8;--ac2:#a78bfa;--ac-bg:rgba(99,102,241,.15);}
+    [data-acc="blue"]{--ac:#2563eb;--ac2:#0ea5e9;--ac-bg:#dbeafe;}
+    [data-acc="blue"][data-theme="dark"]{--ac:#60a5fa;--ac2:#38bdf8;--ac-bg:rgba(59,130,246,.15);}
+    [data-acc="green"]{--ac:#16a34a;--ac2:#22c55e;--ac-bg:#dcfce7;}
+    [data-acc="green"][data-theme="dark"]{--ac:#4ade80;--ac2:#22c55e;--ac-bg:rgba(34,197,94,.15);}
+    [data-acc="rose"]{--ac:#e11d48;--ac2:#f43f5e;--ac-bg:#ffe4e6;}
+    [data-acc="rose"][data-theme="dark"]{--ac:#fb7185;--ac2:#f43f5e;--ac-bg:rgba(244,63,94,.15);}
+    [data-acc="orange"]{--ac:#ea580c;--ac2:#f59e0b;--ac-bg:#ffedd5;}
+    [data-acc="orange"][data-theme="dark"]{--ac:#fb923c;--ac2:#fbbf24;--ac-bg:rgba(249,115,22,.15);}
+    [data-acc="teal"]{--ac:#0d9488;--ac2:#14b8a6;--ac-bg:#ccfbf1;}
+    [data-acc="teal"][data-theme="dark"]{--ac:#2dd4bf;--ac2:#14b8a6;--ac-bg:rgba(20,184,166,.15);}
+
+    [data-fs="sm"]{--fs:12px;}
+    [data-fs="md"]{--fs:13px;}
+    [data-fs="lg"]{--fs:15px;}
+    [data-fs="xl"]{--fs:17px;}
+
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);font-family:'Inter',sans-serif;color:var(--t1);font-size:var(--fs);transition:background .2s,color .2s,font-size .15s;}
+
+    /* SVG icon base */
+    .ic{width:16px;height:16px;stroke-width:2;stroke:currentColor;fill:none;stroke-linecap:round;stroke-linejoin:round;display:inline-block;vertical-align:middle;flex-shrink:0;}
+    .ic-sm{width:13px;height:13px;}
+    .ic-lg{width:20px;height:20px;}
+
+    /* Header */
+    .hdr{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:100;box-shadow:var(--shadow-sm);}
+    .hdr-l{display:flex;align-items:center;gap:10px;}
+    .hdr-ico{width:32px;height:32px;border-radius:8px;background:var(--ac);display:flex;align-items:center;justify-content:center;color:#fff;}
+    .hdr-ico .ic{stroke:#fff;width:18px;height:18px;}
+    .hdr-t{font-size:calc(var(--fs) + 2px);font-weight:700;color:var(--t1);line-height:1.2;}
+    .hdr-s{font-size:10.5px;color:var(--t3);font-weight:500;margin-top:1px;}
+    .hdr-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+
+    /* Tabs (period) */
+    .tp{display:flex;gap:0;background:var(--bg3);border-radius:8px;padding:3px;}
+    .tp-b{font-size:11px;font-weight:600;padding:6px 12px;border-radius:6px;border:none;background:transparent;color:var(--t2);cursor:pointer;transition:var(--transition);display:inline-flex;align-items:center;gap:5px;}
+    .tp-b:hover{color:var(--t1);background:var(--bg3);}
+    .tp-b.on{background:var(--bg2);color:var(--ac);box-shadow:var(--shadow-sm);font-weight:700;}
+    .tp-b.cmp{margin-left:4px;border-left:1px solid var(--border);padding-left:14px;color:var(--ac);}
+    .tp-b.cmp.on{background:var(--ac);color:#fff;}
+    .tp-b.cmp .cnt{background:rgba(255,255,255,.25);color:#fff;font-size:9.5px;font-weight:700;padding:1px 7px;border-radius:10px;min-width:18px;text-align:center;}
+    .tp-b.cmp:not(.on) .cnt{background:var(--ac);color:#fff;}
+
+    .tp-b.dup{margin-left:4px;border-left:1px solid var(--border);padding-left:14px;color:var(--orange);}
+    .tp-b.dup.on{background:var(--orange);color:#fff;}
+
+    .tp-b.ovr{margin-left:4px;border-left:1px solid var(--border);padding-left:14px;color:var(--red);}
+    .tp-b.ovr.on{background:var(--red);color:#fff;}
+
+    .tp-b.flt{margin-left:4px;border-left:1px solid var(--border);padding-left:14px;color:var(--teal);}
+    .tp-b.flt.on{background:var(--teal);color:#fff;}
+    .tp-b.pvt{margin-left:4px;border-left:1px solid var(--border);padding-left:14px;color:var(--ac);}
+    .tp-b.pvt.on{background:var(--ac);color:#fff;}
+
+    /* Duplicate Tickets Selector styles */
+    .dup-selector-card {
+      grid-column: 1 / -1;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 12px 16px;
+      margin-bottom: 4px;
+      box-shadow: var(--shadow);
+    }
+    .dup-sel-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .dup-sel-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dup-sel-item label {
+      font-weight: 700;
+      font-size: 11px;
+      color: var(--t2);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0;
+    }
+    .dup-sel-item select {
+      background: var(--bg3);
+      color: var(--t1);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+    }
+    .dup-sel-summary {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--t1);
+      margin-left: auto;
+    }
+
+    .sp-wrap{display:flex;align-items:center;gap:4px;}
+    .sp-sel,.sel{font-size:11px;border:1px solid var(--border);border-radius:6px;padding:5px 10px;background:var(--bg2);color:var(--t1);font-weight:500;outline:none;cursor:pointer;max-width:240px;}
+    .sp-sel:focus,.sel:focus{border-color:var(--ac);}
+
+    .icon-btn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--t2);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:.15s;}
+    .icon-btn:hover{color:var(--ac);border-color:var(--ac);}
+    .icon-btn.act{background:var(--ac);color:#fff;border-color:var(--ac);}
+    .icon-btn .ic{width:15px;height:15px;}
+
+    /* Summary cards */
+    .sum-r{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 18px;}
+    .sc{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;display:flex;align-items:center;gap:10px;transition:var(--transition);box-shadow:var(--shadow-sm);}
+    .sc:hover{box-shadow:var(--shadow);transform:translateY(-1px);}
+    .si{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .si .ic{width:16px;height:16px;}
+    .sv{font-size:18px;font-weight:700;line-height:1;color:var(--t1);}
+    .sl{font-size:10px;font-weight:500;color:var(--t3);margin-top:3px;letter-spacing:.2px;}
+
+    /* Date range info */
+    .dr-i{padding:0 18px 8px;display:flex;gap:8px;flex-wrap:wrap;}
+    .dr-b{display:inline-flex;align-items:center;gap:6px;background:var(--ac-bg);color:var(--ac);padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;}
+
+    /* Main */
+    .ct{
+      padding:16px 18px 36px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:16px;
+      align-items:flex-start;
+      align-content:flex-start;
+    }
+    .cd{
+      flex:1 1 calc(50% - 8px);
+      max-width:calc(50% - 8px);
+      min-width:340px;
+      background:var(--bg2);
+      border:1px solid var(--border);
+      border-radius:var(--r);
+      overflow:hidden;
+      box-shadow:var(--shadow);
+      transition:var(--transition);
+    }
+    #card_trend_main, #ticketTrendCard, #card_trend_total, .dup-selector-card, #card_dup_trend, [id^="card_pv_"], #ticketRecordsCard, #createdGraphsHeading {
+      flex:1 1 100% !important;
+      width:100% !important;
+      max-width:100% !important;
+      grid-column:1 / -1 !important;
+    }
+    @media(max-width:768px){
+      .ct {
+        gap: 12px;
+        padding: 12px 12px 24px;
+      }
+      .cd {
+        flex:1 1 100%;
+        max-width:100%;
+        min-width:0;
+      }
+    }
+    .cd:hover {
+      transform:translateY(-2px);
+      box-shadow:var(--shadow-lg);
+      border-color:var(--ac);
+    }
+    [data-theme="dark"] .cd:hover {
+      box-shadow:0 10px 25px rgba(0,0,0,0.3);
+    }
+    .chd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);gap:6px;flex-wrap:wrap;}
+    .chd-l{display:flex;align-items:center;gap:8px;}
+    .cd-dot{width:7px;height:7px;border-radius:50%;}
+    .chd h3{font-size:calc(var(--fs) - 0.5px);font-weight:600;margin:0;color:var(--t1);}
+    .c-tag{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:5px;color:#fff;}
+    .cd-actions{display:flex;gap:4px;}
+    .cd-actions button{font-size:11px;font-weight:600;padding:4px 8px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--t2);cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:4px;}
+    .cd-actions button:hover{color:var(--ac);border-color:var(--ac);}
+    .cd-actions button.cmp-pick.on{background:var(--ac);color:#fff;border-color:var(--ac);}
+    .cd-actions .ic{width:13px;height:13px;}
+    .cd.cmp-on{outline:2px solid var(--ac);outline-offset:-1px;}
+    .cd.cmp-on .chd{background:var(--ac-bg);}
+    .cb{padding:12px 14px;}
+
+    .chb{height:180px;position:relative;background:var(--bg);border-radius:5px;padding:6px;border:1px solid var(--border);cursor:pointer;transition:.15s;}
+    .chb:hover{border-color:var(--ac);}
+    .chb-lb{position:absolute;bottom:6px;right:8px;font-size:9.5px;color:var(--t3);font-weight:500;pointer-events:none;display:inline-flex;align-items:center;gap:3px;}
+
+    /* Tables */
+    .tb{width:100%;border-collapse:collapse;font-size:11px;}
+    .tb thead th{background:var(--bg3);color:var(--t2);font-weight:600;font-size:9px;text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:3;}
+    .tb tbody tr{cursor:pointer;transition:.1s;}
+    .tb tbody tr:hover{background:var(--ac-bg)!important;}
+    .tb tbody tr:nth-child(even){background:var(--bg);}
+    .tb td{padding:6px 8px;border-bottom:1px solid var(--border);color:var(--t1);}
+    .c-link{font-weight:500;color:var(--ac);}
+    .cnt-p{display:inline-block;min-width:24px;text-align:center;padding:1px 7px;border-radius:5px;font-weight:600;font-size:10.5px;background:var(--ac-bg);color:var(--ac);}
+    .bw{display:flex;align-items:center;gap:6px;}
+    .btt{flex:1;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;}
+    .bf{height:100%;border-radius:2px;}
+    .bn{font-size:10px;font-weight:600;color:var(--t3);min-width:34px;text-align:right;}
+
+    /* Pivot */
+    .pv-w{border-radius:6px;overflow:hidden;border:1px solid var(--border);}
+    .pv{width:100%;border-collapse:collapse;font-size:11.5px;}
+    .pv thead th{background:var(--bg3);color:var(--t1);font-weight:600;font-size:10px;text-transform:uppercase;padding:8px 10px;text-align:center;}
+    .pv thead th:first-child{text-align:left;}
+    .pv td{padding:6px 10px;border-bottom:1px solid var(--border);text-align:center;color:var(--t1);}
+    .pv td:first-child{text-align:left;font-weight:500;color:var(--ac);}
+    .pv tbody tr:hover{background:var(--ac-bg);}
+    .pv tbody tr:nth-child(even){background:var(--bg);}
+    .pv .pv-n{font-weight:600;}
+    .pv .gt td{background:var(--ac-bg);font-weight:700;border-top:2px solid var(--ac);color:var(--t1);}
+    .pv-tg{font-size:9.5px;font-weight:600;background:var(--ac-bg);color:var(--ac);padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.4px;}
+
+    /* Modals */
+    .modal-content{
+      border-radius:12px;
+      border:none;
+      overflow:hidden;
+      background:var(--bg2);
+      color:var(--t1);
+      box-shadow:var(--shadow-lg);
+      animation:modalSlideIn 0.3s cubic-bezier(0.4,0,0.2,1);
+    }
+    @keyframes modalSlideIn {
+      from{opacity:0;transform:scale(0.95) translateY(-20px);}
+      to{opacity:1;transform:scale(1) translateY(0);}
+    }
+    [data-theme="dark"] .modal-content {
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45), 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+    .modal-header{
+      background:var(--bg2);
+      padding:18px 24px;
+      border-bottom:1px solid var(--border);
+    }
+    .modal-header .modal-title{
+      font-size:16px;
+      font-weight:700;
+      color:var(--t1);
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      letter-spacing:-0.3px;
+    }
+    .modal-header .modal-title .ic{
+      stroke:var(--ac);
+      width:20px;
+      height:20px;
+    }
+    .modal-header .btn-close{
+      background-color:var(--bg3);
+      padding:8px;
+      border-radius:50%;
+      opacity:0.8;
+      font-size:10px;
+      transition:all 0.2s ease;
+    }
+    .modal-header .btn-close:hover{
+      transform:scale(1.1);
+      opacity:1;
+    }
+    [data-theme="dark"] .modal-header .btn-close{filter:invert(1);}
+    .m-flt{
+      display:inline-block;
+      background:var(--ac-bg);
+      color:var(--ac);
+      padding:4px 12px;
+      border-radius:8px;
+      font-size:11px;
+      font-weight:700;
+      margin-top:6px;
+    }
+    .modal-body{
+      padding:24px;
+      max-height:500px;
+      overflow-y:auto;
+      background:var(--bg2);
+    }
+    #dModal .modal-body{
+      padding:0;
+    }
+    .mtt{
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      font-size:12px;
+    }
+    .mtt thead th{
+      background:var(--bg3);
+      color:var(--t2);
+      font-weight:700;
+      font-size:10.5px;
+      text-transform:uppercase;
+      letter-spacing:0.5px;
+      padding:12px 16px;
+      position:sticky;
+      top:0;
+      z-index:10;
+      border-bottom:1px solid var(--border);
+    }
+    .mtt td{
+      padding:11px 16px;
+      border-bottom:1px solid var(--border);
+      color:var(--t1);
+      line-height:1.42;
+      vertical-align:top;
+    }
+    .mtt tbody tr{
+      transition:background-color 0.1s ease;
+    }
+    .mtt tbody tr:hover{
+      background-color:var(--ac-bg) !important;
+    }
+    .mtt .hl{font-weight:700;color:var(--red);}
+    .modal-footer{
+      padding:14px 24px;
+      background:var(--bg3);
+      border-top:1px solid var(--border);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .rc{font-size:11px;color:var(--t3);font-weight:500;}
+    .btn-mc{font-size:11px;font-weight:600;padding:6px 12px;border-radius:6px;border:none;background:var(--ac);color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:var(--transition);box-shadow:var(--shadow-sm);letter-spacing:0.01em;}
+    .btn-mc:hover{background:#4f46e5;box-shadow:var(--shadow);transform:translateY(-1px);}
+    .btn-mc:active{transform:translateY(0);box-shadow:var(--shadow-sm);}
+    .btn-mc.sec{background:var(--bg2);color:var(--t1);border:1px solid var(--border);box-shadow:var(--shadow-sm);}
+    .btn-mc.sec:hover{background:var(--bg3);border-color:var(--ac);color:var(--ac);box-shadow:var(--shadow);}
+    .btn-mc .ic{stroke:currentColor;width:13px;height:13px;}
+
+    /* Records modal stacks on top of zoom modal */
+    #dModal{z-index:1080;}
+    .modal-backdrop.high{z-index:1075;}
+
+    /* Zoom */
+    #zoomModal .modal-body,#settingsModal .modal-body{padding:18px;max-height:none;overflow:visible;}
+    .zoom-chart-area{height:430px;position:relative;}
+    .zoom-legend{margin-top:14px;display:flex;flex-wrap:wrap;gap:6px;max-height:140px;overflow:auto;}
+    .zoom-legend-item{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;font-size:11px;font-weight:500;color:var(--t1);transition:.15s;}
+    .zoom-legend-item:hover{border-color:var(--ac);}
+    .zoom-legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
+    .zoom-legend-val{font-weight:700;color:var(--ac);margin-left:2px;}
+    .zoom-legend-pct{font-size:9.5px;color:var(--t3);font-weight:600;}
+    .zoom-type-pills{display:flex;gap:4px;margin-bottom:14px;flex-wrap:wrap;}
+    .ztp{font-size:11px;font-weight:600;padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--t2);cursor:pointer;transition:.15s;}
+    .ztp:hover{color:var(--t1);}
+    .ztp.on{background:var(--ac);color:#fff;border-color:var(--ac);}
+    .zoom-hint{font-size:10.5px;color:var(--t3);font-weight:500;margin-top:8px;display:flex;align-items:center;gap:5px;}
+
+    /* Compare strip */
+    .cmp-strip{display:none;background:var(--bg2);border:1px solid var(--ac);border-radius:var(--r);margin:0 18px 14px;padding:12px 14px;flex-direction:column;gap:10px;}
+    .cmp-strip.on{display:flex;}
+    .cmp-strip .row1{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+    .cmp-strip .lbl{font-size:12px;font-weight:700;color:var(--t1);display:flex;align-items:center;gap:6px;}
+    .cmp-strip .lbl .ic{stroke:var(--ac);}
+    .seg{display:inline-flex;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:2px;}
+    .seg button{font-size:11px;font-weight:600;padding:4px 12px;border:none;border-radius:4px;background:transparent;color:var(--t2);cursor:pointer;}
+    .seg button.on{background:var(--ac);color:#fff;}
+    .cmp-strip .actions{display:flex;gap:6px;margin-left:auto;}
+    .cmp-period-list{display:flex;flex-wrap:wrap;gap:6px;max-height:90px;overflow-y:auto;padding-top:4px;}
+    .cmp-period-chip{font-size:11px;font-weight:600;padding:4px 10px;border-radius:14px;background:var(--bg3);color:var(--t2);border:1px solid var(--border);cursor:pointer;transition:.15s;user-select:none;}
+    .cmp-period-chip:hover{border-color:var(--ac);color:var(--ac);}
+    .cmp-period-chip.on{background:var(--ac);color:#fff;border-color:var(--ac);}
+    .cmp-helper{font-size:10.5px;color:var(--t3);font-weight:500;}
+
+    /* Settings */
+    .st-sec{padding:14px 0;border-bottom:1px solid var(--border);}
+    .st-sec:last-child{border-bottom:none;}
+    .st-h{font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+    .st-h .ic{stroke:var(--ac);}
+    .st-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;flex-wrap:wrap;}
+    .st-lbl{font-size:12.5px;font-weight:600;color:var(--t1);}
+    .st-desc{font-size:10.5px;color:var(--t3);margin-top:2px;}
+    .dm{width:40px;height:22px;border-radius:11px;background:var(--bg3);border:1px solid var(--border);position:relative;cursor:pointer;transition:.25s;flex-shrink:0;}
+    .dm.on{background:var(--ac);border-color:var(--ac);}
+    .dm-d{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.25s;}
+    .dm.on .dm-d{left:20px;}
+    .swatch-row{display:flex;gap:6px;flex-wrap:wrap;}
+    .sw{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid var(--border);transition:.15s;}
+    .sw.on{border-color:var(--t1);transform:scale(1.1);}
+    .ch-list{max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:4px;}
+    .ch-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;cursor:pointer;}
+    .ch-item:hover{background:var(--bg3);}
+    .ch-item input{cursor:pointer;}
+    .ch-item label{flex:1;font-size:11.5px;cursor:pointer;color:var(--t1);font-weight:500;}
+    .sel-w{font-size:12px;border:1px solid var(--border);border-radius:6px;padding:6px 10px;background:var(--bg2);color:var(--t1);font-weight:500;min-width:160px;}
+
+    /* Loader & empty */
+    .ld{display:none;position:fixed;inset:0;background:var(--bg);opacity:.92;z-index:9999;justify-content:center;align-items:center;flex-direction:column;gap:12px;}
+    .ld-bar{width:120px;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;}
+    .ld-fill{width:40%;height:100%;background:var(--ac);border-radius:2px;animation:slide 1s ease-in-out infinite;}
+    @keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+    .ld-txt{font-size:11px;font-weight:600;color:var(--t3);}
+    .empty-s{flex:1 1 100%;text-align:center;padding:100px 20px;color:var(--t3);display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;}
+    .empty-s .e-i{margin-bottom:10px;color:var(--t3);}
+    .empty-s .e-i .ic{width:36px;height:36px;}
+    .empty-s .e-t{font-size:14px;font-weight:600;color:var(--t2);}
+
+    ::-webkit-scrollbar{width:6px;height:6px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;}
+    ::-webkit-scrollbar-thumb:hover{background:var(--t3);}
+
+
+    /* Enterprise redesign additions */
+    .upload-status{font-size:10.5px;color:var(--t3);font-weight:600;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .btn-pro{height:32px;border-radius:8px;border:1px solid var(--border);background:linear-gradient(135deg,var(--ac),var(--ac2));color:#fff;font-size:11px;font-weight:700;padding:0 12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;box-shadow:0 10px 24px rgba(79,70,229,.18);transition:.18s;}
+    .btn-pro:hover{transform:translateY(-1px);filter:brightness(1.05);}
+    .btn-pro .ic{stroke:#fff;width:14px;height:14px;}
+    .btn-lite{height:30px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--t2);font-size:11px;font-weight:700;padding:0 10px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;transition:.16s;}
+    .btn-lite:hover{border-color:var(--ac);color:var(--ac);}
+    .sc{border-radius:14px;box-shadow:var(--shadow);transition:.18s;position:relative;overflow:hidden;}
+    .sc.kpi-click{cursor:pointer;}
+    .sc.kpi-click:after{content:'Click to view data';position:absolute;right:10px;bottom:8px;font-size:9px;font-weight:800;color:var(--t3);opacity:0;transition:.16s;}
+    .sc.kpi-click:hover:after{opacity:.9;}
+    .sc:before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:linear-gradient(90deg,var(--ac),var(--ac2));opacity:.0;transition:.18s;}
+    .sc:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(15,23,42,.08);border-color:rgba(79,70,229,.28);}
+    .sc:hover:before{opacity:1;}
+    .sc .trend{display:inline-flex;align-items:center;gap:3px;margin-top:5px;font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;background:var(--bg3);color:var(--t3);}
+    .sc .trend.up{background:rgba(34,197,94,.12);color:var(--green);}.sc .trend.down{background:rgba(239,68,68,.12);color:var(--red);}.sc .trend.flat{background:var(--bg3);color:var(--t3);}
+    .enterprise-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr);gap:14px;margin-bottom:14px;}
+    .enterprise-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;animation:fadeUp .28s ease both;}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    .enterprise-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent);}
+    .enterprise-title{display:flex;align-items:center;gap:9px;min-width:0;}.enterprise-title h2{font-size:15px;font-weight:800;margin:0;color:var(--t1);}.enterprise-title p{font-size:11px;color:var(--t3);font-weight:600;margin:2px 0 0;}.enterprise-title .badge-ico{width:34px;height:34px;border-radius:11px;background:var(--ac-bg);color:var(--ac);display:flex;align-items:center;justify-content:center;}
+    .enterprise-body{padding:16px 18px;}.chart-xl{height:360px;position:relative;}.chart-md{height:300px;position:relative;}
+    .mini-data-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:12px;}
+    .mini-data-item{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);background:var(--bg);border-radius:10px;padding:8px 10px;font-size:11px;font-weight:800;color:var(--t1);}
+    .mini-data-item span:first-child{color:var(--t2);white-space:normal;word-break:break-word;}
+    .mini-data-item span:last-child{color:var(--ac);font-size:13px;}
+    .pill-tabs{display:flex;background:var(--bg3);border:1px solid var(--border);padding:3px;border-radius:10px;gap:3px;}.pill-tabs button{border:0;background:transparent;color:var(--t2);font-size:11px;font-weight:800;border-radius:8px;padding:6px 12px;cursor:pointer;transition:.15s;}.pill-tabs button:hover{color:var(--t1);}.pill-tabs button.on{background:var(--bg2);color:var(--ac);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+    .enterprise-table-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}.searchbox{height:34px;min-width:260px;border:1px solid var(--border);background:var(--bg2);color:var(--t1);border-radius:10px;padding:0 12px;font-size:12px;font-weight:600;outline:none;}.searchbox:focus{border-color:var(--ac);box-shadow:0 0 0 3px var(--ac-bg);}
+    .enterprise-table-wrap{max-height:430px;overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--bg2);}.enterprise-table{width:100%;border-collapse:separate;border-spacing:0;font-size:11.5px;}.enterprise-table th{position:sticky;top:0;z-index:4;background:var(--bg3);color:var(--t2);text-transform:uppercase;letter-spacing:.35px;font-size:10px;font-weight:800;padding:9px 11px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;}.enterprise-table th:hover{color:var(--ac);}.enterprise-table td{padding:9px 11px;border-bottom:1px solid var(--border);color:var(--t1);white-space:normal;max-width:280px;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.35;vertical-align:top;}.enterprise-table tbody tr:nth-child(even){background:var(--bg);}.enterprise-table tbody tr:hover{background:var(--ac-bg);}
+    .pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:10px;color:var(--t3);font-size:11px;font-weight:700;}.pager button{height:28px;border:1px solid var(--border);background:var(--bg2);color:var(--t2);border-radius:8px;padding:0 10px;font-size:11px;font-weight:800;cursor:pointer;}.pager button:hover:not(:disabled){border-color:var(--ac);color:var(--ac);}.pager button:disabled{opacity:.45;cursor:not-allowed;}.pager select{height:28px;border:1px solid var(--border);background:var(--bg2);color:var(--t1);border-radius:8px;font-size:11px;font-weight:700;}
+    .empty-card{padding:36px 18px;text-align:center;color:var(--t3);font-weight:700;}
+    @media(max-width:1100px){.enterprise-grid{grid-template-columns:1fr;}.chart-xl,.chart-md{height:280px;}}
+    @media(max-width:768px){.enterprise-head{align-items:flex-start;}.enterprise-body{padding:13px;}.chart-xl,.chart-md{height:250px;}.searchbox{min-width:100%;}.pill-tabs{width:100%;}.pill-tabs button{flex:1;padding-left:6px;padding-right:6px;}.enterprise-table td,.enterprise-table th{padding:8px;}.upload-status{max-width:100%;}}
+
+    @media(max-width:768px){.hdr{padding:8px 12px;}.sum-r{padding:10px 12px;}.ct{padding:0 12px 24px;}.cmp-strip{margin:0 12px 14px;}.hdr-r{width:100%;}.zoom-chart-area{height:300px;}}
+
+    /* ═══ FILTER BAR STYLES ═══ */
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 12px 18px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      margin: 0 18px 14px;
+      box-shadow: var(--shadow);
+      align-items: flex-start;
+    }
+    .filter-bar .filter-bar-title {
+      flex: 1 1 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--t1);
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+    .filter-bar .filter-bar-title .ic { stroke: var(--teal); }
+    .filter-col-wrap {
+      position: relative;
+      min-width: 160px;
+      max-width: 260px;
+    }
+    .filter-col-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg2);
+      color: var(--t1);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: .15s;
+      width: 100%;
+      justify-content: space-between;
+    }
+    .filter-col-btn:hover { border-color: var(--teal); color: var(--teal); }
+    .filter-col-btn.has-sel { border-color: var(--teal); background: var(--ac-bg); color: var(--teal); }
+    .filter-col-btn .sel-count {
+      background: var(--teal);
+      color: #fff;
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 10px;
+      min-width: 18px;
+      text-align: center;
+    }
+    .filter-dropdown {
+      display:none;
+      position:absolute;
+      top:100%;
+      left:0;
+      z-index:200;
+      min-width:220px;
+      max-height:300px;
+      overflow-y:auto;
+      background:var(--bg2);
+      border:1px solid var(--border);
+      border-radius:8px;
+      box-shadow:var(--shadow-lg);
+      margin-top:5px;
+      padding:6px;
+      animation:fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn {
+      from{opacity:0;transform:translateY(-8px);}
+      to{opacity:1;transform:translateY(0);}
+    }
+    [data-theme="dark"] .filter-dropdown { box-shadow: 0 12px 36px rgba(0,0,0,.45); }
+    .filter-dropdown.open { display: block; }
+    .filter-dd-search {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--bg3);
+      color: var(--t1);
+      outline: none;
+      margin-bottom: 4px;
+    }
+    .filter-dd-search:focus { border-color: var(--teal); }
+    .filter-dd-actions {
+      display: flex;
+      gap: 6px;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+    .filter-dd-actions button {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--t2);
+      cursor: pointer;
+    }
+    .filter-dd-actions button:hover { color: var(--teal); border-color: var(--teal); }
+    .filter-dd-item {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 8px;
+      border-radius:5px;
+      cursor:pointer;
+      font-size:11px;
+      font-weight:500;
+      color:var(--t1);
+      transition:var(--transition);
+    }
+    .filter-dd-item:hover {
+      background:var(--ac-bg);
+      transform:translateX(2px);
+    }
+    .filter-dd-item input[type="checkbox"] { cursor: pointer; accent-color: var(--teal); }
+    .filter-dd-item .dd-cnt {
+      margin-left: auto;
+      font-size: 9.5px;
+      font-weight: 700;
+      color: var(--t3);
+      background: var(--bg3);
+      padding: 1px 6px;
+      border-radius: 8px;
+    }
+    .filter-active-summary {
+      flex: 1 1 100%;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding-top: 4px;
+    }
+    .filter-chip {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:6px 12px;
+      border-radius:8px;
+      background:rgba(20,184,166,.1);
+      color:var(--teal);
+      font-size:11px;
+      font-weight:600;
+      border:1px solid rgba(20,184,166,.2);
+      transition:var(--transition);
+    }
+    .filter-chip:hover{
+      background:rgba(20,184,166,.15);
+      border-color:rgba(20,184,166,.3);
+    }
+    .filter-chip .chip-x {
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1;
+      opacity: .7;
+    }
+    .filter-chip .chip-x:hover { opacity: 1; }
+    .filter-clear-all {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--red);
+      cursor: pointer;
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+    }
+    .filter-clear-all:hover { border-color: var(--red); background: rgba(239,68,68,.06); }
+
+    /* ═══ PIVOT FILTER VIEW STYLES ═══ */
+    .pivot-filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 14px 18px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      margin: 0 18px 14px;
+      box-shadow: var(--shadow);
+      align-items: flex-end;
+    }
+    .pivot-filter-bar .pf-title {
+      flex: 1 1 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--t1);
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+    .pivot-filter-bar .pf-title .ic { stroke: var(--ac); }
+    .pf-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .pf-field label {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      color: var(--t2);
+    }
+    .pf-field select {
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg2);
+      color: var(--t1);
+      outline: none;
+      cursor: pointer;
+      min-width: 160px;
+    }
+    .pf-field select:focus { border-color: var(--ac); }
+    .pf-gen-btn {
+      height: 34px;
+      border-radius: 8px;
+      border: none;
+      background: var(--ac);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 0 18px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: .15s;
+    }
+    .pf-gen-btn:hover { filter: brightness(1.1); }
+    .pf-gen-btn .ic { stroke: #fff; width: 14px; height: 14px; }
+    .pf-val-selector {
+      flex: 1 1 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      margin-top: 4px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+    .pf-val-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 12px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--t2);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: .15s;
+      user-select: none;
+    }
+    .pf-val-chip:hover { border-color: var(--ac); color: var(--ac); }
+    .pf-val-chip.on { background: var(--ac); color: #fff; border-color: var(--ac); }
+
+    /* Add to Dashboard button */
+    .btn-add-dash {
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--green);
+      background: transparent;
+      color: var(--green);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: .15s;
+    }
+    .btn-add-dash:hover { background: var(--green); color: #fff; }
+    .btn-add-dash .ic { width: 12px; height: 12px; }
+    .btn-remove-dash {
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--red);
+      background: transparent;
+      color: var(--red);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: .15s;
+    }
+    .btn-remove-dash:hover { background: var(--red); color: #fff; }
+    .btn-remove-dash .ic { width: 12px; height: 12px; }
+    .saved-badge {
+      font-size: 9.5px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 5px;
+      background: rgba(34,197,94,.12);
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+    html{scroll-behavior:smooth;}
+  
+    /* ═══════════ EXCEL/GOOGLE SHEETS PIVOT BUILDER STYLES ═══════════ */
+    .pvt-builder-container {
+      padding: 16px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .pvt-builder-header {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 20px;
+    }
+    .pvt-hdr-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .pvt-hdr-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: var(--ac);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    }
+    .pvt-hdr-icon .ic { width: 24px; height: 24px; stroke: #fff; }
+    .pvt-hdr-left h3 { font-size: 18px; font-weight: 700; color: var(--t1); margin: 0; }
+    .pvt-hdr-left p { font-size: 12px; color: var(--t2); margin: 3px 0 0 0; }
+    .pvt-hdr-actions { display: flex; align-items: center; gap: 10px; }
+    
+    .btn-pvt-action {
+      font-size: 12px; font-weight: 600; padding: 8px 16px; border-radius: 8px; border: none;
+      cursor: pointer; transition: var(--transition); display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn-pvt-action.primary {
+      background: var(--ac); color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    }
+    .btn-pvt-action.primary:hover { background: var(--ac); transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+    .btn-pvt-action.secondary {
+      background: var(--bg3); color: var(--t1); border: 1px solid var(--border);
+    }
+    .btn-pvt-action.secondary:hover { background: var(--bg); border-color: var(--t3); }
+    .btn-pvt-action.small { font-size: 11px; padding: 5px 10px; border-radius: 6px; }
+
+    /* Four-Quadrant Architectural Grid */
+    .pvt-quadrant-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    @media (min-width: 1200px) {
+      .pvt-quadrant-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+    @media (min-width: 768px) and (max-width: 1199px) {
+      .pvt-quadrant-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .pvt-quadrant-section {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      min-height: 320px;
+      box-shadow: var(--shadow-sm);
+    }
+    .pvt-sec-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+      border-bottom: 1px dashed var(--border);
+    }
+    .pvt-sec-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--t1);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .btn-pvt-add {
+      background: var(--bg3); border: 1px solid var(--border); color: var(--t1);
+      font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 6px;
+      cursor: pointer; transition: var(--transition);
+    }
+    .btn-pvt-add:hover { background: var(--ac); color: #fff; border-color: var(--ac); }
+    .pvt-cards-container {
+      display: flex; flex-direction: column; gap: 10px; flex: 1;
+      overflow-y: auto; max-height: 450px; padding-right: 2px;
+    }
+    .pvt-empty-sec {
+      text-align: center; color: var(--t3); font-size: 11.5px; padding: 24px 10px;
+      border: 1px dashed var(--border); border-radius: 8px; margin: auto 0;
+    }
+
+    /* Individual Field Cards matching Gemini sketch */
+    .pvt-card {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 12px; box-shadow: var(--shadow-sm); position: relative;
+      transition: var(--transition);
+    }
+    .pvt-card:hover { border-color: var(--ac); box-shadow: var(--shadow); }
+    .pvt-card-hdr {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(0,0,0,0.04);
+    }
+    [data-theme="dark"] .pvt-card-hdr { border-bottom-color: rgba(255,255,255,0.06); }
+    .pvt-fld-sel {
+      font-size: 12.5px; font-weight: 700; color: var(--t1); background: transparent;
+      border: none; outline: none; cursor: pointer; flex: 1; padding: 2px 0;
+    }
+    .pvt-card-close {
+      background: transparent; border: none; color: var(--t3); font-size: 13px; font-weight: 700;
+      width: 22px; height: 22px; border-radius: 4px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: var(--transition);
+    }
+    .pvt-card-close:hover { background: rgba(239,68,68,0.12); color: var(--red); }
+    
+    .pvt-card-body { display: flex; flex-direction: column; gap: 8px; }
+    .pvt-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .pvt-grp { display: flex; flex-direction: column; gap: 3px; }
+    .pvt-grp label { font-size: 10px; font-weight: 600; color: var(--t2); text-transform: uppercase; letter-spacing: 0.3px; }
+    .pvt-sel {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+      padding: 5px 8px; font-size: 11.5px; color: var(--t1); outline: none; cursor: pointer;
+      width: 100%; transition: var(--transition); text-align: left;
+    }
+    .pvt-sel:focus { border-color: var(--ac); }
+    .pvt-chk-row { margin-top: 2px; }
+    .pvt-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--t1); cursor: pointer; font-weight: 500; }
+    .pvt-chk input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--ac); cursor: pointer; }
+
+    .pvt-filter-status-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+
+    /* Live Preview Section */
+    .pvt-preview-section {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px; box-shadow: var(--shadow-sm);
+    }
+    .pvt-status {
+      padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 500; margin-bottom: 14px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .pvt-status.processing { background: var(--ac-bg); color: var(--ac); border: 1px solid var(--ac); }
+    .pvt-status.success { background: rgba(16,185,129,0.12); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+    .pvt-status.error { background: rgba(239,68,68,0.12); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+
+    .pvt-json-wrap {
+      background: #1e293b; color: #f8fafc; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-family: monospace;
+    }
+    .pvt-json-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 11px; color: #94a3b8; }
+    .pvt-json-code { font-size: 11.5px; line-height: 1.4; overflow-x: auto; margin: 0; color: #a5f3fc; }
+
+    .pvt-table-container { overflow-x: auto; max-height: 450px; border: 1px solid var(--border); border-radius: 8px; }
+    .pvt-preview-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+    .pvt-preview-table th, .pvt-preview-table td { padding: 8px 12px; border: 1px solid var(--border); }
+    .pvt-preview-table thead th { background: var(--bg3); font-weight: 700; position: sticky; top: 0; z-index: 5; }
+    .pvt-preview-table tbody tr:hover { background: var(--bg3); }
+    .pvt-preview-table .gt-row { font-weight: 700; background: var(--ac-bg); }
+
+    /* Filter dropdown menu */
+    .pvt-filter-menu {
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+      box-shadow: var(--shadow-lg); max-height: 220px; overflow-y: auto; padding: 8px; margin-top: 4px;
+    }
+    .pvt-fm-item { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 11px; cursor: pointer; border-radius: 4px; }
+    .pvt-fm-item:hover { background: var(--bg3); }
+
+    .pvt-cell-clickable { cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease; }
+    .pvt-cell-clickable:hover { background-color: var(--ac-bg) !important; color: var(--ac) !important; text-decoration: underline; }
+    
+
+/* ═══════════ REFINED UI & PIVOT CARD HOVER EFFECTS ═══════════ */
+.hdr {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04) !important;
+  padding: 10px 20px !important;
+}
+.tp {
+  background: var(--bg3) !important;
+  border: 1px solid var(--border) !important;
+  padding: 4px !important;
+  border-radius: 10px !important;
+  gap: 2px !important;
+}
+.tp-b {
+  border-radius: 7px !important;
+  padding: 6px 12px !important;
+  font-weight: 600 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.tp-b:hover {
+  background: rgba(0,0,0,0.04) !important;
+  color: var(--t1) !important;
+}
+[data-theme="dark"] .tp-b:hover {
+  background: rgba(255,255,255,0.06) !important;
+}
+.tp-b.on {
+  background: var(--bg2) !important;
+  color: var(--ac) !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08) !important;
+  font-weight: 700 !important;
+}
+
+.btn-pvt-edit-card {
+  padding: 6px 14px;
+  font-size: 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--t1);
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm);
+}
+.btn-pvt-edit-card:hover {
+  background: var(--ac) !important;
+  color: #fff !important;
+  border-color: var(--ac) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25) !important;
+}
+
+.btn-pvt-delete-card {
+  padding: 6px 14px;
+  font-size: 12px;
+  background: var(--bg3);
+  border: 1px solid rgba(239,68,68,0.25);
+  color: var(--red);
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm);
+}
+.btn-pvt-delete-card:hover {
+  background: var(--red) !important;
+  color: #fff !important;
+  border-color: var(--red) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239,68,68,0.35) !important;
+}
+
+
+/* ═══════════ REFINED NAVIGATION BAR & TAB PILL STYLING ═══════════ */
+.tp {
+  background: var(--bg3) !important;
+  border: 1px solid var(--border) !important;
+  padding: 5px !important;
+  border-radius: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  flex-wrap: wrap !important;
+}
+.tp-b {
+  border-radius: 8px !important;
+  padding: 7px 13px !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border: 1px solid transparent !important;
+}
+.tp-b:hover:not(.on) {
+  background: rgba(0,0,0,0.04) !important;
+  color: var(--t1) !important;
+}
+[data-theme="dark"] .tp-b:hover:not(.on) {
+  background: rgba(255,255,255,0.06) !important;
+}
+
+/* Standard Period Tabs when ON (All, Daily, Weekly, Monthly, Yearly) */
+.tp-b[data-r].on {
+  background: var(--bg2) !important;
+  color: var(--ac) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
+  font-weight: 800 !important;
+}
+
+/* Analytical Mode Tabs when ON (Soft Background + Matching Accent Text Color!) */
+.tp-b.cmp.on {
+  background: var(--ac-bg) !important;
+  color: var(--ac) !important;
+  border-color: var(--ac) !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+  font-weight: 800 !important;
+}
+.tp-b.dup.on {
+  background: rgba(245,158,11,0.15) !important;
+  color: #d97706 !important;
+  border-color: rgba(245,158,11,0.4) !important;
+  box-shadow: 0 2px 8px rgba(245,158,11,0.2) !important;
+  font-weight: 800 !important;
+}
+[data-theme="dark"] .tp-b.dup.on { color: #f59e0b !important; }
+
+.tp-b.ovr.on {
+  background: rgba(239,68,68,0.15) !important;
+  color: #e11d48 !important;
+  border-color: rgba(239,68,68,0.35) !important;
+  box-shadow: 0 2px 8px rgba(239,68,68,0.2) !important;
+  font-weight: 800 !important;
+}
+[data-theme="dark"] .tp-b.ovr.on { color: #f43f5e !important; }
+
+.tp-b.pvt.on {
+  background: rgba(0,0,0,0.1) !important;
+  color: var(--ac) !important;
+  border-color: rgba(0,0,0,0.25) !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+  font-weight: 800 !important;
+}
+[data-theme="dark"] .tp-b.pvt.on { color: #60a5fa !important; }
+
+.tp-b.flt.on {
+  background: rgba(20,184,166,0.15) !important;
+  color: #0d9488 !important;
+  border-color: rgba(20,184,166,0.35) !important;
+  box-shadow: 0 2px 8px rgba(20,184,166,0.2) !important;
+  font-weight: 800 !important;
+}
+[data-theme="dark"] .tp-b.flt.on { color: #2dd4bf !important; }
+
+/* ═══════════ REFINED BUILDER ACTION BUTTONS & HOVER EFFECTS ═══════════ */
+.btn-pvt-nav {
+  padding: 8px 16px; font-size: 12.5px; background: var(--bg3); border: 1px solid var(--border); color: var(--t1); border-radius: 10px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: var(--shadow-sm);
+}
+.btn-pvt-nav:hover { background: var(--ac); color: #fff !important; border-color: var(--ac); transform: translateX(-3px); box-shadow: 0 6px 16px rgba(99,102,241,0.35); }
+
+.btn-pvt-reset {
+  padding: 8px 16px; font-size: 12.5px; background: var(--bg3); border: 1px solid var(--border); color: var(--t1); border-radius: 10px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: var(--shadow-sm);
+}
+.btn-pvt-reset:hover { background: #64748b; color: #fff !important; border-color: #64748b; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(100,116,139,0.35); }
+.btn-pvt-reset:hover .ic { transform: rotate(180deg); transition: transform 0.4s ease; }
+
+.btn-pvt-submit {
+  padding: 10px 22px; font-size: 13.5px; background: linear-gradient(135deg, var(--ac), var(--ac2)); color: #fff !important; border: none; border-radius: 10px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+}
+.btn-pvt-submit:hover { background: linear-gradient(135deg, var(--ac), var(--ac2)); transform: translateY(-2px) scale(1.02); box-shadow: 0 10px 25px rgba(59,130,246,0.5); }
+
+
+/* ═══════════ ABSOLUTE TAB CENTERING & ALIGNMENT ═══════════ */
+.tp {
+  display: flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  flex-wrap: wrap !important;
+}
+.tp-b {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  height: 32px !important;
+  padding: 0 13px !important;
+  border-radius: 8px !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  border: 1px solid transparent !important;
+}
+.tp-b.cmp, .tp-b.dup, .tp-b.ovr, .tp-b.pvt, .tp-b.flt {
+  margin-left: 2px !important;
+  border-left: 1px solid var(--border) !important;
+  padding-left: 14px !important;
+}
+.tp-b.on {
+  font-weight: 800 !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08) !important;
+}
+
+
+/* ═══════════ ULTRA-MODERN CUSTOM DROPDOWN COMPONENT ═══════════ */
+@keyframes modSelFadeIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.mod-sel-btn {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--t1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: left;
+  box-shadow: var(--shadow-sm);
+  user-select: none;
+}
+.mod-sel-btn:hover {
+  border-color: var(--ac);
+  background: var(--bg2);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.mod-sel-btn.open {
+  border-color: var(--ac);
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.15);
+}
+.mod-sel-btn.open .mod-sel-arrow {
+  transform: rotate(180deg);
+  color: var(--ac);
+}
+
+.mod-sel-menu {
+  position: absolute;
+  z-index: 10000;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 20px 40px -5px rgba(0,0,0,0.3);
+  padding: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: modSelFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: 'Inter', sans-serif;
+}
+
+.mod-sel-item {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--t1);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.mod-sel-item:hover {
+  background: var(--bg3);
+  color: var(--ac);
+  padding-left: 16px;
+}
+.mod-sel-item.selected {
+  background: var(--ac-bg);
+  color: var(--ac);
+  font-weight: 700;
+}
+
+
+/* ═══════════ ABSOLUTE BUTTON CENTERING (PHOTO 5 FIX) ═══════════ */
+
+.btn-pvt-action, .btn-pvt-nav, .btn-pvt-reset, .btn-pvt-submit {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  height: 36px !important;
+  padding: 0 16px !important;
+  box-sizing: border-box !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  font-family: 'Inter', sans-serif !important;
+}
+.btn-pvt-action span, .btn-pvt-nav span, .btn-pvt-reset span, .btn-pvt-submit span {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.btn-pvt-edit-card, .btn-pvt-delete-card {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  line-height: 1 !important;
+  gap: 6px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  font-family: 'Inter', sans-serif !important;
+}
+.btn-pvt-action span, .btn-pvt-nav span, .btn-pvt-reset span, .btn-pvt-submit span, .btn-pvt-edit-card span, .btn-pvt-delete-card span {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* ═══════════ MODERN HEADER SELECT DROPDOWNS (PHOTOS 1 TO 4 FIX) ═══════════ */
+.header-mod-btn {
+  background: var(--bg2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  padding: 6px 12px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: var(--t1) !important;
+  height: 32px !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: all .2s ease !important;
+}
+.header-mod-btn:hover {
+  border-color: var(--ac) !important;
+  background: var(--bg2) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+}
+
+
+/* ═══════════ PIVOT CARD HOVER EFFECT & BUTTON CENTERING ═══════════ */
+.pvt-rendered-section {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pvt-rendered-section:hover {
+  border-color: var(--ac) !important;
+  transform: translateY(-3px);
+  box-shadow: 0 14px 28px -6px rgba(0,0,0,0.15), 0 4px 10px -2px rgba(0,0,0,0.08) !important;
+}
+
+.btn-pvt-action, .btn-pvt-nav, .btn-pvt-reset, .btn-pvt-submit, .btn-pvt-edit-card, .btn-pvt-delete-card {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  height: 36px !important;
+  padding: 0 16px !important;
+  box-sizing: border-box !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  font-family: 'Inter', sans-serif !important;
+}
+.btn-pvt-action span, .btn-pvt-nav span, .btn-pvt-reset span, .btn-pvt-submit span, .btn-pvt-edit-card span, .btn-pvt-delete-card span {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+
+/* ═══════════ COMPARE STRIP BUTTON HOVER EFFECTS ═══════════ */
+.btn-cmp-clear {
+  padding: 6px 14px !important;
+  font-size: 11.5px !important;
+  background: rgba(239,68,68,0.12) !important;
+  border: 1px solid rgba(239,68,68,0.3) !important;
+  color: var(--red) !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+.btn-cmp-clear:hover {
+  background: var(--red) !important;
+  color: #fff !important;
+  border-color: var(--red) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(239,68,68,0.35) !important;
+}
+
+.btn-cmp-exit {
+  padding: 6px 14px !important;
+  font-size: 11.5px !important;
+  background: var(--bg3) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--t1) !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+.btn-cmp-exit:hover {
+  background: var(--ac) !important;
+  color: #fff !important;
+  border-color: var(--ac) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25) !important;
+}
+
+
+/* ═══════════ UNIVERSAL COLOR THEME & BUTTON HOVER ENHANCEMENTS (ALL PAGES) ═══════════ */
+/* 0. Universal Button Structural Sizing & Flex Alignment (Fixes Create & Preview, Exit/Home, and all Action Buttons) */
+.btn-create-preview, .btn-cancel-edit, .btn-add-dash, .btn-pvt-submit, .btn-pvt-add, .btn-pvt-action, .btn-pvt-nav, .btn-pvt-reset, .btn-pvt-edit-card, .btn-pvt-delete-card, .btn-expand-dash, .btn-edit-dash, .btn-remove-dash, .btn-lite, .btn-mc, .btn-cmp-clear, .btn-cmp-exit {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  font-family: 'Inter', sans-serif !important;
+  box-sizing: border-box !important;
+  user-select: none !important;
+  text-decoration: none !important;
+  cursor: pointer !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Sizing for Large Primary/Builder Buttons (Create & Preview, Exit/Home, Pivot Generate, Pivot Add, Pivot Nav, Pivot Reset) */
+.btn-create-preview, .btn-cancel-edit, .btn-pvt-submit, .btn-pvt-add, .btn-pvt-nav, .btn-pvt-reset {
+  height: 38px !important;
+  padding: 0 22px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  border-radius: 8px !important;
+  gap: 8px !important;
+}
+
+/* Sizing for Medium/Card Buttons (Add to Dashboard, Edit Card, Delete Card, Modal Action Buttons, Compare Exit/Clear) */
+.btn-add-dash, .btn-pvt-edit-card, .btn-pvt-delete-card, .btn-pvt-action, .btn-mc, .btn-cmp-clear, .btn-cmp-exit {
+  height: 32px !important;
+  padding: 0 16px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  gap: 6px !important;
+}
+
+/* Sizing for Small/Compact Card Header Action Buttons (Expand, Edit, Remove, Lite, Mini CSV) */
+.btn-expand-dash, .btn-edit-dash, .btn-remove-dash, .btn-lite, .cd-actions button {
+  height: 28px !important;
+  padding: 0 12px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  gap: 5px !important;
+}
+/* 1. All Navigation Tabs & Mode Buttons */
+.tp-b:hover {
+  color: var(--t1) !important;
+  background: var(--ac-bg) !important;
+}
+.tp-b.on, .tp-b.cmp.on, .tp-b.dup.on, .tp-b.ovr.on, .tp-b.pvt.on, .tp-b.flt.on {
+  background: var(--ac-bg) !important;
+  color: var(--ac) !important;
+  border-color: var(--ac) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  font-weight: 800 !important;
+}
+.tp-b.cmp, .tp-b.dup, .tp-b.ovr, .tp-b.pvt, .tp-b.flt {
+  color: var(--ac) !important;
+}
+.tp-b .cnt, .tp-b.cmp .cnt, .tp-b.cmp.on .cnt {
+  background: var(--ac) !important;
+  color: #fff !important;
+}
+
+/* 2. Primary Action & Submit Buttons across All Pages (Create & Preview, Add to Dashboard, Generate Pivot Table, + Create New Pivot Table, Export CSV, Save Chart, Done, Apply Filter) */
+.btn-create-preview, .btn-add-dash, .btn-pvt-submit, .btn-pvt-add, .btn-pvt-action.primary, .btn-mc:not(.sec):not([data-bs-dismiss="modal"]):not([onclick*="close"]):not([onclick*="cancel"]):not([onclick*="reset"]):not([onclick*="Hide"]):not([onclick*="Show"]) {
+  background: linear-gradient(135deg, var(--ac), var(--ac2)) !important;
+  border: 1px solid var(--ac) !important;
+  color: #fff !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 700 !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  cursor: pointer !important;
+}
+.btn-create-preview:hover, .btn-add-dash:hover, .btn-pvt-submit:hover, .btn-pvt-add:hover, .btn-pvt-action.primary:hover, .btn-mc:not(.sec):not([data-bs-dismiss="modal"]):not([onclick*="close"]):not([onclick*="cancel"]):not([onclick*="reset"]):not([onclick*="Hide"]):not([onclick*="Show"]):hover {
+  background: linear-gradient(135deg, var(--ac2), var(--ac)) !important;
+  border-color: var(--ac2) !important;
+  color: #fff !important;
+  transform: translateY(-1.5px) !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28) !important;
+}
+
+/* 3. Secondary Card Action Buttons & Expand/Edit/Zoom across All Pages */
+.btn-expand-dash, .btn-edit-dash, .cd-actions button:not(.btn-remove-dash), .btn-lite, .btn-mc.sec, .btn-pvt-reset, .btn-pvt-nav, .btn-pvt-edit-card, .btn-pvt-action.secondary, .btn-cancel-edit, .btn-cmp-exit, .btn-cmp-clear, .btn-mc[data-bs-dismiss="modal"], .btn-mc[onclick*="close"], .btn-mc[onclick*="cancel"], .btn-mc[onclick*="reset"], .btn-mc[onclick*="Hide"], .btn-mc[onclick*="Show"] {
+  background: var(--bg2) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--t1) !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  cursor: pointer !important;
+}
+.btn-expand-dash, .btn-edit-dash, .cd-actions button:not(.btn-remove-dash), .btn-lite, .btn-mc.sec, .btn-pvt-edit-card {
+  background: var(--ac-bg) !important;
+  border-color: var(--ac) !important;
+  color: var(--ac) !important;
+}
+.btn-expand-dash:hover, .btn-edit-dash:hover, .cd-actions button:not(.btn-remove-dash):hover, .btn-lite:hover, .btn-mc.sec:hover, .btn-pvt-reset:hover, .btn-pvt-nav:hover, .btn-pvt-edit-card:hover, .btn-pvt-action.secondary:hover, .btn-cancel-edit:hover, .btn-cmp-exit:hover, .btn-cmp-clear:hover, .btn-mc[data-bs-dismiss="modal"]:hover, .btn-mc[onclick*="close"]:hover, .btn-mc[onclick*="cancel"]:hover, .btn-mc[onclick*="reset"]:hover, .btn-mc[onclick*="Hide"]:hover, .btn-mc[onclick*="Show"]:hover {
+  background: var(--ac) !important;
+  border-color: var(--ac) !important;
+  color: #fff !important;
+  transform: translateY(-1.5px) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22) !important;
+}
+
+/* 4. Delete & Remove Buttons - Strictly Warning Red for Safety */
+.btn-remove-dash, .btn-pvt-delete-card {
+  background: rgba(239, 68, 68, 0.1) !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+  color: #ef4444 !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  cursor: pointer !important;
+}
+.btn-remove-dash:hover, .btn-pvt-delete-card:hover {
+  background: #ef4444 !important;
+  border-color: #ef4444 !important;
+  color: #fff !important;
+  transform: translateY(-1.5px) !important;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3) !important;
+}
+
+/* 5. Table Paginators, Trend View Pills, Compare Strip Chips, and Custom Dropdowns */
+.pager button:hover:not(:disabled) {
+  background: var(--ac-bg) !important;
+  border-color: var(--ac) !important;
+  color: var(--ac) !important;
+  transform: translateY(-1px) !important;
+}
+.pill-tabs button.on, #ticketTrendTabs button.on {
+  background: var(--ac) !important;
+  border-color: var(--ac) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+}
+.pill-tabs button:hover:not(.on), #ticketTrendTabs button:hover:not(.on) {
+  background: var(--ac-bg) !important;
+  color: var(--ac) !important;
+}
+/* Compare Strip Chips & Segments */
+.cmp-strip {
+  border-color: var(--ac) !important;
+}
+.cmp-strip .lbl .ic {
+  stroke: var(--ac) !important;
+}
+.seg button.on, .cmp-period-chip.on {
+  background: var(--ac) !important;
+  border-color: var(--ac) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+}
+.cmp-period-chip:hover:not(.on) {
+  background: var(--ac-bg) !important;
+  border-color: var(--ac) !important;
+  color: var(--ac) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Pivot Table Row & Cell Hover Theme Integration */
+.pvt-cell-clickable:hover {
+  background-color: var(--ac-bg) !important;
+  color: var(--ac) !important;
+  text-decoration: underline !important;
+}
+.pvt-preview-table tbody tr:hover, .pvt-rendered-section table tbody tr:hover, .pv tbody tr:hover {
+  background: var(--ac-bg) !important;
+}
+/* Pivot Table Interactive Cells & Status */
+.pvt-cell-clickable:hover {
+  background-color: var(--ac-bg) !important;
+  color: var(--ac) !important;
+  text-decoration: underline !important;
+}
+.pvt-status.processing {
+  background: var(--ac-bg) !important;
+  color: var(--ac) !important;
+  border-color: var(--ac) !important;
+}
+/* Custom Dropdowns & Filter Chips */
+.pf-val-chip:hover {
+  border-color: var(--ac) !important;
+  color: var(--ac) !important;
+  background: var(--ac-bg) !important;
+}
+.pf-val-chip.on {
+  background: var(--ac) !important;
+  border-color: var(--ac) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+}
+.filter-col-btn.has-sel {
+  border-color: var(--ac) !important;
+  background: var(--ac-bg) !important;
+  color: var(--ac) !important;
+}
+.filter-col-btn:hover {
+  border-color: var(--ac) !important;
+  color: var(--ac) !important;
+  transform: translateY(-1px) !important;
+}
+
+
+@keyframes fadeInMenu { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+
+/* ═══════════ DASHBOARD CARD REFINEMENT PATCH ═══════════ */
+.enterprise-grid,
+.ct {
+  align-items: start !important;
+}
+
+.ct {
+  gap: 14px !important;
+}
+
+.enterprise-card,
+.cd {
+  position: relative !important;
+  min-height: 0 !important;
+  height: auto !important;
+  border-radius: 22px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 12%, var(--border)) !important;
+  box-shadow: 0 10px 26px rgba(15,23,42,0.08), 0 1px 0 rgba(255,255,255,.4) inset !important;
+  overflow: hidden !important;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--ac) 9%, transparent) 0%, transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg2) 97%, #fff) 0%, color-mix(in srgb, var(--bg2) 90%, var(--bg3)) 100%) !important;
+}
+
+.enterprise-card::before,
+.cd::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, var(--ac), color-mix(in srgb, var(--ac2) 82%, var(--ac)));
+  opacity: .95;
+  pointer-events: none;
+}
+
+.cd {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 calc(50% - 7px) !important;
+  max-width: calc(50% - 7px) !important;
+  min-width: 360px !important;
+}
+
+[data-theme="dark"] .enterprise-card,
+[data-theme="dark"] .cd {
+  box-shadow: 0 16px 36px rgba(0,0,0,.34) !important;
+}
+
+.enterprise-card:hover,
+.cd:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 42px rgba(15,23,42,0.14) !important;
+}
+
+.enterprise-head,
+.chd {
+  position: relative !important;
+  padding: 12px 15px !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--ac) 8%, var(--border)) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ac) 6%, var(--bg2)) 0%, var(--bg2) 100%) !important;
+}
+
+.enterprise-title h2,
+.chd h3 {
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.2px;
+}
+
+.enterprise-body,
+.cb {
+  padding: 10px 12px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+}
+
+.chart-xl {
+  height: 380px !important;
+}
+.chart-md {
+  height: 340px !important;
+}
+.chb {
+  height: 360px !important;
+  min-height: 360px !important;
+  border-radius: 16px !important;
+  padding: 8px !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 78%, #fff) 0%, color-mix(in srgb, var(--bg) 92%, var(--bg3)) 100%) !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35) !important;
+}
+
+/* graph only cards: make graph much larger */
+.cd .cb > .chb:only-child {
+  height: 390px !important;
+  min-height: 390px !important;
+}
+
+/* Make chart/table split feel balanced */
+.enterprise-body .row.g-3,
+.cb .row.g-3 {
+  --bs-gutter-x: 12px !important;
+  --bs-gutter-y: 12px !important;
+  align-items: stretch !important;
+  flex: 1 1 auto !important;
+  margin: 0 !important;
+}
+
+.enterprise-body .col-lg-7,
+.cb .col-lg-7 {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 0 0 64% !important;
+  width: 64% !important;
+}
+
+.enterprise-body .col-lg-5,
+.cb .col-lg-5 {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 0 0 36% !important;
+  width: 36% !important;
+}
+
+.enterprise-body .col-lg-7 > div,
+.cb .col-lg-7 > div,
+.enterprise-body .col-lg-5 > div,
+.cb .col-lg-5 > div {
+  flex: 1 1 auto !important;
+}
+
+.enterprise-body .col-lg-5 > div,
+.cb .col-lg-5 > div {
+  min-height: 340px !important;
+  max-height: 340px !important;
+  border-radius: 16px !important;
+  overflow: auto !important;
+  background: color-mix(in srgb, var(--bg) 84%, #fff) !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 8%, var(--border)) !important;
+}
+
+.tb,
+.enterprise-table,
+.pv {
+  font-size: 11px !important;
+}
+.tb td,
+.enterprise-table td,
+.pv td {
+  padding: 7px 9px !important;
+}
+.tb thead th,
+.enterprise-table th,
+.pv thead th {
+  padding: 7px 9px !important;
+  font-size: 9.5px !important;
+}
+
+.c-tag,
+.pv-tg {
+  border-radius: 999px !important;
+  padding: 4px 10px !important;
+  font-weight: 800 !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.14) !important;
+}
+
+/* Compact summary chips, but keep chart area bigger */
+.sum-r {
+  gap: 10px !important;
+}
+.sc {
+  position: relative !important;
+  min-height: 84px !important;
+  border-radius: 18px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 8%, var(--border)) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 99%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%) !important;
+  box-shadow: 0 7px 18px rgba(15,23,42,0.05) !important;
+}
+.sc::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--ac), var(--ac2));
+  opacity: .88;
+}
+.si {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 12px !important;
+}
+.sv {
+  font-size: 20px !important;
+}
+.sl {
+  font-size: 10.5px !important;
+}
+
+/* Remove large empty bottom feeling */
+.enterprise-card .enterprise-body,
+.cd .cb {
+  margin-bottom: 0 !important;
+}
+
+@media (max-width: 1200px) {
+  .chart-xl { height: 340px !important; }
+  .chart-md, .chb { height: 300px !important; min-height: 300px !important; }
+  .cd .cb > .chb:only-child { height: 320px !important; min-height: 320px !important; }
+  .enterprise-body .col-lg-5 > div,
+  .cb .col-lg-5 > div { min-height: 300px !important; max-height: 300px !important; }
+}
+
+@media (max-width: 1100px) {
+  .cd {
+    flex: 1 1 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+  .enterprise-body .col-lg-7,
+  .cb .col-lg-7,
+  .enterprise-body .col-lg-5,
+  .cb .col-lg-5 {
+    flex: 0 0 100% !important;
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .enterprise-head,
+  .chd { padding: 10px 12px !important; }
+  .enterprise-body,
+  .cb { padding: 10px !important; }
+  .chart-xl { height: 280px !important; }
+  .chart-md, .chb { height: 240px !important; min-height: 240px !important; }
+  .cd .cb > .chb:only-child { height: 250px !important; min-height: 250px !important; }
+  .enterprise-body .col-lg-5 > div,
+  .cb .col-lg-5 > div { min-height: 240px !important; max-height: 240px !important; }
+}
+
+
+/* ═══════════ ULTRA GRAPH / CARD BALANCE PATCH V4 ═══════════ */
+#card_trend_main,
+#card_dup_trend,
+#card_ot_trend,
+#card_cmp_totals,
+#card_dup_top_cust,
+[id^="card_ot_"],
+[id^="card_dup_"] {
+  flex: 1 1 100% !important;
+  max-width: 100% !important;
+}
+
+.cd {
+  display: grid !important;
+  grid-template-rows: auto 1fr !important;
+  border-radius: 16px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg2) 99%, #fff) 0%, color-mix(in srgb, var(--bg2) 94%, var(--bg3)) 100%) !important;
+  box-shadow: 0 8px 20px rgba(15,23,42,.06) !important;
+}
+
+.cd .chd {
+  padding: 9px 12px !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ac) 3%, var(--bg2)) 0%, var(--bg2) 100%) !important;
+}
+
+.cd .cb {
+  padding: 9px !important;
+  min-height: 0 !important;
+}
+
+.cd .chb {
+  padding: 6px !important;
+  border-radius: 14px !important;
+}
+
+.cd .chb canvas,
+.cd .chb > canvas {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+
+.cd .cb > .chb:only-child {
+  height: 500px !important;
+  min-height: 500px !important;
+}
+
+#card_trend_main .chb,
+#card_dup_trend .chb,
+#card_ot_trend .chb,
+#card_cmp_totals .chb,
+#card_dup_top_cust .chb,
+[id^="card_ot_"] .chb,
+[id^="card_dup_"] .chb {
+  height: 540px !important;
+  min-height: 540px !important;
+}
+
+.cd .row.g-3 {
+  display: grid !important;
+  grid-template-columns: minmax(0, 2.05fr) minmax(220px, .62fr) !important;
+  align-items: start !important;
+  gap: 10px !important;
+}
+
+.cd .row.g-3 > [class*="col-"] {
+  width: auto !important;
+  max-width: none !important;
+  flex: unset !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  min-width: 0 !important;
+}
+
+.cd .row.g-3 .chb {
+  height: 430px !important;
+  min-height: 430px !important;
+}
+
+.cd .row.g-3 .col-lg-5 > div {
+  height: 430px !important;
+  min-height: 430px !important;
+  max-height: 430px !important;
+  border-radius: 14px !important;
+}
+
+.cd .mini-data-grid {
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)) !important;
+  gap: 5px !important;
+  margin-top: 6px !important;
+  max-height: 104px !important;
+  overflow: auto !important;
+}
+
+.cd .mini-data-item {
+  padding: 6px 7px !important;
+  border-radius: 10px !important;
+  font-size: 10px !important;
+}
+
+.cd .c-tag {
+  padding: 2px 7px !important;
+  font-size: 9.5px !important;
+}
+
+@media (max-width: 1100px) {
+  .cd .cb > .chb:only-child {
+    height: 390px !important;
+    min-height: 390px !important;
+  }
+  #card_trend_main .chb,
+  #card_dup_trend .chb,
+  #card_ot_trend .chb,
+  #card_cmp_totals .chb,
+  #card_dup_top_cust .chb,
+  [id^="card_ot_"] .chb,
+  [id^="card_dup_"] .chb {
+    height: 420px !important;
+    min-height: 420px !important;
+  }
+  .cd .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .cd .row.g-3 .chb,
+  .cd .row.g-3 .col-lg-5 > div {
+    height: 320px !important;
+    min-height: 320px !important;
+    max-height: 320px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .cd .cb > .chb:only-child {
+    height: 300px !important;
+    min-height: 300px !important;
+  }
+  #card_trend_main .chb,
+  #card_dup_trend .chb,
+  #card_ot_trend .chb,
+  #card_cmp_totals .chb,
+  #card_dup_top_cust .chb,
+  [id^="card_ot_"] .chb,
+  [id^="card_dup_"] .chb {
+    height: 310px !important;
+    min-height: 310px !important;
+  }
+  .cd .row.g-3 .chb,
+  .cd .row.g-3 .col-lg-5 > div {
+    height: 250px !important;
+    min-height: 250px !important;
+    max-height: 250px !important;
+  }
+}
+
+
+
+/* ═══════════ KPI / HERO / ENTERPRISE REPORT PATCH V5 ═══════════ */
+.sum-r {
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)) !important;
+  gap: 10px !important;
+  padding: 10px 18px 12px !important;
+}
+.sum-r .sc {
+  min-height: 74px !important;
+  padding: 10px 12px !important;
+  border-radius: 14px !important;
+  box-shadow: 0 6px 16px rgba(15,23,42,.05) !important;
+}
+.sum-r .si {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 10px !important;
+}
+.sum-r .sv {
+  font-size: 18px !important;
+  font-weight: 800 !important;
+}
+.sum-r .sl {
+  font-size: 10px !important;
+  letter-spacing: .1px !important;
+}
+
+#card_trend_main,
+#card_dup_trend,
+#card_ot_trend,
+#card_cmp_totals {
+  border-radius: 20px !important;
+  overflow: hidden !important;
+  box-shadow: 0 16px 34px rgba(15,23,42,.08) !important;
+}
+#card_trend_main .chd,
+#card_dup_trend .chd,
+#card_ot_trend .chd,
+#card_cmp_totals .chd {
+  padding: 14px 16px !important;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ac) 9%, var(--bg2)) 0%, var(--bg2) 62%, color-mix(in srgb, var(--ac2) 6%, var(--bg2)) 100%) !important;
+}
+#card_trend_main .chd h3,
+#card_dup_trend .chd h3,
+#card_ot_trend .chd h3,
+#card_cmp_totals .chd h3 {
+  font-size: 17px !important;
+}
+#card_trend_main .cb,
+#card_dup_trend .cb,
+#card_ot_trend .cb,
+#card_cmp_totals .cb {
+  padding: 12px !important;
+}
+#card_trend_main .chb,
+#card_dup_trend .chb,
+#card_ot_trend .chb,
+#card_cmp_totals .chb {
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 82%, #fff) 0%, color-mix(in srgb, var(--bg) 94%, var(--bg3)) 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35) !important;
+}
+
+.dup-selector-card {
+  border-radius: 18px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  padding: 12px 14px !important;
+  background: linear-gradient(180deg, var(--bg2) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%) !important;
+  box-shadow: 0 8px 22px rgba(15,23,42,.05) !important;
+}
+#card_dup_top_cust,
+#card_ot_severity,
+[id^="card_dup_"],
+[id^="card_ot_"] {
+  border-radius: 18px !important;
+  box-shadow: 0 10px 24px rgba(15,23,42,.06) !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3,
+[id^="card_dup_"] .row.g-3,
+[id^="card_ot_"] .row.g-3 {
+  grid-template-columns: minmax(0, 2.15fr) minmax(220px, .7fr) !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div,
+[id^="card_dup_"] .col-lg-5 > div,
+[id^="card_ot_"] .col-lg-5 > div {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 88%, #fff) 0%, var(--bg) 100%) !important;
+}
+
+@media (max-width: 768px) {
+  .sum-r {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    padding: 8px 12px 10px !important;
+  }
+  .sum-r .sc {
+    min-height: 68px !important;
+    padding: 8px 10px !important;
+  }
+}
+
+
+/* ═══════════ CALENDAR PERIOD TRAY ═══════════ */
+.period-launch-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.period-toggle-btn {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+}
+.period-tray {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 430px;
+  max-width: min(92vw, 860px);
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%);
+  box-shadow: 0 20px 44px rgba(15,23,42,.14);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-14px) scale(.96);
+  filter: blur(3px);
+  transform-origin: top right;
+  transition: opacity .32s cubic-bezier(.22,1,.36,1), transform .36s cubic-bezier(.22,1,.36,1), filter .32s ease;
+  z-index: 130;
+}
+.period-tray.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+}
+.period-tray-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 10px;
+}
+.period-tray-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(220px, .9fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.period-mini-panel {
+  border: 1px solid color-mix(in srgb, var(--ac) 8%, var(--border));
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%);
+  padding: 10px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
+}
+.period-mini-title {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--t3);
+  text-transform: uppercase;
+  letter-spacing: .45px;
+  margin-bottom: 8px;
+}
+.period-tray-row {
+  margin-top: 0;
+}
+.period-tray #spWrap {
+  width: 100%;
+}
+.period-tray #spSel {
+  width: 100%;
+  max-width: 100%;
+  min-width: 220px;
+}
+.period-toggle-btn.act {
+  background: var(--ac) !important;
+  color: #fff !important;
+  border-color: var(--ac) !important;
+}
+.tool-nav {
+  gap: 4px !important;
+  padding: 4px !important;
+}
+.tool-btn {
+  position: relative !important;
+  width: 34px !important;
+  height: 34px !important;
+  padding: 0 !important;
+  border-radius: 10px !important;
+  justify-content: center !important;
+}
+.tool-btn .ic {
+  width: 15px !important;
+  height: 15px !important;
+}
+.tool-btn .cnt {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px !important;
+  font-size: 9px !important;
+  line-height: 1;
+  box-shadow: 0 4px 10px rgba(15,23,42,.18);
+}
+.tool-btn::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 10px);
+  transform: translateX(-50%) translateY(-5px) scale(.96);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .1px;
+  color: var(--ac);
+  background: color-mix(in srgb, var(--bg2) 92%, #fff);
+  border: 1px solid color-mix(in srgb, var(--ac) 16%, var(--border));
+  padding: 6px 10px;
+  border-radius: 999px;
+  box-shadow: 0 12px 24px rgba(15,23,42,.14);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 12;
+}
+.tool-btn::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 5px);
+  width: 8px;
+  height: 8px;
+  background: color-mix(in srgb, var(--bg2) 92%, #fff);
+  border-top: 1px solid color-mix(in srgb, var(--ac) 16%, var(--border));
+  border-left: 1px solid color-mix(in srgb, var(--ac) 16%, var(--border));
+  transform: translateX(-50%) rotate(45deg) scale(.96);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 11;
+}
+.tool-btn:hover::after,
+.tool-btn:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+.tool-btn:hover::before,
+.tool-btn:focus-visible::before {
+  opacity: 1;
+  transform: translateX(-50%) rotate(45deg) scale(1);
+}
+@media (max-width: 768px) {
+  .period-tray {
+    right: -8px;
+    min-width: min(92vw, 360px);
+    padding: 10px;
+  }
+  .period-tray-grid {
+    grid-template-columns: 1fr;
+  }
+  .period-tray-tabs {
+    width: 100%;
+  }
+  .period-tray-tabs .tp-b {
+    flex: 1 1 calc(50% - 4px);
+  }
+}
+
+/* ═══════════ FLOATING DOCK + HERO TITLE + STAGGERED FOUR CARD PATCH V8 ═══════════ */
+body {
+  background:
+    radial-gradient(circle at 12% 14%, rgba(99,102,241,.08), transparent 24%),
+    radial-gradient(circle at 86% 76%, rgba(59,130,246,.08), transparent 24%),
+    linear-gradient(180deg, #f7f9ff 0%, #eef3fb 100%) !important;
+}
+[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 12% 14%, rgba(129,140,248,.10), transparent 24%),
+    radial-gradient(circle at 86% 76%, rgba(56,189,248,.09), transparent 24%),
+    linear-gradient(180deg, #0f1117 0%, #151a27 100%) !important;
+}
+.hdr {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 14px 16px 10px !important;
+  position: relative !important;
+  top: auto !important;
+  z-index: 20 !important;
+}
+.hdr-l {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  flex-wrap: nowrap !important;
+  min-width: min(100%, 540px) !important;
+  padding: 12px 16px !important;
+  border-radius: 22px !important;
+  border: 1px solid #d8e1f0 !important;
+  background: rgba(255,255,255,.88) !important;
+  backdrop-filter: blur(14px) saturate(1.1) !important;
+  box-shadow: 0 14px 30px rgba(31,41,55,.08) !important;
+}
+[data-theme="dark"] .hdr-l {
+  background: rgba(26,29,46,.82) !important;
+  border-color: color-mix(in srgb, var(--ac) 12%, var(--border)) !important;
+}
+.hdr-l > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.hdr-ico {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 14px !important;
+  background: linear-gradient(135deg, #7069ff 0%, #5562ff 100%) !important;
+  box-shadow: 0 12px 24px rgba(99,102,241,.24) !important;
+}
+.hdr-ico .ic {
+  width: 24px !important;
+  height: 24px !important;
+}
+.hdr-t {
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  letter-spacing: -.3px !important;
+}
+#tabDD {
+  min-width: 170px !important;
+  height: 40px !important;
+  padding: 0 14px !important;
+  border-radius: 14px !important;
+  background: rgba(255,255,255,.92) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 4px 10px rgba(15,23,42,.04) !important;
+}
+[data-theme="dark"] #tabDD {
+  background: rgba(15,23,42,.62) !important;
+}
+.hdr-r {
+  position: fixed !important;
+  top: 14px !important;
+  right: 18px !important;
+  width: auto !important;
+  padding: 8px 10px !important;
+  border-radius: 20px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(255,255,255,.74) !important;
+  backdrop-filter: blur(14px) saturate(1.15) !important;
+  box-shadow: 0 18px 40px rgba(15,23,42,.12) !important;
+  z-index: 180 !important;
+}
+[data-theme="dark"] .hdr-r {
+  background: rgba(26,29,46,.78) !important;
+}
+.tools-launch-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.tools-toggle-btn {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+}
+.tools-tray {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 190px;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%);
+  box-shadow: 0 20px 40px rgba(15,23,42,.14);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-12px) scale(.96);
+  filter: blur(3px);
+  transform-origin: top right;
+  transition: opacity .3s cubic-bezier(.22,1,.36,1), transform .34s cubic-bezier(.22,1,.36,1), filter .3s ease;
+  z-index: 140;
+}
+.tools-tray.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+}
+.tools-tray-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 8px;
+}
+.tool-nav {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 6px !important;
+  padding: 4px !important;
+}
+.tool-nav .tool-btn {
+  margin-left: 0 !important;
+  border-left: none !important;
+  padding-left: 0 !important;
+  min-width: 38px !important;
+  height: 38px !important;
+}
+.tool-nav .tool-btn.on {
+  box-shadow: 0 6px 14px rgba(15,23,42,.12) !important;
+}
+
+#sumRow {
+  display: none !important;
+}
+#drInfo {
+  padding: 4px 18px 14px !important;
+}
+.ct.dashboard-stage {
+  display: grid !important;
+  grid-template-columns: minmax(320px, 1.08fr) minmax(280px, .92fr) !important;
+  grid-auto-rows: min-content;
+  gap: 24px 24px !important;
+  padding: 8px 18px 30px !important;
+  align-items: start !important;
+  position: relative;
+}
+.ct.dashboard-stage::before,
+.ct.dashboard-stage::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(0);
+  pointer-events: none;
+  z-index: 0;
+}
+.ct.dashboard-stage::before {
+  width: 280px;
+  height: 280px;
+  left: -60px;
+  bottom: 20px;
+  background: radial-gradient(circle, rgba(99,102,241,.14) 0%, rgba(99,102,241,0) 70%);
+}
+.ct.dashboard-stage::after {
+  width: 220px;
+  height: 220px;
+  right: 20px;
+  top: 120px;
+  background: radial-gradient(circle, rgba(56,189,248,.12) 0%, rgba(56,189,248,0) 70%);
+}
+.ct.dashboard-stage > * {
+  position: relative;
+  z-index: 1;
+}
+#card_trend_total,
+#card_cpe_complaints,
+#card_dup_top_cust,
+#card_ot_severity {
+  border-radius: 24px !important;
+  overflow: hidden !important;
+  background: rgba(255,255,255,.88) !important;
+  backdrop-filter: blur(16px) saturate(1.1) !important;
+  border: 1px solid rgba(219,229,241,.9) !important;
+}
+[data-theme="dark"] #card_trend_total,
+[data-theme="dark"] #card_cpe_complaints,
+[data-theme="dark"] #card_dup_top_cust,
+[data-theme="dark"] #card_ot_severity {
+  background: rgba(26,29,46,.82) !important;
+}
+#card_trend_total {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 100% !important;
+  max-width: 100% !important;
+  transform: translateY(8px) rotate(-1deg);
+  box-shadow: 0 24px 48px rgba(79,70,229,.14) !important;
+}
+#card_cpe_complaints {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100% !important;
+  max-width: 100% !important;
+  transform: translateY(0) rotate(1deg);
+  box-shadow: 0 22px 44px rgba(16,185,129,.12) !important;
+}
+#card_dup_top_cust {
+  grid-column: 1;
+  grid-row: 3;
+  width: min(78%, 420px) !important;
+  max-width: min(78%, 420px) !important;
+  justify-self: start;
+  margin-left: 28px;
+  transform: translateY(-8px) rotate(-1.5deg);
+  box-shadow: 0 20px 42px rgba(59,130,246,.12) !important;
+}
+#card_ot_severity {
+  grid-column: 2;
+  grid-row: 2 / span 2;
+  width: 100% !important;
+  max-width: 100% !important;
+  transform: translateY(18px) rotate(.9deg);
+  box-shadow: 0 24px 48px rgba(244,63,94,.12) !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 12px 15px !important;
+}
+#card_trend_total .chart-xl {
+  height: 290px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 2.8fr) minmax(150px, .45fr) !important;
+}
+#card_cpe_complaints .chb {
+  height: 265px !important;
+  min-height: 265px !important;
+}
+#card_dup_top_cust .chb,
+#card_ot_severity .chb {
+  height: 235px !important;
+  min-height: 235px !important;
+}
+#card_cpe_complaints .col-lg-5 > div {
+  height: 265px !important;
+  min-height: 265px !important;
+  max-height: 265px !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  height: 235px !important;
+  min-height: 235px !important;
+  max-height: 235px !important;
+}
+#card_dup_top_cust .mini-data-grid,
+#card_ot_severity .mini-data-grid,
+#card_cpe_complaints .mini-data-grid {
+  max-height: 64px !important;
+}
+#card_trend_main,
+#card_dup_trend,
+#card_ot_trend {
+  display: none !important;
+}
+
+@media (max-width: 1100px) {
+  .hdr-r {
+    top: 10px !important;
+    right: 10px !important;
+  }
+  .ct.dashboard-stage {
+    grid-template-columns: 1fr !important;
+  }
+  #card_trend_total,
+  #card_cpe_complaints,
+  #card_dup_top_cust,
+  #card_ot_severity {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    transform: none !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 260px !important;
+  }
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 220px !important;
+    min-height: 220px !important;
+    max-height: 220px !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr {
+    padding: 10px 12px 6px !important;
+  }
+  .hdr-l {
+    min-width: 100% !important;
+    gap: 10px !important;
+    padding: 10px 12px !important;
+    border-radius: 18px !important;
+  }
+  .hdr-t {
+    font-size: 18px !important;
+  }
+  #tabDD {
+    min-width: 132px !important;
+    width: 100% !important;
+  }
+  .hdr-r {
+    top: 8px !important;
+    right: 8px !important;
+    padding: 7px 8px !important;
+    border-radius: 16px !important;
+  }
+  .tool-btn::after,
+  .tool-btn::before {
+    display: none;
+  }
+  .period-tray,
+  .tools-tray {
+    right: -6px;
+    min-width: min(90vw, 320px);
+  }
+  .period-tray-grid {
+    grid-template-columns: 1fr;
+  }
+  .ct.dashboard-stage {
+    padding: 8px 12px 24px !important;
+    gap: 18px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 220px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 190px !important;
+    min-height: 190px !important;
+    max-height: 190px !important;
+  }
+}
+
+/* ═══════════ RADIAL FLOATING PALETTE + STRAIGHT COMPACT FOUR CARD PATCH V10 ═══════════ */
+.hdr {
+  padding: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+.hdr-l,
+#subLbl,
+#sumRow,
+#drInfo {
+  display: none !important;
+}
+.hdr-r {
+  position: fixed !important;
+  right: 18px !important;
+  bottom: 18px !important;
+  top: auto !important;
+  width: 56px !important;
+  height: 56px !important;
+  display: block !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  z-index: 260 !important;
+  transition: opacity .22s ease, transform .22s ease !important;
+}
+.hdr-r.scroll-hide {
+  opacity: 0 !important;
+  transform: translateY(12px) scale(.94) !important;
+  pointer-events: none !important;
+}
+.palette-fab,
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 52px !important;
+  height: 52px !important;
+  border-radius: 18px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(255,255,255,.86) !important;
+  backdrop-filter: blur(16px) saturate(1.15) !important;
+  box-shadow: 0 18px 36px rgba(15,23,42,.16) !important;
+  color: var(--t1) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+}
+[data-theme="dark"] .palette-fab,
+[data-theme="dark"] .palette-action > .icon-btn,
+[data-theme="dark"] .palette-settings-btn {
+  background: rgba(26,29,46,.84) !important;
+}
+.palette-fab {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+}
+.palette-fab .ic,
+.palette-action > .icon-btn .ic,
+.palette-settings-btn .ic {
+  width: 18px !important;
+  height: 18px !important;
+}
+.palette-fab.act {
+  background: linear-gradient(135deg, var(--ac), var(--ac2)) !important;
+  color: #fff !important;
+  border-color: var(--ac) !important;
+}
+.palette-action {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(0,0) scale(.82);
+  transition: transform .28s cubic-bezier(.22,1,.36,1), opacity .22s ease;
+}
+.hdr-r.open .palette-action {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+.hdr-r.open .period-launch-wrap {
+  transform: translate(-78px, -8px) scale(1);
+}
+.hdr-r.open .tools-launch-wrap {
+  transform: translate(-52px, -66px) scale(1);
+}
+.hdr-r.open .palette-settings-wrap {
+  transform: translate(-4px, -92px) scale(1);
+}
+.period-launch-wrap,
+.tools-launch-wrap,
+.palette-settings-wrap {
+  display: flex;
+  align-items: center;
+}
+.period-tray,
+.tools-tray {
+  top: auto !important;
+  bottom: 0 !important;
+  right: calc(100% + 14px) !important;
+  transform-origin: bottom right !important;
+}
+.period-tray {
+  min-width: 360px !important;
+  padding: 12px !important;
+  border-radius: 18px !important;
+  background: rgba(255,255,255,.84) !important;
+  backdrop-filter: blur(18px) saturate(1.12) !important;
+  box-shadow: 0 24px 48px rgba(15,23,42,.18) !important;
+  transform: translateX(10px) scale(.96) !important;
+}
+.tools-tray {
+  min-width: 190px !important;
+  padding: 10px !important;
+  border-radius: 18px !important;
+  background: rgba(255,255,255,.84) !important;
+  backdrop-filter: blur(18px) saturate(1.12) !important;
+  box-shadow: 0 24px 48px rgba(15,23,42,.18) !important;
+  transform: translateX(10px) scale(.96) !important;
+}
+.period-tray.open,
+.tools-tray.open {
+  transform: translateX(0) scale(1) !important;
+}
+.period-tray-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.08fr) minmax(180px, .92fr) !important;
+  gap: 10px !important;
+}
+.tool-nav {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 8px !important;
+}
+.tool-nav .tool-btn {
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+}
+body {
+  background:
+    radial-gradient(circle at 14% 16%, rgba(99,102,241,.07), transparent 24%),
+    radial-gradient(circle at 82% 78%, rgba(59,130,246,.07), transparent 24%),
+    linear-gradient(180deg, #f8faff 0%, #eef3fb 100%) !important;
+}
+[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 14% 16%, rgba(129,140,248,.09), transparent 24%),
+    radial-gradient(circle at 82% 78%, rgba(56,189,248,.08), transparent 24%),
+    linear-gradient(180deg, #0f1117 0%, #151a27 100%) !important;
+}
+.ct.dashboard-stage {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(320px,1fr)) !important;
+  gap: 18px 20px !important;
+  padding: 18px 18px 96px !important;
+  align-items: start !important;
+  position: relative;
+}
+.ct.dashboard-stage::before,
+.ct.dashboard-stage::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 0;
+}
+.ct.dashboard-stage::before {
+  width: 220px;
+  height: 220px;
+  left: -28px;
+  bottom: 48px;
+  background: radial-gradient(circle, rgba(99,102,241,.12) 0%, rgba(99,102,241,0) 72%);
+}
+.ct.dashboard-stage::after {
+  width: 200px;
+  height: 200px;
+  right: 8px;
+  top: 120px;
+  background: radial-gradient(circle, rgba(56,189,248,.11) 0%, rgba(56,189,248,0) 72%);
+}
+.ct.dashboard-stage > * {
+  position: relative;
+  z-index: 1;
+}
+#card_trend_total,
+#card_cpe_complaints,
+#card_dup_top_cust,
+#card_ot_severity {
+  width: 100% !important;
+  max-width: 100% !important;
+  border-radius: 22px !important;
+  overflow: hidden !important;
+  background: rgba(255,255,255,.88) !important;
+  backdrop-filter: blur(14px) saturate(1.08) !important;
+  border: 1px solid rgba(226,232,240,.92) !important;
+  transform: none !important;
+}
+[data-theme="dark"] #card_trend_total,
+[data-theme="dark"] #card_cpe_complaints,
+[data-theme="dark"] #card_dup_top_cust,
+[data-theme="dark"] #card_ot_severity {
+  background: rgba(26,29,46,.82) !important;
+}
+#card_trend_total {
+  grid-column: 1;
+  grid-row: 1;
+  box-shadow: 0 18px 34px rgba(79,70,229,.10) !important;
+}
+#card_cpe_complaints {
+  grid-column: 2;
+  grid-row: 1;
+  box-shadow: 0 18px 34px rgba(16,185,129,.09) !important;
+}
+#card_dup_top_cust {
+  grid-column: 1;
+  grid-row: 2;
+  box-shadow: 0 18px 34px rgba(59,130,246,.09) !important;
+}
+#card_ot_severity {
+  grid-column: 2;
+  grid-row: 2;
+  box-shadow: 0 18px 34px rgba(244,63,94,.09) !important;
+}
+#card_trend_total .chart-xl {
+  height: 230px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 2.5fr) minmax(128px, .5fr) !important;
+}
+#card_cpe_complaints .chb {
+  height: 210px !important;
+  min-height: 210px !important;
+}
+#card_cpe_complaints .col-lg-5 > div {
+  height: 210px !important;
+  min-height: 210px !important;
+  max-height: 210px !important;
+}
+#card_dup_top_cust .chb,
+#card_ot_severity .chb {
+  height: 190px !important;
+  min-height: 190px !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  height: 190px !important;
+  min-height: 190px !important;
+  max-height: 190px !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 11px 14px !important;
+}
+#card_trend_total .enterprise-title h2,
+#card_cpe_complaints .chd h3,
+#card_dup_top_cust .chd h3,
+#card_ot_severity .chd h3 {
+  font-size: 15px !important;
+}
+#card_trend_main,
+#card_dup_trend,
+#card_ot_trend {
+  display: none !important;
+}
+@media (max-width: 1100px) {
+  .ct.dashboard-stage {
+    grid-template-columns: 1fr !important;
+    padding-bottom: 88px !important;
+  }
+  #card_trend_total,
+  #card_cpe_complaints,
+  #card_dup_top_cust,
+  #card_ot_severity {
+    grid-column: auto !important;
+    grid-row: auto !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr-r {
+    right: 10px !important;
+    bottom: 10px !important;
+    width: 52px !important;
+    height: 52px !important;
+  }
+  .palette-fab,
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 48px !important;
+    height: 48px !important;
+    border-radius: 16px !important;
+  }
+  .tool-btn::after,
+  .tool-btn::before {
+    display: none !important;
+  }
+  .period-tray,
+  .tools-tray {
+    right: 0 !important;
+    bottom: calc(100% + 12px) !important;
+    min-width: min(90vw, 300px) !important;
+  }
+  .period-tray-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .ct.dashboard-stage {
+    padding: 12px 12px 84px !important;
+    gap: 16px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 205px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 168px !important;
+    min-height: 168px !important;
+    max-height: 168px !important;
+  }
+}
+
+
+/* ═══════════ SPRING FAN MENU + STRAIGHT EQUAL GRID PATCH V11 ═══════════ */
+.hdr-r {
+  width: 54px !important;
+  height: 54px !important;
+}
+.palette-fab,
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 50px !important;
+  height: 50px !important;
+  border-radius: 16px !important;
+  box-shadow: 0 14px 28px rgba(15,23,42,.12) !important;
+}
+.palette-fab {
+  box-shadow: 0 18px 34px rgba(79,70,229,.20) !important;
+}
+.palette-action {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(0,0) scale(.55);
+  transition: transform .46s cubic-bezier(.18,1.28,.32,1), opacity .22s ease;
+}
+.hdr-r.open .palette-action {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+.hdr-r.open .period-launch-wrap {
+  transform: translate(-88px, -2px) scale(1);
+  transition-delay: .02s;
+}
+.hdr-r.open .tools-launch-wrap {
+  transform: translate(-62px, -74px) scale(1);
+  transition-delay: .06s;
+}
+.hdr-r.open .palette-settings-wrap {
+  transform: translate(0, -102px) scale(1);
+  transition-delay: .10s;
+}
+.palette-action > .icon-btn:hover,
+.palette-settings-btn:hover,
+.palette-fab:hover {
+  transform: translateY(-1px) scale(1.02);
+}
+.palette-fab .ic {
+  width: 19px !important;
+  height: 19px !important;
+}
+.period-tray,
+.tools-tray {
+  box-shadow: 0 20px 44px rgba(15,23,42,.14) !important;
+}
+
+.ct.dashboard-stage {
+  grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+  gap: 20px !important;
+  padding: 16px 16px 92px !important;
+}
+#card_trend_total,
+#card_cpe_complaints,
+#card_dup_top_cust,
+#card_ot_severity {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  align-self: start !important;
+  justify-self: stretch !important;
+  flex: unset !important;
+  transform: none !important;
+  border-radius: 22px !important;
+  box-shadow: 0 12px 24px rgba(15,23,42,.07) !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 10px 13px !important;
+}
+#card_trend_total .enterprise-title h2,
+#card_cpe_complaints .chd h3,
+#card_dup_top_cust .chd h3,
+#card_ot_severity .chd h3 {
+  font-size: 14.5px !important;
+}
+#card_trend_total .c-tag,
+#card_cpe_complaints .c-tag,
+#card_dup_top_cust .c-tag,
+#card_ot_severity .c-tag {
+  border-radius: 999px !important;
+  padding: 4px 10px !important;
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+}
+#card_trend_total .c-tag {
+  background: rgba(99,102,241,.12) !important;
+  color: #5b5ce9 !important;
+  border-color: rgba(99,102,241,.18) !important;
+}
+#card_cpe_complaints .c-tag {
+  background: rgba(16,185,129,.12) !important;
+  color: #0f9f73 !important;
+  border-color: rgba(16,185,129,.18) !important;
+}
+#card_dup_top_cust .c-tag {
+  background: rgba(59,130,246,.12) !important;
+  color: #3b6ee8 !important;
+  border-color: rgba(59,130,246,.18) !important;
+}
+#card_ot_severity .c-tag {
+  background: rgba(244,114,182,.12) !important;
+  color: #ec4899 !important;
+  border-color: rgba(244,114,182,.18) !important;
+}
+
+#card_trend_total .chart-xl {
+  height: 210px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 2.3fr) minmax(124px, .54fr) !important;
+  gap: 10px !important;
+}
+#card_cpe_complaints .chb {
+  height: 190px !important;
+  min-height: 190px !important;
+}
+#card_cpe_complaints .col-lg-5 > div {
+  height: 190px !important;
+  min-height: 190px !important;
+  max-height: 190px !important;
+}
+#card_dup_top_cust .chb,
+#card_ot_severity .chb {
+  height: 172px !important;
+  min-height: 172px !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  height: 172px !important;
+  min-height: 172px !important;
+  max-height: 172px !important;
+}
+#card_cpe_complaints .mini-data-grid,
+#card_dup_top_cust .mini-data-grid,
+#card_ot_severity .mini-data-grid {
+  max-height: 58px !important;
+}
+
+@media (max-width: 1100px) {
+  .ct.dashboard-stage {
+    grid-template-columns: 1fr !important;
+    gap: 18px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 198px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 168px !important;
+    min-height: 168px !important;
+    max-height: 168px !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr-r {
+    width: 50px !important;
+    height: 50px !important;
+  }
+  .palette-fab,
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 46px !important;
+    height: 46px !important;
+    border-radius: 15px !important;
+  }
+  .hdr-r.open .period-launch-wrap {
+    transform: translate(-76px, -2px) scale(1);
+  }
+  .hdr-r.open .tools-launch-wrap {
+    transform: translate(-52px, -62px) scale(1);
+  }
+  .hdr-r.open .palette-settings-wrap {
+    transform: translate(0, -88px) scale(1);
+  }
+  .ct.dashboard-stage {
+    padding: 12px 12px 78px !important;
+    gap: 16px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 182px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 150px !important;
+    min-height: 150px !important;
+    max-height: 150px !important;
+  }
+}
+
+
+/* ═══════════ TOP-LEFT INLINE ICONS + ONE-CARD-PER-LINE PATCH V14 ═══════════ */
+.hdr-r {
+  position: fixed !important;
+  left: 18px !important;
+  top: 74px !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: auto !important;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  z-index: 260 !important;
+}
+.hdr-r.scroll-hide {
+  opacity: 1 !important;
+  transform: none !important;
+  pointer-events: auto !important;
+}
+.period-launch-wrap,
+.tools-launch-wrap,
+.palette-settings-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  transform: none !important;
+}
+.palette-fab {
+  display: none !important;
+}
+.palette-action {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 13px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(255,255,255,.9) !important;
+  backdrop-filter: blur(14px) saturate(1.12) !important;
+  box-shadow: 0 8px 18px rgba(15,23,42,.08) !important;
+}
+[data-theme="dark"] .palette-action > .icon-btn,
+[data-theme="dark"] .palette-settings-btn {
+  background: rgba(26,29,46,.84) !important;
+}
+.palette-action > .icon-btn .ic,
+.palette-settings-btn .ic {
+  width: 15px !important;
+  height: 15px !important;
+}
+.period-tray,
+.tools-tray {
+  top: calc(100% + 8px) !important;
+  left: 0 !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform-origin: top left !important;
+}
+.period-tray {
+  min-width: 332px !important;
+}
+.tools-tray {
+  min-width: 178px !important;
+}
+#drInfo {
+  display: none !important;
+}
+.ct.dashboard-stage {
+  grid-template-columns: 1fr !important;
+  gap: 12px !important;
+  padding: 54px 16px 8px !important;
+}
+#card_trend_total,
+#card_cpe_complaints,
+#card_dup_top_cust,
+#card_ot_severity {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  transform: none !important;
+  box-shadow: 0 8px 18px rgba(15,23,42,.055) !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 8px 12px !important;
+  min-height: 40px !important;
+}
+#card_trend_total .enterprise-title h2,
+#card_cpe_complaints .chd h3,
+#card_dup_top_cust .chd h3,
+#card_ot_severity .chd h3 {
+  font-size: 13.5px !important;
+  line-height: 1.2 !important;
+}
+#card_trend_total .btn-expand-dash,
+#card_cpe_complaints .btn-expand-dash,
+#card_dup_top_cust .btn-expand-dash,
+#card_ot_severity .btn-expand-dash {
+  height: 28px !important;
+  padding: 0 10px !important;
+  border-radius: 9px !important;
+  font-size: 10px !important;
+}
+#card_trend_total .c-tag,
+#card_cpe_complaints .c-tag,
+#card_dup_top_cust .c-tag,
+#card_ot_severity .c-tag {
+  padding: 3px 9px !important;
+  font-size: 8.5px !important;
+}
+#card_trend_total .chart-xl {
+  height: 230px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 3.2fr) minmax(96px, .34fr) !important;
+  gap: 8px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 210px !important;
+  min-height: 210px !important;
+  max-height: 210px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 188px !important;
+  min-height: 188px !important;
+  max-height: 188px !important;
+}
+#card_cpe_complaints .mini-data-grid,
+#card_dup_top_cust .mini-data-grid,
+#card_ot_severity .mini-data-grid {
+  max-height: 44px !important;
+}
+@media (max-width: 768px) {
+  .hdr-r {
+    left: 10px !important;
+    top: 68px !important;
+    gap: 8px !important;
+  }
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 12px !important;
+  }
+  .period-tray,
+  .tools-tray {
+    left: 0 !important;
+    top: calc(100% + 8px) !important;
+    min-width: min(84vw, 276px) !important;
+  }
+  .ct.dashboard-stage {
+    padding: 48px 12px 6px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 188px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 158px !important;
+    min-height: 158px !important;
+    max-height: 158px !important;
+  }
+}
+
+/* ═══════════ TOP-LEFT NAV ICON ROW + BALANCED GRAPH/TABLE PATCH V15 ═══════════ */
+.hdr {
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 10px 16px 6px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+.hdr-r {
+  position: relative !important;
+  left: 0 !important;
+  top: 0 !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: auto !important;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 !important;
+  z-index: 50 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+.hdr-r.scroll-hide {
+  opacity: 1 !important;
+  transform: none !important;
+  pointer-events: auto !important;
+}
+.hdr-l,
+#subLbl,
+#sumRow,
+#drInfo {
+  display: none !important;
+}
+.period-launch-wrap,
+.tools-launch-wrap,
+.palette-settings-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.palette-fab {
+  display: none !important;
+}
+.palette-action {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 12px !important;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(255,255,255,.92) !important;
+  backdrop-filter: blur(12px) saturate(1.06) !important;
+  box-shadow: 0 8px 16px rgba(15,23,42,.08) !important;
+}
+[data-theme="dark"] .palette-action > .icon-btn,
+[data-theme="dark"] .palette-settings-btn {
+  background: rgba(26,29,46,.88) !important;
+}
+.palette-action > .icon-btn .ic,
+.palette-settings-btn .ic {
+  width: 15px !important;
+  height: 15px !important;
+}
+.period-tray,
+.tools-tray {
+  top: calc(100% + 8px) !important;
+  left: 0 !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform-origin: top left !important;
+  background: rgba(255,255,255,.96) !important;
+  backdrop-filter: blur(12px) saturate(1.06) !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(226,232,240,.95) !important;
+  box-shadow: 0 16px 34px rgba(15,23,42,.12) !important;
+}
+.period-tray { min-width: 320px !important; }
+.tools-tray { min-width: 170px !important; }
+.tool-nav {
+  display: grid !important;
+  grid-template-columns: repeat(3,minmax(0,1fr)) !important;
+  gap: 6px !important;
+}
+.tool-nav .tool-btn {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+}
+.ct.dashboard-stage {
+  grid-template-columns: 1fr !important;
+  gap: 14px !important;
+  padding: 0 16px 8px !important;
+}
+#card_trend_total,
+#card_cpe_complaints,
+#card_dup_top_cust,
+#card_ot_severity {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  transform: none !important;
+  box-shadow: 0 8px 16px rgba(15,23,42,.05) !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 8px 12px !important;
+  min-height: 40px !important;
+}
+#card_trend_total .enterprise-title h2,
+#card_cpe_complaints .chd h3,
+#card_dup_top_cust .chd h3,
+#card_ot_severity .chd h3 {
+  font-size: 13.5px !important;
+  line-height: 1.2 !important;
+}
+#card_trend_total .btn-expand-dash,
+#card_cpe_complaints .btn-expand-dash,
+#card_dup_top_cust .btn-expand-dash,
+#card_ot_severity .btn-expand-dash {
+  height: 28px !important;
+  padding: 0 10px !important;
+  border-radius: 9px !important;
+  font-size: 10px !important;
+}
+#card_trend_total .c-tag,
+#card_cpe_complaints .c-tag,
+#card_dup_top_cust .c-tag,
+#card_ot_severity .c-tag {
+  padding: 3px 9px !important;
+  font-size: 8.5px !important;
+  box-shadow: none !important;
+}
+#card_trend_total .chart-xl {
+  height: 250px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 2.55fr) minmax(140px, .75fr) !important;
+  gap: 8px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 220px !important;
+  min-height: 220px !important;
+  max-height: 220px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 198px !important;
+  min-height: 198px !important;
+  max-height: 198px !important;
+}
+#card_cpe_complaints .mini-data-grid,
+#card_dup_top_cust .mini-data-grid,
+#card_ot_severity .mini-data-grid {
+  max-height: 44px !important;
+}
+@media (max-width: 768px) {
+  .hdr {
+    padding: 8px 12px 6px !important;
+  }
+  .hdr-r {
+    gap: 8px !important;
+  }
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 11px !important;
+  }
+  .period-tray,
+  .tools-tray {
+    min-width: min(84vw, 272px) !important;
+  }
+  .ct.dashboard-stage {
+    padding: 0 12px 6px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 210px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 170px !important;
+    min-height: 170px !important;
+    max-height: 170px !important;
+  }
+}
+
+/* ═══════════ NAV-ROW + MINIMAL CALENDAR + FULL VALUE LABELS PATCH V16 ═══════════ */
+.hdr {
+  display: flex !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 8px 16px 10px !important;
+  position: relative !important;
+  top: auto !important;
+  z-index: 40 !important;
+}
+.hdr-r {
+  gap: 8px !important;
+  margin: 0 !important;
+}
+.period-tray,
+.tools-tray {
+  background: rgba(255,255,255,.97) !important;
+  border: 1px solid rgba(226,232,240,.96) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 14px 28px rgba(15,23,42,.10) !important;
+  backdrop-filter: blur(10px) saturate(1.04) !important;
+}
+.period-tray {
+  min-width: 286px !important;
+  padding: 10px !important;
+}
+.period-tray-grid {
+  grid-template-columns: 1fr !important;
+  gap: 8px !important;
+}
+.period-mini-panel {
+  border: 1px solid rgba(226,232,240,.92) !important;
+  border-radius: 12px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%) !important;
+  padding: 8px !important;
+  box-shadow: none !important;
+}
+.period-mini-title {
+  font-size: 9.5px !important;
+  margin-bottom: 6px !important;
+}
+.period-tray-tabs {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.period-tray-tabs .tp-b {
+  flex: 0 0 auto !important;
+  min-width: 76px !important;
+  height: 34px !important;
+  padding: 0 10px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(226,232,240,.96) !important;
+  background: #f8fafc !important;
+  color: var(--t2) !important;
+}
+.period-tray-tabs .tp-b.on {
+  background: rgba(99,102,241,.10) !important;
+  color: var(--ac) !important;
+  border-color: rgba(99,102,241,.16) !important;
+  box-shadow: none !important;
+}
+.period-selection-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px dashed rgba(203,213,225,.92);
+  background: #fbfcff;
+  color: var(--t3);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px 10px;
+  text-align: center;
+}
+.period-tray #spSel {
+  min-width: 100% !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+  background: #f8fafc !important;
+}
+.tools-tray {
+  min-width: 182px !important;
+  padding: 10px !important;
+}
+.tool-nav {
+  grid-template-columns: repeat(3,minmax(0,1fr)) !important;
+  gap: 6px !important;
+}
+.tool-nav .tool-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+}
+.tool-btn::after,
+.tool-btn::before {
+  display: none !important;
+}
+
+.ct.dashboard-stage {
+  gap: 12px !important;
+  padding: 0 16px 0 !important;
+}
+#card_trend_total,
+#card_cpe_complaints,
+#card_dup_top_cust,
+#card_ot_severity {
+  box-shadow: 0 7px 14px rgba(15,23,42,.05) !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 7px 11px !important;
+  min-height: 38px !important;
+}
+#card_trend_total .chart-xl {
+  height: 270px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 2.85fr) minmax(150px, .7fr) !important;
+  gap: 8px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 228px !important;
+  min-height: 228px !important;
+  max-height: 228px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 206px !important;
+  min-height: 206px !important;
+  max-height: 206px !important;
+}
+@media (max-width: 768px) {
+  .hdr {
+    padding: 8px 12px 8px !important;
+  }
+  .period-tray,
+  .tools-tray {
+    min-width: min(84vw, 280px) !important;
+  }
+  .period-tray-tabs .tp-b {
+    min-width: 70px !important;
+    height: 32px !important;
+  }
+  .ct.dashboard-stage {
+    padding: 0 12px 0 !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 230px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 180px !important;
+    min-height: 180px !important;
+    max-height: 180px !important;
+  }
+}
+
+/* ═══════════ TOP NAV ALIGN + VERTICAL TOOLS + LARGER READABLE CHARTS PATCH V17 ═══════════ */
+.hdr {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+  padding: 10px 16px 10px !important;
+}
+.hdr-r {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 12px !important;
+}
+.period-tray,
+.tools-tray {
+  border-radius: 12px !important;
+  box-shadow: 0 12px 24px rgba(15,23,42,.10) !important;
+}
+.period-tray {
+  min-width: 300px !important;
+  padding: 10px !important;
+}
+.period-tray-grid {
+  grid-template-columns: 1fr !important;
+  gap: 8px !important;
+}
+.vertical-tool-nav {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 6px !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.tool-item-btn {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 36px !important;
+  padding: 0 10px !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  border-radius: 10px !important;
+  background: #f8fafc !important;
+  border: 1px solid rgba(226,232,240,.95) !important;
+}
+.tool-item-btn.on {
+  background: rgba(99,102,241,.10) !important;
+  border-color: rgba(99,102,241,.18) !important;
+  color: var(--ac) !important;
+  box-shadow: none !important;
+}
+.tool-item-label {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: inherit !important;
+  line-height: 1 !important;
+}
+.tool-item-btn .cnt {
+  margin-left: auto !important;
+  position: static !important;
+  min-width: 18px !important;
+  height: 18px !important;
+}
+.tool-btn::after,
+.tool-btn::before {
+  display: none !important;
+}
+
+.ct.dashboard-stage {
+  gap: 14px !important;
+  padding: 0 16px 2px !important;
+}
+#card_trend_total .chart-xl {
+  height: 300px !important;
+}
+#card_cpe_complaints .row.g-3 {
+  grid-template-columns: minmax(0, 2.7fr) minmax(164px, .82fr) !important;
+  gap: 10px !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 3.15fr) minmax(128px, .48fr) !important;
+  gap: 10px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 240px !important;
+  min-height: 240px !important;
+  max-height: 240px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 210px !important;
+  min-height: 210px !important;
+  max-height: 210px !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 9px 12px !important;
+}
+#card_trend_total .enterprise-title h2,
+#card_cpe_complaints .chd h3,
+#card_dup_top_cust .chd h3,
+#card_ot_severity .chd h3 {
+  font-size: 14px !important;
+}
+#card_trend_total .c-tag,
+#card_cpe_complaints .c-tag,
+#card_dup_top_cust .c-tag,
+#card_ot_severity .c-tag {
+  padding: 4px 10px !important;
+  font-size: 8.8px !important;
+}
+
+@media (max-width: 768px) {
+  .hdr {
+    padding: 8px 12px 8px !important;
+    gap: 8px !important;
+  }
+  .hdr-r {
+    gap: 8px !important;
+  }
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 34px !important;
+    height: 34px !important;
+  }
+  .tool-item-btn {
+    height: 34px !important;
+    padding: 0 9px !important;
+  }
+  .tool-item-label {
+    font-size: 10px !important;
+  }
+  .ct.dashboard-stage {
+    padding: 0 12px 2px !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 270px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 198px !important;
+    min-height: 198px !important;
+    max-height: 198px !important;
+  }
+}
+
+
+/* ═══════════ EXPAND PAGE + TOOL LABEL ALIGN + REPORT TABLE PATCH V18 ═══════════ */
+.vertical-tool-nav {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 6px !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.tool-item-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  width: 100% !important;
+  min-width: 150px !important;
+  height: 38px !important;
+  padding: 0 10px !important;
+  gap: 8px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(226,232,240,.95) !important;
+  background: #f8fafc !important;
+  color: var(--t2) !important;
+}
+.tool-item-btn .tool-item-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.1 !important;
+  white-space: normal !important;
+  text-align: left !important;
+}
+.tool-item-btn.on {
+  background: rgba(99,102,241,.10) !important;
+  border-color: rgba(99,102,241,.18) !important;
+  color: var(--ac) !important;
+}
+.tool-item-btn .cnt {
+  margin-left: auto !important;
+  position: static !important;
+  min-width: 18px !important;
+  height: 18px !important;
+}
+#card_cpe_complaints .tb,
+#card_dup_top_cust .tb,
+#card_ot_severity .tb {
+  font-size: 10.5px !important;
+}
+#card_cpe_complaints .tb thead th,
+#card_dup_top_cust .tb thead th,
+#card_ot_severity .tb thead th {
+  font-size: 9px !important;
+  padding: 8px 8px !important;
+}
+#card_cpe_complaints .tb td,
+#card_dup_top_cust .tb td,
+#card_ot_severity .tb td {
+  padding: 8px 8px !important;
+  line-height: 1.35 !important;
+}
+#card_cpe_complaints .tb tbody tr,
+#card_dup_top_cust .tb tbody tr,
+#card_ot_severity .tb tbody tr {
+  height: 34px !important;
+}
+
+.expand-page {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(245,248,255,.96) 0%, rgba(239,244,252,.98) 100%);
+  backdrop-filter: blur(10px);
+  z-index: 5000;
+  overflow: auto;
+  opacity: 0;
+  transform: scale(.985);
+  transition: opacity .18s ease, transform .22s ease;
+}
+.expand-page.show {
+  opacity: 1;
+  transform: scale(1);
+}
+.expand-page.closing {
+  opacity: 0;
+  transform: scale(.985);
+}
+[data-theme="dark"] .expand-page {
+  background: linear-gradient(180deg, rgba(15,17,23,.96) 0%, rgba(21,26,39,.98) 100%);
+}
+.expand-shell {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 22px 24px 28px;
+}
+.expand-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.expand-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--ac) 12%, var(--border));
+  background: rgba(255,255,255,.86);
+  color: var(--t1);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15,23,42,.08);
+}
+[data-theme="dark"] .expand-back {
+  background: rgba(26,29,46,.86);
+}
+.expand-back:hover {
+  transform: translateY(-2px);
+  color: var(--ac);
+  border-color: color-mix(in srgb, var(--ac) 24%, var(--border));
+  background: color-mix(in srgb, var(--ac) 7%, rgba(255,255,255,.96));
+  box-shadow: 0 14px 28px rgba(15,23,42,.12);
+}
+[data-theme="dark"] .expand-back:hover {
+  background: color-mix(in srgb, var(--ac) 12%, rgba(26,29,46,.92));
+}
+.mode-backbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 0 0 14px;
+}
+.cmp-strip .mode-backbar {
+  width: auto;
+  margin: 0;
+}
+.mode-back-btn {
+  min-width: 206px;
+}
+.expand-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.expand-title-badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--ac), var(--ac2));
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 24px rgba(99,102,241,.18);
+}
+.expand-title-text h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 800;
+  color: var(--t1);
+}
+.expand-title-text p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--t2);
+  font-weight: 600;
+}
+.expand-chip {
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(99,102,241,.10);
+  color: var(--ac);
+  border: 1px solid rgba(99,102,241,.16);
+}
+.expand-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, .7fr);
+  gap: 18px;
+}
+.expand-panel {
+  border-radius: 22px;
+  border: 1px solid rgba(226,232,240,.92);
+  background: rgba(255,255,255,.90);
+  box-shadow: 0 16px 32px rgba(15,23,42,.08);
+  overflow: hidden;
+}
+[data-theme="dark"] .expand-panel {
+  background: rgba(26,29,46,.84);
+}
+.expand-chart-panel {
+  padding: 14px 14px 10px;
+}
+.expand-chart-box {
+  height: 460px;
+  border-radius: 18px;
+  border: 1px solid rgba(226,232,240,.88);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 10px;
+}
+.expand-data-panel {
+  display: flex;
+  flex-direction: column;
+}
+.expand-data-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(226,232,240,.92);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: .45px;
+}
+.expand-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(226,232,240,.9);
+}
+.expand-search {
+  flex: 1 1 auto;
+  height: 34px;
+  min-width: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: #f8fafc;
+  color: var(--t1);
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 600;
+  outline: none;
+}
+.expand-sort-group {
+  display: inline-flex;
+  gap: 6px;
+}
+.expand-sort-btn {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: #fff;
+  color: var(--t2);
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.expand-sort-btn.on {
+  background: rgba(99,102,241,.10);
+  color: var(--ac);
+  border-color: rgba(99,102,241,.16);
+}
+.expand-rows-meta {
+  padding: 8px 12px 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--t3);
+}
+.expand-table-wrap {
+  padding: 0 12px 12px;
+  overflow: auto;
+  max-height: 540px;
+}
+.expand-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11.5px;
+}
+.expand-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(248,250,252,.96);
+  color: var(--t2);
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .45px;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(226,232,240,.92);
+}
+.expand-table td {
+  padding: 10px 10px;
+  border-bottom: 1px solid rgba(226,232,240,.78);
+  color: var(--t1);
+  line-height: 1.35;
+}
+.expand-table th:first-child,
+.expand-table td:first-child {
+  width: 58%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.expand-label-text {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: calc(100% - 18px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.expand-table tbody tr {
+  cursor: pointer;
+  transition: background-color .16s ease;
+}
+.expand-table tbody tr:hover {
+  background: rgba(99,102,241,.06);
+}
+.expand-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.expand-value {
+  font-weight: 800;
+  color: var(--ac);
+}
+.expand-share {
+  color: var(--t2);
+  font-weight: 700;
+}
+@media (max-width: 980px) {
+  .expand-layout {
+    grid-template-columns: 1fr;
+  }
+  .expand-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .expand-sort-group {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .expand-chart-box {
+    height: 340px;
+  }
+}
+
+
+/* ═══════════ TOOL LABEL ALIGN + EXPAND PAGE LOVELY SIMPLE PATCH V19 ═══════════ */
+.tools-tray {
+  min-width: 184px !important;
+  padding: 10px !important;
+}
+.tools-tray .tool-nav,
+.vertical-tool-nav {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 6px !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.tools-tray .tool-item-btn,
+.vertical-tool-nav .tool-item-btn {
+  width: 100% !important;
+  min-width: 152px !important;
+  height: 38px !important;
+  padding: 0 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  border-radius: 10px !important;
+  line-height: 1 !important;
+}
+.tools-tray .tool-item-btn .tool-item-label,
+.vertical-tool-nav .tool-item-btn .tool-item-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  white-space: nowrap !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+}
+.tools-tray .tool-item-btn .cnt,
+.vertical-tool-nav .tool-item-btn .cnt {
+  margin-left: auto !important;
+}
+
+.expand-page {
+  background: linear-gradient(180deg, rgba(250,252,255,.98) 0%, rgba(243,247,255,.99) 100%) !important;
+}
+.expand-shell {
+  max-width: 1320px !important;
+  padding: 20px 22px 24px !important;
+}
+.expand-topbar {
+  margin-bottom: 14px !important;
+}
+.expand-title-text h1 {
+  font-size: 20px !important;
+}
+.expand-title-text p {
+  font-size: 11.5px !important;
+}
+.expand-chip {
+  background: rgba(99,102,241,.09) !important;
+  color: var(--ac) !important;
+  border-color: rgba(99,102,241,.14) !important;
+}
+.expand-layout {
+  grid-template-columns: minmax(0, 1.68fr) minmax(270px, .72fr) !important;
+  gap: 16px !important;
+}
+.expand-panel {
+  border-radius: 20px !important;
+  box-shadow: 0 12px 24px rgba(15,23,42,.08) !important;
+}
+.expand-chart-panel {
+  padding: 12px 12px 10px !important;
+}
+.expand-chart-box {
+  height: 420px !important;
+  border-radius: 16px !important;
+  padding: 10px !important;
+}
+.expand-data-head {
+  padding: 12px 14px !important;
+  font-size: 11px !important;
+}
+.expand-table-wrap {
+  padding: 10px !important;
+  max-height: 500px !important;
+}
+.expand-table {
+  font-size: 11px !important;
+}
+.expand-table thead th {
+  font-size: 9px !important;
+  padding: 8px 9px !important;
+}
+.expand-table td {
+  padding: 9px 9px !important;
+  line-height: 1.35 !important;
+}
+.expand-table tbody tr {
+  height: 36px !important;
+}
+
+@media (max-width: 980px) {
+  .expand-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-chart-box {
+    height: 300px !important;
+  }
+}
+
+/* ═══════════ COMPACT UI + CLEAN EXPAND DATA PATCH V20 ═══════════ */
+.hdr {
+  gap: 10px !important;
+  padding: 6px 12px 8px !important;
+}
+.hdr-r {
+  gap: 8px !important;
+}
+.period-launch-wrap,
+.tools-launch-wrap,
+.palette-settings-wrap {
+  align-items: center !important;
+}
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 11px !important;
+  box-shadow: 0 6px 12px rgba(15,23,42,.07) !important;
+}
+.palette-action > .icon-btn .ic,
+.palette-settings-btn .ic {
+  width: 14px !important;
+  height: 14px !important;
+}
+.period-tray,
+.tools-tray {
+  border-radius: 12px !important;
+  box-shadow: 0 12px 22px rgba(15,23,42,.08) !important;
+}
+.period-tray {
+  min-width: 274px !important;
+  padding: 8px !important;
+}
+.tools-tray {
+  min-width: 164px !important;
+  padding: 8px !important;
+}
+.vertical-tool-nav,
+.tools-tray .tool-nav {
+  gap: 5px !important;
+}
+.tool-item-btn,
+.tools-tray .tool-item-btn {
+  min-width: 144px !important;
+  height: 34px !important;
+  padding: 0 9px !important;
+  gap: 7px !important;
+}
+.tool-item-btn .tool-item-label,
+.tools-tray .tool-item-btn .tool-item-label {
+  font-size: 10.5px !important;
+}
+.tool-item-btn .cnt,
+.tools-tray .tool-item-btn .cnt {
+  min-width: 17px !important;
+  height: 17px !important;
+  font-size: 8.5px !important;
+}
+.period-tray-tabs .tp-b {
+  min-width: 68px !important;
+  height: 32px !important;
+  padding: 0 8px !important;
+  font-size: 10.5px !important;
+}
+.period-selection-hint {
+  min-height: 38px !important;
+  font-size: 10.5px !important;
+}
+.period-tray #spSel {
+  height: 34px !important;
+  font-size: 10.5px !important;
+}
+
+.ct.dashboard-stage {
+  gap: 10px !important;
+  padding: 0 12px 0 !important;
+}
+#card_trend_total,
+#card_cpe_complaints,
+#card_dup_top_cust,
+#card_ot_severity {
+  border-radius: 18px !important;
+  box-shadow: 0 6px 12px rgba(15,23,42,.045) !important;
+}
+#card_trend_total .enterprise-head,
+#card_cpe_complaints .chd,
+#card_dup_top_cust .chd,
+#card_ot_severity .chd {
+  padding: 7px 10px !important;
+  min-height: 36px !important;
+}
+#card_trend_total .enterprise-title h2,
+#card_cpe_complaints .chd h3,
+#card_dup_top_cust .chd h3,
+#card_ot_severity .chd h3 {
+  font-size: 13px !important;
+}
+#card_trend_total .btn-expand-dash,
+#card_cpe_complaints .btn-expand-dash,
+#card_dup_top_cust .btn-expand-dash,
+#card_ot_severity .btn-expand-dash {
+  height: 26px !important;
+  padding: 0 9px !important;
+  font-size: 9.5px !important;
+}
+#card_trend_total .c-tag,
+#card_cpe_complaints .c-tag,
+#card_dup_top_cust .c-tag,
+#card_ot_severity .c-tag {
+  padding: 3px 8px !important;
+  font-size: 8px !important;
+}
+#card_trend_total .chart-xl {
+  height: 248px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 3.05fr) minmax(124px, .55fr) !important;
+  gap: 8px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 206px !important;
+  min-height: 206px !important;
+  max-height: 206px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 184px !important;
+  min-height: 184px !important;
+  max-height: 184px !important;
+}
+#card_cpe_complaints .tb,
+#card_dup_top_cust .tb,
+#card_ot_severity .tb {
+  font-size: 10px !important;
+}
+#card_cpe_complaints .tb thead th,
+#card_dup_top_cust .tb thead th,
+#card_ot_severity .tb thead th {
+  font-size: 8.5px !important;
+  padding: 7px !important;
+}
+#card_cpe_complaints .tb td,
+#card_dup_top_cust .tb td,
+#card_ot_severity .tb td {
+  padding: 7px !important;
+  line-height: 1.3 !important;
+}
+
+.expand-shell {
+  max-width: 1160px !important;
+  padding: 14px 16px 18px !important;
+}
+.expand-topbar {
+  margin-bottom: 10px !important;
+}
+.expand-back {
+  height: 34px !important;
+  padding: 0 12px !important;
+  border-radius: 10px !important;
+  font-size: 11px !important;
+}
+.expand-title-wrap {
+  gap: 10px !important;
+}
+.expand-title-badge {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 12px !important;
+}
+.expand-title-text h1 {
+  font-size: 18px !important;
+}
+.expand-title-text p {
+  font-size: 11px !important;
+}
+.expand-chip {
+  padding: 4px 10px !important;
+  font-size: 9px !important;
+}
+.expand-layout {
+  grid-template-columns: minmax(0, 1.75fr) minmax(250px, .65fr) !important;
+  gap: 12px !important;
+}
+.expand-panel {
+  border-radius: 18px !important;
+  box-shadow: 0 10px 20px rgba(15,23,42,.06) !important;
+}
+.expand-chart-panel {
+  padding: 10px !important;
+}
+.expand-chart-box {
+  height: 360px !important;
+  border-radius: 14px !important;
+  padding: 8px !important;
+}
+.expand-data-head {
+  padding: 10px 12px !important;
+  font-size: 10px !important;
+}
+.expand-table-wrap {
+  padding: 0 !important;
+  max-height: 420px !important;
+}
+.expand-table {
+  font-size: 10.5px !important;
+  table-layout: fixed !important;
+}
+.expand-table thead th {
+  position: static !important;
+  background: #f8fafc !important;
+  font-size: 8.5px !important;
+  padding: 7px 8px !important;
+}
+.expand-table tbody td:first-child {
+  word-break: break-word !important;
+}
+.expand-table td {
+  padding: 8px 8px !important;
+  line-height: 1.3 !important;
+}
+.expand-table tbody tr {
+  height: 32px !important;
+}
+@media (max-width: 980px) {
+  .expand-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-chart-box {
+    height: 290px !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr {
+    padding: 6px 10px 8px !important;
+  }
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 32px !important;
+    height: 32px !important;
+  }
+  .period-tray,
+  .tools-tray {
+    min-width: min(84vw, 264px) !important;
+  }
+  .ct.dashboard-stage {
+    padding: 0 10px 0 !important;
+  }
+  #card_trend_total .chart-xl {
+    height: 214px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 166px !important;
+    min-height: 166px !important;
+    max-height: 166px !important;
+  }
+}
+
+
+/* ═══════════ COMPACT EXPAND PAGE + CUTE RECORD MODAL PATCH V21 ═══════════ */
+.expand-calendar-wrap {
+  position: relative;
+}
+.expand-calendar-tray {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 280px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(226,232,240,.96);
+  background: rgba(255,255,255,.97);
+  box-shadow: 0 14px 28px rgba(15,23,42,.10);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px) scale(.98);
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 20;
+}
+.expand-calendar-tray.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+.expand-calendar-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.expand-range-btn {
+  min-width: 68px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: #f8fafc;
+  color: var(--t2);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.expand-range-btn.on {
+  background: rgba(99,102,241,.10);
+  color: var(--ac);
+  border-color: rgba(99,102,241,.16);
+}
+.expand-calendar-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  margin-top: 8px;
+  border-radius: 10px;
+  border: 1px dashed rgba(203,213,225,.92);
+  background: #fbfcff;
+  color: var(--t3);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: center;
+  padding: 8px 10px;
+}
+.expand-sub-wrap {
+  margin-top: 8px;
+}
+.expand-sub-select {
+  width: 100%;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: #f8fafc;
+  color: var(--t1);
+  padding: 0 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  outline: none;
+}
+.expand-shell {
+  max-width: 1080px !important;
+  padding: 12px 14px 16px !important;
+}
+.expand-topbar {
+  margin-bottom: 8px !important;
+}
+.expand-title-badge {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 10px !important;
+}
+.expand-title-text h1 {
+  font-size: 17px !important;
+}
+.expand-title-text p {
+  font-size: 10.5px !important;
+}
+.expand-chip {
+  padding: 4px 9px !important;
+  font-size: 8.5px !important;
+}
+.expand-layout {
+  grid-template-columns: minmax(0, 1.55fr) minmax(220px, .62fr) !important;
+  gap: 10px !important;
+}
+.expand-chart-panel {
+  padding: 8px !important;
+}
+.expand-chart-box {
+  height: 310px !important;
+  border-radius: 12px !important;
+  padding: 6px !important;
+}
+.expand-data-head {
+  padding: 10px 12px !important;
+  font-size: 10px !important;
+}
+.expand-controls, .expand-search, .expand-sort-group, .expand-sort-btn {
+  display: none !important;
+}
+.expand-rows-meta {
+  padding: 8px 10px 0 !important;
+  font-size: 9px !important;
+}
+.expand-table-wrap {
+  padding: 0 10px 10px !important;
+  max-height: 360px !important;
+}
+.expand-table {
+  font-size: 10.5px !important;
+}
+.expand-table thead th {
+  font-size: 8.5px !important;
+  padding: 7px 8px !important;
+}
+.expand-table td {
+  padding: 7px 8px !important;
+  line-height: 1.25 !important;
+}
+.expand-table tbody tr {
+  height: 30px !important;
+}
+.expand-table th:first-child,
+.expand-table td:first-child {
+  width: 60% !important;
+}
+.expand-label-text {
+  max-width: calc(100% - 16px) !important;
+  font-size: 10.5px !important;
+}
+#dModal .modal-dialog {
+  max-width: 920px !important;
+}
+#dModal .modal-content {
+  border-radius: 16px !important;
+}
+#dModal .modal-header {
+  padding: 12px 14px !important;
+}
+#dModal .modal-body {
+  max-height: 66vh !important;
+}
+#dModal .modal-footer {
+  padding: 10px 14px !important;
+}
+.mtt, .mtt td, .mtt th {
+  font-size: 11px !important;
+}
+.mtt thead th {
+  padding: 8px 10px !important;
+  font-size: 8.5px !important;
+}
+.mtt td {
+  padding: 8px 10px !important;
+  line-height: 1.3 !important;
+}
+@media (max-width: 980px) {
+  .expand-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-calendar-tray {
+    right: auto;
+    left: 0;
+    min-width: min(86vw, 280px);
+  }
+  .expand-chart-box {
+    height: 250px !important;
+  }
+  .expand-table-wrap {
+    max-height: 300px !important;
+  }
+}
+
+/* ═══════════ GRAPH-TYPE TABLE WIDTH + CUTE MODAL ROWS PATCH V22 ═══════════ */
+#card_cpe_complaints .row.g-3 {
+  grid-template-columns: minmax(0, 2.65fr) minmax(156px, .85fr) !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 3.1fr) minmax(126px, .5fr) !important;
+}
+#card_cpe_complaints .col-lg-5 > div {
+  width: 156px !important;
+  justify-self: end !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 126px !important;
+  justify-self: end !important;
+}
+#dModal .mtt tbody tr:nth-child(odd) {
+  background: rgba(99,102,241,.035);
+}
+#dModal .mtt tbody tr:nth-child(even) {
+  background: rgba(255,255,255,.72);
+}
+#dModal .mtt tbody tr:hover {
+  background: rgba(99,102,241,.08) !important;
+}
+#dModal .mtt td,
+#dModal .mtt th {
+  border-color: rgba(226,232,240,.72) !important;
+}
+@media (max-width: 768px) {
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .col-lg-5 > div {
+    width: 100% !important;
+  }
+}
+
+/* ═══════════ FINAL PROPORTION + CATEGORY LIMIT PATCH V23 ═══════════ */
+.ct.dashboard-stage {
+  gap: 16px !important;
+  padding: 0 16px 4px !important;
+}
+#card_trend_total .chart-xl {
+  height: 280px !important;
+}
+#card_cpe_complaints .row.g-3 {
+  grid-template-columns: minmax(0, 2.55fr) minmax(168px, .82fr) !important;
+  gap: 10px !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 3.4fr) minmax(138px, .5fr) !important;
+  gap: 10px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 236px !important;
+  min-height: 236px !important;
+  max-height: 236px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 214px !important;
+  min-height: 214px !important;
+  max-height: 214px !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 138px !important;
+  justify-self: end !important;
+}
+#card_cpe_complaints .col-lg-5 > div {
+  width: 168px !important;
+  justify-self: end !important;
+}
+#card_cpe_complaints .tb,
+#card_dup_top_cust .tb,
+#card_ot_severity .tb {
+  font-size: 10px !important;
+}
+#card_cpe_complaints .tb thead th,
+#card_dup_top_cust .tb thead th,
+#card_ot_severity .tb thead th {
+  font-size: 8.5px !important;
+  padding: 7px 8px !important;
+}
+#card_cpe_complaints .tb td,
+#card_dup_top_cust .tb td,
+#card_ot_severity .tb td {
+  padding: 7px 8px !important;
+}
+@media (max-width: 768px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .col-lg-5 > div {
+    width: 100% !important;
+  }
+}
+
+
+/* ═══════════ FINAL RATIO + EXPANDED CALENDAR SEPARATION PATCH V24 ═══════════ */
+.ct.dashboard-stage {
+  gap: 14px !important;
+  padding: 0 16px 4px !important;
+}
+#card_trend_total .chart-xl {
+  height: 290px !important;
+}
+#card_cpe_complaints .row.g-3 {
+  grid-template-columns: minmax(0, 4fr) minmax(148px, .6fr) !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 4.3fr) minmax(136px, .52fr) !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 226px !important;
+  min-height: 226px !important;
+  max-height: 226px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 204px !important;
+  min-height: 204px !important;
+  max-height: 204px !important;
+}
+.expand-table-cpe th:first-child,
+.expand-table-cpe td:first-child {
+  width: 50% !important;
+}
+.expand-table-dup th:first-child,
+.expand-table-dup td:first-child {
+  width: 68% !important;
+}
+.expand-table-ot th:first-child,
+.expand-table-ot td:first-child {
+  width: 42% !important;
+}
+.expand-table-trend th:first-child,
+.expand-table-trend td:first-child {
+  width: 56% !important;
+}
+@media (max-width: 768px) {
+  #card_trend_total .chart-xl {
+    height: 232px !important;
+  }
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 178px !important;
+    min-height: 178px !important;
+    max-height: 178px !important;
+  }
+}
+
+/* ═══════════ FINAL RATIO + SEPARATE EXPAND DATE PATCH V25 ═══════════ */
+#card_cpe_complaints .row.g-3 {
+  grid-template-columns: minmax(0, 5fr) minmax(156px, .55fr) !important;
+  align-items: stretch !important;
+}
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 5.4fr) minmax(132px, .46fr) !important;
+  align-items: stretch !important;
+}
+#card_cpe_complaints .col-lg-5 > div {
+  width: 156px !important;
+  justify-self: end !important;
+}
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 132px !important;
+  justify-self: end !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 248px !important;
+  min-height: 248px !important;
+  max-height: 248px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 220px !important;
+  min-height: 220px !important;
+  max-height: 220px !important;
+}
+#card_trend_total .chart-xl {
+  height: 312px !important;
+}
+.expand-calendar-tray {
+  min-width: 290px !important;
+}
+.expand-calendar-range {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+.expand-sub-wrap {
+  margin-top: 8px !important;
+}
+.expand-sub-select {
+  width: 100% !important;
+}
+@media (max-width: 768px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .col-lg-5 > div {
+    width: 100% !important;
+  }
+}
+
+
+/* ═══════════ IN-PORTAL EXPAND + 70/30 CARD RATIO PATCH V26 ═══════════ */
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 7fr) minmax(180px, 3fr) !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+#card_cpe_complaints .col-lg-5 > div,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 100% !important;
+  justify-self: stretch !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 228px !important;
+  min-height: 228px !important;
+  max-height: 228px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 206px !important;
+  min-height: 206px !important;
+  max-height: 206px !important;
+}
+#card_trend_total .chart-xl {
+  height: 286px !important;
+}
+
+.expand-page {
+  position: fixed !important;
+  inset: 58px 12px 12px 12px !important;
+  border-radius: 24px !important;
+  border: 1px solid rgba(226,232,240,.92) !important;
+  box-shadow: 0 22px 46px rgba(15,23,42,.14) !important;
+  overflow: hidden !important;
+  transform: translateY(10px) scale(.988) !important;
+}
+.expand-page.show {
+  transform: translateY(0) scale(1) !important;
+}
+.expand-page.closing {
+  transform: translateY(10px) scale(.988) !important;
+}
+.expand-shell {
+  max-width: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  padding: 12px 14px 14px !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.expand-topbar {
+  flex: 0 0 auto !important;
+  margin-bottom: 10px !important;
+}
+.expand-layout {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, .8fr) !important;
+  gap: 12px !important;
+}
+.expand-panel,
+.expand-chart-panel,
+.expand-data-panel {
+  min-height: 0 !important;
+}
+.expand-chart-box {
+  height: 100% !important;
+  min-height: 320px !important;
+}
+.expand-data-panel {
+  overflow: hidden !important;
+}
+.expand-table-wrap {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+.expand-table-cpe th:first-child,
+.expand-table-cpe td:first-child { width: 48% !important; }
+.expand-table-dup th:first-child,
+.expand-table-dup td:first-child { width: 70% !important; }
+.expand-table-ot th:first-child,
+.expand-table-ot td:first-child { width: 40% !important; }
+.expand-table-trend th:first-child,
+.expand-table-trend td:first-child { width: 56% !important; }
+
+@media (max-width: 980px) {
+  .expand-page {
+    inset: 52px 8px 8px 8px !important;
+    border-radius: 20px !important;
+  }
+  .expand-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-chart-box {
+    min-height: 260px !important;
+  }
+}
+@media (max-width: 768px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-page {
+    inset: 48px 6px 6px 6px !important;
+    border-radius: 18px !important;
+  }
+}
+
+
+/* ═══════════ PORTAL-INTEGRATED LAYOUT + 70/30 SPLIT PATCH V26 ═══════════ */
+.ct.dashboard-stage {
+  gap: 12px !important;
+  padding: 0 14px 4px !important;
+  margin: 0 !important;
+}
+#card_trend_total .enterprise-body,
+#card_cpe_complaints .cb,
+#card_dup_top_cust .cb,
+#card_ot_severity .cb {
+  padding: 8px 10px !important;
+}
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 7fr) minmax(230px, 3fr) !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+}
+#card_cpe_complaints .col-lg-5 > div,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 100% !important;
+  justify-self: stretch !important;
+}
+#card_trend_total .chart-xl {
+  height: 274px !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 232px !important;
+  min-height: 232px !important;
+  max-height: 232px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 210px !important;
+  min-height: 210px !important;
+  max-height: 210px !important;
+}
+
+.expand-page {
+  overflow: hidden !important;
+  inset: 56px 10px 10px 10px !important;
+  border-radius: 22px !important;
+  border: 1px solid rgba(226,232,240,.92) !important;
+  box-shadow: 0 18px 36px rgba(15,23,42,.14) !important;
+}
+.expand-shell {
+  height: 100% !important;
+  overflow: hidden !important;
+  max-width: none !important;
+  width: 100% !important;
+  padding: 12px 14px 14px !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.expand-topbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 3 !important;
+  padding-bottom: 10px !important;
+  margin-bottom: 10px !important;
+  background: linear-gradient(180deg, rgba(250,252,255,.96) 0%, rgba(250,252,255,.82) 100%) !important;
+  backdrop-filter: blur(12px) !important;
+}
+[data-theme="dark"] .expand-topbar {
+  background: linear-gradient(180deg, rgba(15,17,23,.96) 0%, rgba(15,17,23,.82) 100%) !important;
+}
+.expand-layout {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  grid-template-columns: minmax(0, 1.72fr) minmax(300px, .82fr) !important;
+  gap: 12px !important;
+}
+.expand-panel,
+.expand-chart-panel,
+.expand-data-panel {
+  min-height: 0 !important;
+}
+.expand-chart-box {
+  height: 100% !important;
+  min-height: 300px !important;
+}
+.expand-data-panel {
+  overflow: hidden !important;
+}
+.expand-table-wrap {
+  overflow: auto !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+.expand-table-cpe th:first-child,
+.expand-table-cpe td:first-child { width: 50% !important; }
+.expand-table-dup th:first-child,
+.expand-table-dup td:first-child { width: 68% !important; }
+.expand-table-ot th:first-child,
+.expand-table-ot td:first-child { width: 42% !important; }
+.expand-table-trend th:first-child,
+.expand-table-trend td:first-child { width: 56% !important; }
+
+#dModal {
+  position: fixed !important;
+  inset: 0 !important;
+}
+#dModal.show {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+#dModal .modal-dialog {
+  width: min(980px, calc(100vw - 28px)) !important;
+  max-width: 980px !important;
+  margin: 0 auto !important;
+}
+#dModal .modal-content {
+  max-height: min(78vh, 760px) !important;
+}
+#dModal .modal-body {
+  overflow: auto !important;
+}
+
+@media (max-width: 980px) {
+  .expand-page {
+    inset: 52px 8px 8px 8px !important;
+  }
+  .expand-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-chart-box {
+    min-height: 240px !important;
+  }
+  #dModal .modal-dialog {
+    transform: translateY(-2vh);
+  }
+}
+@media (max-width: 768px) {
+  .ct.dashboard-stage {
+    padding: 0 10px 2px !important;
+  }
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-page {
+    inset: 48px 6px 6px 6px !important;
+    border-radius: 18px !important;
+  }
+  .expand-chart-box {
+    min-height: 220px !important;
+  }
+}
+
+
+/* ═══════════ FINAL 70/30 GRAPH-DATA BALANCE PATCH V27 ═══════════ */
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 7fr) minmax(220px, 3fr) !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+}
+#card_cpe_complaints .col-lg-7,
+#card_dup_top_cust .col-lg-7,
+#card_ot_severity .col-lg-7,
+#card_cpe_complaints .col-lg-5,
+#card_dup_top_cust .col-lg-5,
+#card_ot_severity .col-lg-5 {
+  width: auto !important;
+  max-width: none !important;
+  flex: unset !important;
+}
+#card_cpe_complaints .col-lg-5 > div,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 100% !important;
+  justify-self: stretch !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 238px !important;
+  min-height: 238px !important;
+  max-height: 238px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 216px !important;
+  min-height: 216px !important;
+  max-height: 216px !important;
+}
+#card_trend_total .chart-xl {
+  height: 300px !important;
+}
+@media (max-width: 980px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ═══════════ PORTAL OVERLAP / SMOOTH PANEL PATCH V28 ═══════════ */
+.hdr {
+  min-height: 46px !important;
+  padding: 10px 16px 10px !important;
+  margin: 0 0 6px 0 !important;
+}
+.hdr-r {
+  position: relative !important;
+  z-index: 60 !important;
+}
+.ct.dashboard-stage {
+  padding-top: 0 !important;
+}
+.expand-page {
+  inset: 108px 12px 12px 12px !important;
+  box-shadow: 0 20px 42px rgba(15,23,42,.12) !important;
+}
+.expand-topbar {
+  padding-top: 2px !important;
+}
+#dModal.show {
+  align-items: flex-start !important;
+  justify-content: center !important;
+  padding-top: 108px !important;
+  padding-bottom: 12px !important;
+}
+#dModal .modal-dialog {
+  margin: 0 auto !important;
+}
+#dModal .modal-content {
+  box-shadow: 0 16px 32px rgba(15,23,42,.16) !important;
+}
+@media (max-width: 980px) {
+  .expand-page {
+    inset: 104px 8px 8px 8px !important;
+  }
+  #dModal.show {
+    padding-top: 96px !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr {
+    min-height: 42px !important;
+    padding: 8px 12px 8px !important;
+  }
+  .expand-page {
+    inset: 96px 6px 6px 6px !important;
+  }
+  #dModal.show {
+    padding-top: 88px !important;
+  }
+}
+
+/* ═══════════ PORTAL NAV / POPUP OVERLAP FINAL FIX V29 ═══════════ */
+.hdr {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  min-height: 46px !important;
+  padding: 10px 14px 10px !important;
+  margin: 0 0 8px 0 !important;
+  position: relative !important;
+  z-index: 80 !important;
+  background: transparent !important;
+}
+.hdr-r {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  z-index: 90 !important;
+}
+.period-tray,
+.tools-tray {
+  top: calc(100% + 10px) !important;
+  left: 0 !important;
+  right: auto !important;
+  z-index: 120 !important;
+}
+.ct.dashboard-stage {
+  padding: 0 14px 6px !important;
+  gap: 14px !important;
+}
+.expand-page {
+  inset: 116px 12px 12px 12px !important;
+}
+.expand-topbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 5 !important;
+}
+#dModal.show {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 12px !important;
+}
+#dModal .modal-dialog {
+  margin: 0 auto !important;
+  transform: translateY(-4vh);
+}
+#dModal .modal-content {
+  overflow: hidden !important;
+}
+.modal-backdrop.high {
+  backdrop-filter: blur(8px);
+  background: rgba(15,23,42,.28) !important;
+  opacity: 1 !important;
+}
+@media (max-width: 980px) {
+  .expand-page {
+    inset: 108px 8px 8px 8px !important;
+  }
+  #dModal.show {
+    padding: 10px !important;
+  }
+  #dModal .modal-dialog {
+    transform: translateY(-2vh);
+  }
+}
+@media (max-width: 768px) {
+  .hdr {
+    min-height: 42px !important;
+    padding: 8px 12px 8px !important;
+    margin-bottom: 6px !important;
+  }
+  .ct.dashboard-stage {
+    padding: 0 10px 4px !important;
+  }
+  .expand-page {
+    inset: 96px 6px 6px 6px !important;
+  }
+  #dModal.show {
+    padding: 8px !important;
+  }
+  #dModal .modal-dialog {
+    transform: translateY(0);
+  }
+}
+
+
+/* ═══════════ PORTAL NAV / POPUP CLEAN STACK PATCH V30 ═══════════ */
+.hdr {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  min-height: 52px !important;
+  padding: 10px 16px !important;
+  margin: 0 0 12px 0 !important;
+  position: relative !important;
+  z-index: 140 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+.hdr-r {
+  position: static !important;
+  left: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+.period-launch-wrap,
+.tools-launch-wrap,
+.palette-settings-wrap {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+}
+.palette-action {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+.palette-action > .icon-btn,
+.palette-settings-btn {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 12px !important;
+}
+.period-tray,
+.tools-tray {
+  top: calc(100% + 10px) !important;
+  left: 0 !important;
+  right: auto !important;
+  bottom: auto !important;
+  z-index: 220 !important;
+}
+.ct.dashboard-stage {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+.expand-page {
+  inset: 122px 14px 14px 14px !important;
+  backdrop-filter: blur(14px) !important;
+  z-index: 4200 !important;
+}
+.expand-topbar {
+  top: 0 !important;
+  z-index: 8 !important;
+}
+#dModal {
+  z-index: 6080 !important;
+}
+#dModal.show {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  padding-top: 126px !important;
+  padding-bottom: 14px !important;
+}
+#dModal .modal-dialog {
+  margin: 0 auto !important;
+}
+.modal-backdrop.high {
+  z-index: 6075 !important;
+  backdrop-filter: blur(10px) !important;
+  background: rgba(15,23,42,.34) !important;
+}
+@media (max-width: 980px) {
+  .expand-page {
+    inset: 114px 8px 8px 8px !important;
+  }
+  #dModal.show {
+    padding-top: 112px !important;
+  }
+}
+@media (max-width: 768px) {
+  .hdr {
+    min-height: 46px !important;
+    padding: 8px 12px !important;
+    margin-bottom: 10px !important;
+  }
+  .palette-action > .icon-btn,
+  .palette-settings-btn {
+    width: 34px !important;
+    height: 34px !important;
+  }
+  .expand-page {
+    inset: 102px 6px 6px 6px !important;
+  }
+  #dModal.show {
+    padding: 8px !important;
+  }
+}
+
+
+/* ═══════════ PERIOD PILL + SITE EXPAND TABLE FIX PATCH V34 ═══════════ */
+body #drInfo {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 0 16px 10px !important;
+}
+body #drInfo .dr-b {
+  border-radius: 999px !important;
+  padding: 6px 12px !important;
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  box-shadow: 0 6px 14px rgba(15,23,42,.06) !important;
+}
+.expand-page-site_summary .expand-layout,
+.expand-page-site_complaint_percent .expand-layout {
+  grid-template-columns: minmax(0, 1.05fr) minmax(580px, 1.25fr) !important;
+}
+.expand-page-site_summary .expand-table-site th:nth-child(1),
+.expand-page-site_summary .expand-table-site td:nth-child(1),
+.expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(1),
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(1) {
+  width: 14% !important;
+}
+.expand-page-site_summary .expand-table-site th:nth-child(2),
+.expand-page-site_summary .expand-table-site td:nth-child(2),
+.expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(2),
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(2) {
+  width: 52% !important;
+  white-space: normal !important;
+  line-height: 1.34 !important;
+}
+.expand-page-site_summary .expand-table-site th:nth-child(3),
+.expand-page-site_summary .expand-table-site td:nth-child(3) {
+  width: 14% !important;
+}
+.expand-page-site_summary .expand-table-site th:nth-child(4),
+.expand-page-site_summary .expand-table-site td:nth-child(4) {
+  width: 20% !important;
+}
+.expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(3),
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(3) {
+  width: 14% !important;
+}
+.expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(4),
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(4) {
+  width: 20% !important;
+}
+.expand-page-site_summary .expand-table-site td:nth-child(2),
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(2) {
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+}
+@media (max-width: 980px) {
+  .expand-page-site_summary .expand-layout,
+  .expand-page-site_complaint_percent .expand-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ═══════════ FINAL UX POLISH PATCH V31 ═══════════ */
+/* Stronger separation for expanded overlay */
+.expand-page {
+  background: linear-gradient(180deg, rgba(244,247,255,.68) 0%, rgba(238,243,252,.74) 100%) !important;
+  backdrop-filter: blur(20px) saturate(1.04) !important;
+}
+[data-theme="dark"] .expand-page {
+  background: linear-gradient(180deg, rgba(15,17,23,.74) 0%, rgba(21,26,39,.80) 100%) !important;
+  backdrop-filter: blur(18px) saturate(1.03) !important;
+}
+
+/* Card/data ratio exact-ish 70/30 */
+#card_cpe_complaints .row.g-3,
+#card_dup_top_cust .row.g-3,
+#card_ot_severity .row.g-3 {
+  grid-template-columns: minmax(0, 7fr) minmax(210px, 3fr) !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+#card_cpe_complaints .col-lg-5 > div,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .col-lg-5 > div {
+  width: 100% !important;
+  justify-self: stretch !important;
+}
+#card_cpe_complaints .chb,
+#card_cpe_complaints .col-lg-5 > div {
+  height: 234px !important;
+  min-height: 234px !important;
+  max-height: 234px !important;
+}
+#card_dup_top_cust .chb,
+#card_dup_top_cust .col-lg-5 > div,
+#card_ot_severity .chb,
+#card_ot_severity .col-lg-5 > div {
+  height: 212px !important;
+  min-height: 212px !important;
+  max-height: 212px !important;
+}
+#card_trend_total .chart-xl {
+  height: 296px !important;
+}
+
+/* Individual expand-page table widths by graph type */
+.expand-data-panel-cpe .expand-table th:first-child,
+.expand-data-panel-cpe .expand-table td:first-child,
+.expand-table-cpe th:first-child,
+.expand-table-cpe td:first-child { width: 50% !important; }
+.expand-data-panel-dup .expand-table th:first-child,
+.expand-data-panel-dup .expand-table td:first-child,
+.expand-table-dup th:first-child,
+.expand-table-dup td:first-child { width: 68% !important; }
+.expand-data-panel-ot .expand-table th:first-child,
+.expand-data-panel-ot .expand-table td:first-child,
+.expand-table-ot th:first-child,
+.expand-table-ot td:first-child { width: 42% !important; }
+.expand-data-panel-trend .expand-table th:first-child,
+.expand-data-panel-trend .expand-table td:first-child,
+.expand-table-trend th:first-child,
+.expand-table-trend td:first-child { width: 56% !important; }
+
+/* Cute compact calendar inside expand page */
+.expand-calendar-wrap {
+  position: relative;
+}
+.expand-calendar-tray {
+  min-width: 262px !important;
+  padding: 8px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(226,232,240,.96) !important;
+  background: rgba(255,255,255,.98) !important;
+  box-shadow: 0 12px 24px rgba(15,23,42,.10) !important;
+  backdrop-filter: blur(10px) !important;
+}
+.expand-calendar-range {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+.expand-range-btn {
+  min-width: 62px !important;
+  height: 30px !important;
+  padding: 0 8px !important;
+  border-radius: 9px !important;
+  font-size: 10px !important;
+}
+.expand-calendar-hint {
+  min-height: 34px !important;
+  margin-top: 6px !important;
+  font-size: 10px !important;
+  padding: 6px 8px !important;
+}
+.expand-sub-wrap { margin-top: 6px !important; }
+.expand-sub-select {
+  height: 32px !important;
+  border-radius: 9px !important;
+  font-size: 10px !important;
+}
+
+/* Total trend labels readability: choose real dates style */
+#card_trend_total .chart-xl canvas,
+.expand-chart-box canvas {
+  image-rendering: auto;
+}
+
+/* Cute compact records popup */
+#dModal .modal-content {
+  border-radius: 18px !important;
+  box-shadow: 0 16px 30px rgba(15,23,42,.16) !important;
+}
+#dModal .modal-header,
+#dModal .modal-footer {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%) !important;
+}
+#dModal .mtt tbody tr:nth-child(odd) { background: rgba(99,102,241,.035) !important; }
+#dModal .mtt tbody tr:nth-child(even) { background: rgba(255,255,255,.74) !important; }
+#dModal .mtt tbody tr:hover { background: rgba(99,102,241,.08) !important; }
+
+@media (max-width: 980px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-page {
+    inset: 108px 8px 8px 8px !important;
+  }
+}
+@media (max-width: 768px) {
+  #card_cpe_complaints .row.g-3,
+  #card_dup_top_cust .row.g-3,
+  #card_ot_severity .row.g-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .expand-page {
+    inset: 96px 6px 6px 6px !important;
+  }
+  #card_cpe_complaints .chb,
+  #card_cpe_complaints .col-lg-5 > div,
+  #card_dup_top_cust .chb,
+  #card_dup_top_cust .col-lg-5 > div,
+  #card_ot_severity .chb,
+  #card_ot_severity .col-lg-5 > div {
+    height: 182px !important;
+    min-height: 182px !important;
+    max-height: 182px !important;
+  }
+}
+
+
+/* ═══════════ AXIS 90 + CUTE CALENDAR + NEAT POPUP TABLE PATCH V32 ═══════════ */
+.period-tray,
+.expand-calendar-tray {
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,251,255,.98) 100%) !important;
+  border: 1px solid rgba(226,232,240,.96) !important;
+  box-shadow: 0 14px 30px rgba(15,23,42,.10) !important;
+}
+.expand-calendar-tray {
+  min-width: 248px !important;
+  padding: 8px !important;
+}
+.expand-calendar-range {
+  gap: 5px !important;
+}
+.expand-range-btn {
+  min-width: 58px !important;
+  height: 28px !important;
+  border-radius: 999px !important;
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  background: #f8fafc !important;
+}
+.expand-range-btn.on {
+  background: rgba(99,102,241,.10) !important;
+  border-color: rgba(99,102,241,.16) !important;
+}
+.expand-calendar-hint {
+  min-height: 30px !important;
+  border-radius: 10px !important;
+  font-size: 9.5px !important;
+  padding: 6px 8px !important;
+}
+.expand-sub-select {
+  height: 30px !important;
+  border-radius: 10px !important;
+  font-size: 9.5px !important;
+}
+
+#dModal .mtt {
+  table-layout: auto !important;
+  width: max-content !important;
+  min-width: 100% !important;
+}
+#dModal .mtt thead th,
+#dModal .mtt td {
+  white-space: nowrap !important;
+}
+#dModal .mtt th:nth-child(1),
+#dModal .mtt td:nth-child(1) { min-width: 90px !important; }
+#dModal .mtt th:nth-child(2),
+#dModal .mtt td:nth-child(2) { min-width: 132px !important; }
+#dModal .mtt th:nth-child(3),
+#dModal .mtt td:nth-child(3) { min-width: 84px !important; }
+#dModal .mtt th:nth-child(4),
+#dModal .mtt td:nth-child(4),
+#dModal .mtt th:nth-child(5),
+#dModal .mtt td:nth-child(5) { min-width: 118px !important; }
+#dModal .mtt th:nth-child(n+6),
+#dModal .mtt td:nth-child(n+6) { min-width: 110px !important; }
+#dModal .mtt td {
+  font-size: 10.5px !important;
+  padding: 7px 10px !important;
+}
+#dModal .mtt thead th {
+  font-size: 8.5px !important;
+  padding: 8px 10px !important;
+}
+
+/* ═══════════ SITE MATCH + FULL-WIDTH 70/30 + STRONGER EXPAND BLUR PATCH V33 ═══════════ */
+#card_site_summary,
+#card_site_complaint_percent {
+  flex: 1 1 100% !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  grid-column: 1 / -1 !important;
+}
+#card_site_summary .row.g-3,
+#card_site_complaint_percent .row.g-3 {
+  grid-template-columns: minmax(0, 7fr) minmax(220px, 3fr) !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+#card_site_summary .col-lg-5 > div,
+#card_site_complaint_percent .col-lg-5 > div {
+  width: 100% !important;
+  justify-self: stretch !important;
+  height: 230px !important;
+  min-height: 230px !important;
+  max-height: 230px !important;
+}
+#card_site_summary .chb,
+#card_site_complaint_percent .chb {
+  height: 230px !important;
+  min-height: 230px !important;
+}
+
+.expand-page {
+  inset: 0 !important;
+  padding: clamp(16px, 2.6vh, 28px) !important;
+  display: grid !important;
+  place-items: center !important;
+  overflow: auto !important;
+  background: rgba(241,245,255,.42) !important;
+  backdrop-filter: blur(24px) saturate(1.02) !important;
+}
+[data-theme="dark"] .expand-page {
+  background: rgba(15,17,23,.54) !important;
+  backdrop-filter: blur(22px) saturate(1.02) !important;
+}
+.expand-shell {
+  width: min(1240px, calc(100vw - 36px)) !important;
+  max-width: min(1240px, calc(100vw - 36px)) !important;
+  height: min(820px, calc(100vh - 36px)) !important;
+  min-height: min(820px, calc(100vh - 36px)) !important;
+  max-height: calc(100vh - 36px) !important;
+  margin: auto !important;
+  padding: 14px 16px 16px !important;
+  overflow: hidden !important;
+  background: rgba(255,255,255,.78) !important;
+  border: 1px solid rgba(226,232,240,.88) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 28px 56px rgba(15,23,42,.16) !important;
+}
+[data-theme="dark"] .expand-shell {
+  background: rgba(26,29,46,.76) !important;
+}
+.expand-topbar {
+  border-bottom: 1px solid rgba(226,232,240,.72) !important;
+  padding: 0 2px 10px !important;
+}
+
+@media (max-width: 980px) {
+  #card_site_summary .row.g-3,
+  #card_site_complaint_percent .row.g-3 { grid-template-columns: 1fr !important; }
+  #card_site_summary .col-lg-5 > div,
+  #card_site_summary .chb,
+  #card_site_complaint_percent .col-lg-5 > div,
+  #card_site_complaint_percent .chb { height: 200px !important; min-height: 200px !important; max-height: 200px !important; }
+  .expand-page { padding: 10px !important; }
+  .expand-shell {
+    width: min(100%, calc(100vw - 20px)) !important;
+    max-width: min(100%, calc(100vw - 20px)) !important;
+    height: calc(100vh - 20px) !important;
+    min-height: calc(100vh - 20px) !important;
+    max-height: calc(100vh - 20px) !important;
+  }
+}
+@media (max-width: 768px) {
+  #card_site_summary .row.g-3,
+  #card_site_complaint_percent .row.g-3 { grid-template-columns: 1fr !important; }
+  #card_site_summary .col-lg-5 > div,
+  #card_site_summary .chb,
+  #card_site_complaint_percent .col-lg-5 > div,
+  #card_site_complaint_percent .chb { height: 176px !important; min-height: 176px !important; max-height: 176px !important; }
+  .expand-page { padding: 6px !important; }
+  .expand-shell {
+    width: calc(100vw - 12px) !important;
+    max-width: calc(100vw - 12px) !important;
+    height: calc(100vh - 12px) !important;
+    min-height: calc(100vh - 12px) !important;
+    max-height: calc(100vh - 12px) !important;
+    border-radius: 18px !important;
+  }
+}
+
+/* ═══════════ EXPAND + POPUP TRUE CENTER PATCH V35 ═══════════ */
+#dModal.show {
+  display: grid !important;
+  place-items: center !important;
+  align-items: center !important;
+  justify-items: center !important;
+  padding: 18px !important;
+  overflow: hidden !important;
+}
+#dModal .modal-dialog {
+  width: min(1280px, calc(100vw - 36px)) !important;
+  max-width: min(1280px, calc(100vw - 36px)) !important;
+  max-height: calc(100vh - 36px) !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transform: translate3d(0,0,0) !important;
+}
+#dModal .modal-content {
+  width: 100% !important;
+  max-height: calc(100vh - 36px) !important;
+}
+#dModal .modal-body {
+  max-height: calc(100vh - 168px) !important;
+}
+.modal-backdrop.high {
+  background: rgba(15,23,42,.42) !important;
+  backdrop-filter: blur(16px) saturate(1.02) !important;
+}
+@media (max-width: 980px) {
+  #dModal.show { padding: 12px !important; }
+  #dModal .modal-dialog,
+  #dModal .modal-content { max-height: calc(100vh - 24px) !important; }
+  #dModal .modal-body { max-height: calc(100vh - 156px) !important; }
+}
+@media (max-width: 768px) {
+  #dModal.show { padding: 8px !important; }
+  #dModal .modal-dialog {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+    max-height: calc(100vh - 16px) !important;
+  }
+  #dModal .modal-content { max-height: calc(100vh - 16px) !important; }
+  #dModal .modal-body { max-height: calc(100vh - 148px) !important; }
+}
+
+/* ═══════════ GRAPH CARD HOVER POLISH PATCH V36 ═══════════ */
+.cd,
+.enterprise-card {
+  transition: box-shadow .22s ease, border-color .22s ease, filter .22s ease !important;
+}
+.cd:hover,
+.enterprise-card:hover {
+  transform: none !important;
+  border-color: color-mix(in srgb, var(--ac) 22%, var(--border)) !important;
+  box-shadow: 0 18px 38px rgba(15,23,42,.14) !important;
+  filter: none !important;
+}
+.cd:hover::before,
+.enterprise-card:hover::before {
+  opacity: 1 !important;
+}
+.cd:hover .cb,
+.enterprise-card:hover .enterprise-body,
+.enterprise-card:hover .cb {
+  transform: none !important;
+}
+.cd:hover .chd h3,
+.enterprise-card:hover .enterprise-title h2 {
+  color: color-mix(in srgb, var(--ac) 88%, var(--t1)) !important;
+}
+.chb:hover {
+  transform: none !important;
+  border-color: var(--border) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35) !important;
+}
+@media (hover:none) {
+  .cd:hover,
+  .enterprise-card:hover,
+  .chb:hover {
+    transform: none !important;
+    box-shadow: inherit !important;
+    filter: none !important;
+  }
+}
+
+/* ═══════════ GRAPH HOVER UNIFY PATCH V40 ═══════════ */
+#card_trend_total,
+#card_cpe_complaints,
+#card_site_summary,
+#card_site_complaint_percent,
+#card_dup_top_cust,
+#card_ot_severity,
+[id^="card_saved_"],
+[id^="card_flt_"],
+[id^="card_pv_"] {
+  transform: none !important;
+}
+.created-graphs-grid {
+  width: 100% !important;
+  grid-column: 1 / -1 !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  column-gap: 14px !important;
+  row-gap: 20px !important;
+  align-items: stretch !important;
+  grid-auto-rows: 1fr !important;
+  margin-top: 4px !important;
+  margin-bottom: 20px !important;
+}
+.created-graphs-grid > .cd {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  margin-bottom: 0 !important;
+}
+.created-graphs-grid > .cd:last-child:nth-child(odd) {
+  grid-column: 1 / -1 !important;
+}
+.created-graphs-grid > .cd .chd {
+  min-height: 56px !important;
+  align-items: flex-start !important;
+}
+.created-graphs-grid > .cd .cb {
+  flex: 1 1 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.ct.dashboard-stage {
+  row-gap: 20px !important;
+}
+@media (max-width: 1100px) {
+  .created-graphs-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+#card_trend_total:hover,
+#card_cpe_complaints:hover,
+#card_site_summary:hover,
+#card_site_complaint_percent:hover,
+#card_dup_top_cust:hover,
+#card_ot_severity:hover,
+[id^="card_saved_"]:hover,
+[id^="card_flt_"]:hover,
+[id^="card_pv_"]:hover {
+  transform: none !important;
+  border-color: color-mix(in srgb, var(--ac) 22%, var(--border)) !important;
+  box-shadow: 0 18px 38px rgba(15,23,42,.14) !important;
+}
+
+/* ═══════════ CREATED GRAPHS HEADING + TOOL TRAY POLISH PATCH V41 ═══════════ */
+#createdGraphsHeading {
+  margin-top: 4px !important;
+  margin-bottom: 2px !important;
+}
+#createdGraphsHeading .enterprise-head {
+  padding: 12px 16px !important;
+}
+#createdGraphsHeading .enterprise-title h2 {
+  font-size: 15px !important;
+}
+#createdGraphsHeading .enterprise-title p {
+  margin-top: 2px !important;
+}
+.filter-preview-grid {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  column-gap: 16px !important;
+  row-gap: 20px !important;
+  align-items: stretch !important;
+  grid-auto-rows: auto !important;
+  align-content: start !important;
+}
+.filter-preview-grid > .cd {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  margin-bottom: 0 !important;
+}
+.filter-preview-grid > .cd:last-child:nth-child(odd) {
+  grid-column: 1 / -1 !important;
+}
+.filter-preview-grid > .cd .chd {
+  min-height: 56px !important;
+  align-items: flex-start !important;
+}
+.filter-preview-grid > .cd .cb {
+  flex: 1 1 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.tools-tray {
+  min-width: 212px !important;
+  padding: 10px !important;
+  border-radius: 16px !important;
+}
+.tools-tray-head {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 2px 4px 8px !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: .5px !important;
+  color: var(--t2) !important;
+  text-transform: uppercase !important;
+}
+.tools-tray-head .ic {
+  width: 13px !important;
+  height: 13px !important;
+}
+.tools-tray .tool-nav,
+.tools-tray .vertical-tool-nav {
+  gap: 8px !important;
+}
+.tools-tray .tool-item-btn {
+  min-width: 0 !important;
+  width: 100% !important;
+  min-height: 44px !important;
+  height: 44px !important;
+  padding: 0 12px !important;
+  border-radius: 14px !important;
+  display: grid !important;
+  grid-template-columns: 18px minmax(0,1fr) auto !important;
+  align-items: center !important;
+  justify-content: stretch !important;
+  column-gap: 10px !important;
+  line-height: 1 !important;
+}
+.tools-tray .tool-item-btn .ic {
+  width: 16px !important;
+  height: 16px !important;
+  justify-self: start !important;
+}
+.tools-tray .tool-item-btn .tool-item-label {
+  display: block !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+}
+.tools-tray .tool-item-btn .cnt {
+  margin-left: 0 !important;
+  justify-self: end !important;
+  min-width: 20px !important;
+  height: 20px !important;
+  padding: 0 6px !important;
+  font-size: 9px !important;
+}
+.tools-tray .tool-item-btn:hover {
+  transform: translateY(-1px) !important;
+}
+.tools-tray .tool-item-btn,
+#cmpTab,
+#pvtTab,
+#fltTab {
+  margin-left: 0 !important;
+  border-left: none !important;
+  padding-left: 16px !important;
+  padding-right: 12px !important;
+  column-gap: 12px !important;
+}
+.tools-tray .tool-item-btn .ic,
+#cmpTab .ic,
+#pvtTab .ic,
+#fltTab .ic {
+  margin: 0 0 0 2px !important;
+}
+@media (max-width: 768px) {
+  .tools-tray {
+    min-width: min(86vw, 236px) !important;
+    padding: 8px !important;
+  }
+  .tools-tray .tool-item-btn,
+  #cmpTab,
+  #pvtTab,
+  #fltTab {
+    min-height: 42px !important;
+    height: 42px !important;
+    border-radius: 12px !important;
+    padding-left: 14px !important;
+  }
+}
+
+/* ═══════════ TOP ICON COLOR UNIFY PATCH V37 ═══════════ */
+.dashboard-item-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 38px;
+  max-width: min(44vw, 340px);
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 8px 16px rgba(15,23,42,.08);
+  color: var(--t1);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-theme="dark"] .dashboard-item-badge {
+  border-color: color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(26,29,46,.88) !important;
+  color: var(--t1);
+}
+@media (max-width: 768px) {
+  .dashboard-item-badge {
+    min-height: 36px;
+    max-width: min(52vw, 220px);
+    padding: 0 12px;
+    border-radius: 11px;
+    font-size: 11px;
+  }
+}
+#periodToggleBtn,
+#toolsToggleBtn,
+#setBtn {
+  color: var(--t2) !important;
+  border: 1px solid rgba(226,232,240,.95) !important;
+  background: rgba(255,255,255,.92) !important;
+  box-shadow: 0 8px 16px rgba(15,23,42,.08) !important;
+  transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s ease, border-color .2s ease, background .2s ease, color .2s ease !important;
+}
+[data-theme="dark"] #periodToggleBtn,
+[data-theme="dark"] #toolsToggleBtn,
+[data-theme="dark"] #setBtn {
+  color: var(--t2) !important;
+  border-color: color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(26,29,46,.88) !important;
+}
+#periodToggleBtn .ic,
+#toolsToggleBtn .ic,
+#setBtn .ic {
+  stroke: currentColor !important;
+}
+#periodToggleBtn:hover,
+#toolsToggleBtn:hover,
+#setBtn:hover {
+  transform: translateY(-3px) !important;
+  color: var(--ac) !important;
+  border-color: color-mix(in srgb, var(--ac) 24%, var(--border)) !important;
+  background: color-mix(in srgb, var(--ac) 8%, rgba(255,255,255,.96)) !important;
+  box-shadow: 0 14px 28px rgba(15,23,42,.12) !important;
+}
+[data-theme="dark"] #periodToggleBtn:hover,
+[data-theme="dark"] #toolsToggleBtn:hover,
+[data-theme="dark"] #setBtn:hover {
+  background: color-mix(in srgb, var(--ac) 12%, rgba(26,29,46,.92)) !important;
+}
+#periodToggleBtn:focus,
+#toolsToggleBtn:focus,
+#setBtn:focus,
+#periodToggleBtn:focus-visible,
+#toolsToggleBtn:focus-visible,
+#setBtn:focus-visible {
+  outline: none !important;
+  box-shadow: 0 8px 16px rgba(15,23,42,.08) !important;
+}
+#periodToggleBtn.act,
+#toolsToggleBtn.act {
+  transform: translateY(0) !important;
+  color: #fff !important;
+  border-color: var(--ac) !important;
+  background: var(--ac) !important;
+  box-shadow: 0 12px 24px rgba(99,102,241,.22) !important;
+}
+
+/* ═══════════ SETTINGS EXTENDED PAGE PATCH V38 ═══════════ */
+.settings-extended-page {
+  position: fixed;
+  inset: 0;
+  z-index: 6200;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(241,245,255,.42);
+  backdrop-filter: blur(20px) saturate(1.04);
+  opacity: 0;
+  transform: scale(.988);
+  transition: opacity .18s ease, transform .22s ease;
+}
+.settings-extended-page.show {
+  opacity: 1;
+  transform: scale(1);
+}
+.settings-extended-page.closing {
+  opacity: 0;
+  transform: scale(.988);
+}
+[data-theme="dark"] .settings-extended-page {
+  background: rgba(15,17,23,.56);
+  backdrop-filter: blur(18px) saturate(1.03);
+}
+.settings-extended-shell {
+  width: min(620px, calc(100vw - 32px));
+  max-width: min(620px, calc(100vw - 32px));
+  height: auto;
+  max-height: calc(100vh - 32px);
+  display: flex;
+}
+.settings-extended-shell .modal-content {
+  height: auto !important;
+  width: 100% !important;
+  max-height: calc(100vh - 32px) !important;
+  border-radius: 28px !important;
+  border: 1px solid rgba(226,232,240,.88) !important;
+  background: rgba(255,255,255,.84) !important;
+  backdrop-filter: blur(18px) saturate(1.04) !important;
+  box-shadow: 0 30px 60px rgba(15,23,42,.18) !important;
+}
+[data-theme="dark"] .settings-extended-shell .modal-content {
+  background: rgba(26,29,46,.86) !important;
+}
+.settings-extended-shell .modal-header {
+  padding: 18px 22px !important;
+  border-bottom: 1px solid rgba(226,232,240,.78) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ac) 6%, var(--bg2)) 0%, var(--bg2) 100%) !important;
+}
+.settings-extended-shell .modal-header .modal-title {
+  font-size: 18px !important;
+  font-weight: 800 !important;
+}
+.settings-extended-shell .modal-body {
+  padding: 18px 22px !important;
+  max-height: none !important;
+  overflow: auto !important;
+}
+.settings-extended-shell .st-sec {
+  padding: 12px 0 !important;
+}
+.settings-extended-shell .st-row {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  align-items: start !important;
+  gap: 8px !important;
+}
+.settings-extended-shell .st-row > div:first-child {
+  min-width: 0 !important;
+}
+.settings-extended-shell .sel-w,
+.settings-extended-shell .searchbox,
+.settings-extended-shell .ch-list {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+.settings-extended-shell .modal-footer {
+  padding: 14px 22px !important;
+  border-top: 1px solid rgba(226,232,240,.78) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, #fff) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%) !important;
+}
+@media (max-width: 768px) {
+  .settings-extended-page { padding: 8px; }
+  .settings-extended-shell {
+    width: min(620px, calc(100vw - 16px));
+    max-width: min(620px, calc(100vw - 16px));
+    height: auto;
+    max-height: calc(100vh - 16px);
+  }
+  .settings-extended-shell .modal-content {
+    border-radius: 20px !important;
+    max-height: calc(100vh - 16px) !important;
+  }
+  .settings-extended-shell .modal-body {
+    padding: 14px 16px !important;
+  }
+}
+
+</style>
+
+  </head>
+<body>
+
+
+
+<!-- ICON SPRITES -->
+<svg style="display:none;" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+    <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4Z"/><line x1="13" y1="5" x2="13" y2="19"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-pivot" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
+    <symbol id="i-trend" viewBox="0 0 24 24"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+    <symbol id="i-compare" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><polyline points="7 23 3 19 7 15"/><line x1="21" y1="5" x2="3" y2="5"/><line x1="3" y1="19" x2="21" y2="19"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-rocket" viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.5-.7 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-4.96-4.49-9-10-9z"/></symbol>
+    <symbol id="i-type" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></symbol>
+    <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></symbol>
+  </defs>
+</svg>
+
+<div class="ld" id="ld"><div class="ld-bar"><div class="ld-fill"></div></div><div class="ld-txt">Loading data…</div></div>
+
+<header class="hdr">
+  <div class="hdr-l" style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="hdr-ico"><svg class="ic"><use href="#i-bolt"/></svg></div>
+      <div class="hdr-t" style="font-size:18px; font-weight:800; color:var(--t1);">OPI Site down Summary</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <select class="sel" id="tabDD" style="font-size:12.5px; padding:6px 14px; border-radius:8px; font-weight:700; border:1px solid var(--border); background:var(--bg3); color:var(--t1);" onchange="fetchTab(this.value)"></select>
+      
+    </div>
+    <div class="hdr-s" id="subLbl" style="display:none;"></div>
+  </div>
+  <div class="hdr-r" style="display:flex; flex-direction:row; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; width:auto;">
+    <div class="period-launch-wrap" id="periodLaunchWrap">
+      <button class="icon-btn period-toggle-btn" id="periodToggleBtn" title="Date Range" onclick="togglePeriodTray()"><svg class="ic"><use href="#i-calendar"/></svg></button>
+      <div class="period-tray" id="periodTray">
+        <div class="period-tray-head"><svg class="ic ic-sm"><use href="#i-calendar"/></svg> Date View</div>
+        <div class="period-tray-grid">
+          <div class="period-mini-panel period-mini-panel-left">
+            <div class="period-mini-title">Range</div>
+            <div class="tp period-tray-tabs">
+              <button class="tp-b on" data-r="all" onclick="setRange('all')">All</button>
+              <button class="tp-b" data-r="daily" onclick="setRange('daily')">Daily</button>
+              <button class="tp-b" data-r="weekly" onclick="setRange('weekly')">Weekly</button>
+              <button class="tp-b" data-r="monthly" onclick="setRange('monthly')">Monthly</button>
+              <button class="tp-b" data-r="yearly" onclick="setRange('yearly')">Yearly</button>
+            </div>
+          </div>
+          <div class="period-mini-panel period-mini-panel-right">
+            <div class="period-mini-title">Selection</div>
+            <div class="period-tray-row">
+              <div class="sp-wrap" id="spWrap" style="display:none;align-items:center;gap:6px;">
+                <select class="sp-sel" id="spSel" onchange="onSubPeriodChange()"></select>
+              </div>
+              <div id="periodSelectionHint" class="period-selection-hint">Choose a range above to enable date selection.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="tools-launch-wrap" id="toolsLaunchWrap">
+      <button class="icon-btn tools-toggle-btn" id="toolsToggleBtn" title="Tools" onclick="toggleToolsTray()"><svg class="ic"><use href="#i-grid"/></svg></button>
+      <div class="tools-tray" id="toolsTray">
+        <div class="tools-tray-head"><svg class="ic ic-sm"><use href="#i-grid"/></svg> Tools</div>
+        <div class="tp tool-nav vertical-tool-nav">
+          <button class="tp-b cmp tool-btn tool-item-btn" id="cmpTab" data-tip="Compare" onclick="toggleCompareMode()" title="Compare periods (day/week/month/year)"><svg class="ic ic-sm"><use href="#i-compare"/></svg><span class="tool-item-label">Compare</span><span class="cnt" id="cmpCnt">0</span></button>
+          <button class="tp-b pvt tool-btn tool-item-btn" id="pvtTab" data-tip="Pivot" onclick="togglePivotBuilderMode()" title="Pivot Table Builder"><svg class="ic ic-sm"><use href="#i-pivot"/></svg><span class="tool-item-label">Pivot</span></button>
+          <button class="tp-b flt tool-btn tool-item-btn" id="fltTab" data-tip="Create Graph" onclick="toggleFilterMode()" title="Create New Graph"><svg class="ic ic-sm"><use href="#i-grid"/></svg><span class="tool-item-label">Create Graph</span></button>
+        </div>
+      </div>
+    </div>
+    <div class="palette-settings-wrap">
+      <button class="icon-btn palette-settings-btn" id="setBtn" title="Settings" onclick="openSettings()"><svg class="ic"><use href="#i-settings"/></svg></button>
+    </div>
+    <div class="dashboard-item-badge" id="dashboardItemBadge" title="Current Dashboard Item"></div>
+  </div>
+</header>
+
+<div class="sum-r" id="sumRow"></div>
+<div class="dr-i" id="drInfo"></div>
+
+<!-- Compare strip (period vs period) -->
+<div class="cmp-strip" id="cmpStrip">
+  <div class="row1">
+    <div class="lbl"><svg class="ic"><use href="#i-compare"/></svg> Compare periods</div>
+    <div class="seg" id="cmpGranSeg">
+      <button data-g="day">Day</button>
+      <button data-g="week">Week</button>
+      <button data-g="month" class="on">Month</button>
+      <button data-g="year">Year</button>
+    </div>
+    <span class="cmp-helper-badge" id="cmpHelper" style="background:var(--ac-bg);color:var(--ac);padding:4px 12px;border-radius:8px;font-weight:700;border:1px solid var(--ac);font-size:11.5px;transition:all .2s ease;">Pick 2 or more periods below</span>
+    <div class="actions" style="display:flex;align-items:center;gap:8px;">
+      <button type="button" class="btn-cmp-clear" onclick="clearComparePicks()" title="Clear picked periods">
+        <span>✕</span> <span>Clear</span>
+      </button>
+      <button type="button" class="btn-cmp-exit" onclick="returnToHomePageFromGraph()" title="Back to dashboard">
+        <span>⬅️</span> <span>Back to Dashboard</span>
+      </button>
+    </div>
+  </div>
+  <div class="cmp-period-list" id="cmpPeriodList"></div>
+</div>
+
+<div class="ct" id="main"></div>
+
+<!-- Data records modal -->
+<div class="modal fade" id="dModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-md-down">
+    <div class="modal-content">
+      <div class="modal-header"><div><h5 class="modal-title"><svg class="ic"><use href="#i-search"/></svg> Records</h5><div class="m-flt" id="mFilt">—</div></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body" id="mBody">
+        <table class="mtt"><thead><tr id="mH"></tr></thead><tbody id="mB"></tbody></table>
+        <div id="mLoadMore" style="text-align:center;padding:8px;display:none;">
+          <button class="btn-mc sec" onclick="loadMoreRecords()">Show more</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="rc" id="mC"></span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-mc sec" onclick="exportRecordsCSV()"><svg class="ic"><use href="#i-download"/></svg> CSV</button>
+          <button class="btn-mc" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Zoom modal -->
+<div class="modal fade" id="zoomModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-md-down">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="zoomTitle"><svg class="ic"><use href="#i-chart"/></svg> Chart</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="zoom-type-pills" id="zoomTP"></div>
+        <div class="zoom-chart-area"><canvas id="zoomCanvas"></canvas></div>
+        <div class="zoom-hint"><svg class="ic ic-sm"><use href="#i-cursor"/></svg> Click any bar / slice / point to see the records behind it</div>
+        <div class="zoom-legend" id="zoomLeg"></div>
+      </div>
+      <div class="modal-footer"><span class="rc" id="zoomInfo"></span><button class="btn-mc" data-bs-dismiss="modal">Close</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal fade" id="settingsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-md-down">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title"><svg class="ic"><use href="#i-settings"/></svg> Settings</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+
+        <div class="st-sec" style="display:none !important;">
+          <div class="st-h"><svg class="ic ic-sm"><use href="#i-palette"/></svg> Appearance</div>
+          <div class="st-row"><div><div class="st-lbl">Dark mode</div><div class="st-desc">Toggle between light and dark</div></div><div class="dm" id="dmT" onclick="toggleDark()"><div class="dm-d"></div></div></div>
+          <div class="st-row"><div><div class="st-lbl">Color theme</div><div class="st-desc">Accent color used across the dashboard</div></div><div class="swatch-row" id="swRow"></div></div>
+          <div class="st-row"><div><div class="st-lbl">Text size</div><div class="st-desc">Base font size</div></div>
+            <div class="seg" id="fsSeg"><button data-v="sm">S</button><button data-v="md" class="on">M</button><button data-v="lg">L</button><button data-v="xl">XL</button></div>
+          </div>
+        </div>
+
+        <div class="st-sec">
+          <div class="st-h"><svg class="ic ic-sm"><use href="#i-rocket"/></svg> Startup Configurations </div>
+          <div class="st-row"><div><div class="st-lbl">Default period</div><div class="st-desc">Period view applied on startup</div></div>
+            <select class="sel-w" id="defRangeSel"><option value="all">All</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>
+          </div>
+          <div class="st-row"><div><div class="st-lbl">Date sorting order</div><div class="st-desc">Sort order for date & period dropdowns</div></div>
+            <select class="sel-w" id="defDateSortSel" onchange="S.dateSortOrder = this.value; saveSettings(); if (typeof updateSubPeriodUI === 'function') updateSubPeriodUI(); if (typeof doRender === 'function') doRender();">
+              <option value="desc"> Descending (Dec,Nov / 2026,2025 )</option>
+              <option value="asc"> Ascending (Jan,Feb / 2024,2025 )</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="st-sec">
+          <div class="st-h"><svg class="ic ic-sm"><use href="#i-eye"/></svg> Graphs Configurations <span style="font-weight:500;color:var(--t3);font-size:10px;text-transform:none;letter-spacing:0;">(current tab)</span></div>
+          <div style="display:flex;gap:6px;margin-bottom:6px;">
+            <button class="btn-mc sec" onclick="toggleAllCharts(true)">Show all</button>
+            <button class="btn-mc sec" onclick="toggleAllCharts(false)">Hide all</button>
+          </div>
+          <div class="ch-list" id="chList"></div>
+        </div>
+
+        <div class="st-sec">
+          <div class="st-h"><svg class="ic ic-sm"><use href="#i-trend"/></svg> Analytics</div>
+          <div class="st-row"><div><div class="st-lbl">Category Limit</div><div class="st-desc">Top K items shown in each card (type any number, 0 or empty for all)</div></div>
+            <input type="number" id="chartLimitInput" class="searchbox" min="0" oninput="onChartLimitChange(this.value)" placeholder="Show All" style="width: 140px; height: 32px; padding: 4px 10px; margin: 0;">
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn-mc sec" onclick="resetSettings()">Reset to defaults</button>
+        <button class="btn-mc" data-bs-dismiss="modal" onclick="updateCreatedGraphsVisibility()">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+// ═══════════ REAL-TIME GOOGLE SHEETS DATABASE CONNECTION ═══════════
+// Universal API Endpoint Configuration for Cloudflare Pages / Standalone CDN Hosting
+let GAS_WEB_APP_URL = "";
+try { GAS_WEB_APP_URL = localStorage.getItem('noc_gas_api_url') || ""; } catch(e) {}
+
+const DASH_EMBED = (() => {
+  const q = new URLSearchParams(window.location.search);
+  return {
+    enabled: !!q.get('dashboardId'),
+    dashboardId: q.get('dashboardId') || '',
+    dashboardName: q.get('dashboardName') || 'Dashboard',
+    sourceApi: q.get('api') || '',
+    cacheOnly: q.get('cacheOnly') === '1'
   };
+})();
+function getDashboardScopeKey(){
+  return (DASH_EMBED && DASH_EMBED.dashboardId) ? String(DASH_EMBED.dashboardId) : 'global';
+}
+function getScopedStorageKey(base){
+  return base + '__' + getDashboardScopeKey();
+}
+function updateDashboardItemBadge(){
+  let el = document.getElementById('dashboardItemBadge');
+  if(!el) return;
+  let name = (DASH_EMBED && DASH_EMBED.dashboardName) ? String(DASH_EMBED.dashboardName).trim() : '';
+  if(!name){
+    el.style.display='none';
+    el.textContent='';
+    return;
+  }
+  el.style.display='inline-flex';
+  el.textContent = name;
+}
+function getEmbedDashboardDataCacheKey(){
+  return 'noc_embed_dashboard_data__' + getDashboardScopeKey();
+}
+function loadEmbedDashboardDataCache(){
+  try {
+    let raw = localStorage.getItem(getEmbedDashboardDataCacheKey());
+    if (!raw) return null;
+    let parsed = JSON.parse(raw);
+    if (parsed && parsed.rawData && Array.isArray(parsed.rawData)) return parsed;
+  } catch(e) {}
+  return null;
+}
+function saveEmbedDashboardDataCache(tabData){
+  try {
+    localStorage.setItem(getEmbedDashboardDataCacheKey(), JSON.stringify(tabData));
+  } catch(e) {}
+}
 
-  const DASHBOARD_CHUNK_SIZE = 50000;
+let EMBED_AUTH_HEADER = '';
+window.addEventListener('message', function(ev){
+  try {
+    if(ev && ev.data && ev.data.type === 'noc-auth' && ev.data.authHeader){
+      EMBED_AUTH_HEADER = ev.data.authHeader;
+    }
+  } catch(e) {}
+});
 
-  const buildStoredDashboardPayload = (rawPayload) => {
-    const rows = extractDashboardRows(rawPayload);
-    const matrixHeaders = Array.isArray(rawPayload?.values?.[0]) ? rawPayload.values[0] : null;
+function getEmbedAuthHeader(){
+  try { if(EMBED_AUTH_HEADER) return EMBED_AUTH_HEADER; } catch(e) {}
+  try { const a = localStorage.getItem('authHeader') || ''; if(a) return a; } catch(e) {}
+  try { const a = sessionStorage.getItem('authHeader') || ''; if(a) return a; } catch(e) {}
+  try {
+    if(window.parent && window.parent !== window && window.parent.localStorage){
+      const a = window.parent.localStorage.getItem('authHeader') || '';
+      if(a) return a;
+    }
+  } catch(e) {}
+  return '';
+}
+
+function getEmbedApiHeaders(){
+  const auth = getEmbedAuthHeader();
+  return auth ? { 'Authorization': auth } : {};
+}
+
+async function waitForEmbedAuth(maxMs){
+  const started = Date.now();
+  while(Date.now() - started < maxMs){
+    const auth = getEmbedAuthHeader();
+    if(auth) return auth;
+    await new Promise(r=>setTimeout(r, 120));
+  }
+  return '';
+}
+
+function refSheetValuesToObjects(values){
+  if(!Array.isArray(values) || values.length < 2) return [];
+  const headers=(values[0]||[]).map(h=>String(h ?? '').trim());
+  return values.slice(1).filter(row=>Array.isArray(row) && row.some(cell=>String(cell ?? '').trim()!==''))
+    .map(row=>{
+      const obj={};
+      headers.forEach((header,idx)=>{ obj[header || ('Column_' + (idx+1))] = row[idx] ?? ''; });
+      return obj;
+    });
+}
+function refExtractRows(payload){
+  const isObjArray = (arr) => Array.isArray(arr) && (!arr.length || typeof arr[0] === 'object');
+  const isMatrix = (arr) => Array.isArray(arr) && arr.length >= 2 && Array.isArray(arr[0]) && Array.isArray(arr[1]);
+  const walk = (node, depth=0) => {
+    if(depth > 6 || node == null) return [];
+    if(isObjArray(node)) return node;
+    if(isMatrix(node)) return refSheetValuesToObjects(node);
+    if(typeof node !== 'object') return [];
+    if(isMatrix(node.values)) return refSheetValuesToObjects(node.values);
+    const pref=['rows','data','result','items','records','payload','values'];
+    for(const key of pref){
+      if(node[key] !== undefined){
+        const hit = walk(node[key], depth+1);
+        if(hit.length || Array.isArray(node[key])) return hit;
+      }
+    }
+    for(const key of Object.keys(node)){
+      const hit = walk(node[key], depth+1);
+      if(hit.length) return hit;
+    }
+    return [];
+  };
+  return walk(payload);
+}
+let DASH_EMBED_REMOTE_DATA_DISABLED = false;
+let DASH_EMBED_REMOTE_STATE_DISABLED = false;
+async function fetchDashboardSourceApiFallback(forceReload){
+  if(!DASH_EMBED.sourceApi) throw new Error('Dashboard source API is missing.');
+  let src=DASH_EMBED.sourceApi;
+  if(forceReload){
+    src += (src.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + Date.now();
+  }
+  const res = await fetch(src, { headers: { 'Accept': 'application/json' } });
+  const txt = await res.text();
+  let raw = {};
+  try { raw = txt ? JSON.parse(txt) : {}; } catch(e) { throw new Error('Source API returned non-JSON response.'); }
+  if(!res.ok) throw new Error(raw.error || ('HTTP ' + res.status));
+  const rows = refExtractRows(raw);
+  const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(raw?.sourceMeta?.headers) ? raw.sourceMeta.headers : (Array.isArray(raw?.values?.[0]) ? raw.values[0] : []));
+  return {
+    success: true,
+    tabName: DASH_EMBED.dashboardName,
+    headers,
+    rawData: rows,
+    isPivot: false,
+    sourceMeta: raw?.sourceMeta || { range: raw?.range || null, majorDimension: raw?.majorDimension || null, headers },
+    rowCount: rows.length || 0,
+    fallbackMode: 'direct-source-api'
+  };
+}
+async function fetchDashboardEmbedData(forceReload){
+  if (DASH_EMBED.enabled && !getEmbedAuthHeader()) {
+    await waitForEmbedAuth(2500);
+  }
+  const cached = loadEmbedDashboardDataCache();
+  if (DASH_EMBED_REMOTE_DATA_DISABLED && cached && !forceReload) return cached;
+  if (DASH_EMBED.cacheOnly && cached && !forceReload) return cached;
+  const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/data' + (forceReload ? '?refresh=1' : '');
+  try {
+    const res = await fetch(url, { credentials: 'same-origin', headers: getEmbedApiHeaders() });
+    const txt = await res.text();
+    let json = {};
+    try { json = txt ? JSON.parse(txt) : {}; } catch(e) { throw new Error('Dashboard API returned non-JSON response.'); }
+    if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+    const raw = json.data || json;
+    const rows = refExtractRows(raw);
+    const headers = rows.length ? Object.keys(rows[0]) : (Array.isArray(raw?.sourceMeta?.headers) ? raw.sourceMeta.headers : []);
+    let tabData = {
+      success: true,
+      tabName: DASH_EMBED.dashboardName,
+      headers,
+      rawData: rows,
+      isPivot: false,
+      sourceMeta: json.sourceMeta || raw?.sourceMeta || null,
+      rowCount: json.rowCount || rows.length || 0
+    };
+    saveEmbedDashboardDataCache(tabData);
+    return tabData;
+  } catch(err) {
+    DASH_EMBED_REMOTE_DATA_DISABLED = true;
+    let fallback = await fetchDashboardSourceApiFallback(forceReload);
+    if (fallback) {
+      saveEmbedDashboardDataCache(fallback);
+      return fallback;
+    }
+    if (cached && !forceReload) return cached;
     return {
-      rows,
-      generatedAt: rawPayload?.generatedAt || rawPayload?.generated_at || new Date().toISOString(),
-      sourceMeta: {
-        success: rawPayload?.success,
-        sheet: rawPayload?.sheet || null,
-        range: rawPayload?.range || null,
-        majorDimension: rawPayload?.majorDimension || null,
-        rowCount: rows.length,
-        headers: Array.isArray(rawPayload?.headers) ? rawPayload.headers : matrixHeaders,
-      },
-      sourceSummary: buildDashboardSummary(rows)
-    }; 
-  };
+      success:true,
+      tabName:DASH_EMBED.dashboardName,
+      headers:[],
+      rawData:[],
+      isPivot:false,
+      sourceMeta:{ missingCache:true, error:String(err && err.message || err) },
+      rowCount:0
+    };
+  }
+}
+async function fetchDashboardEmbedAppState(){
+  if (DASH_EMBED.enabled && !getEmbedAuthHeader()) {
+    await waitForEmbedAuth(2500);
+  }
+  const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/app-state';
+  try {
+    const res = await fetch(url, { credentials: 'same-origin', headers: getEmbedApiHeaders() });
+    const txt = await res.text();
+    let json = {};
+    try { json = txt ? JSON.parse(txt) : {}; } catch(e) { throw new Error('Dashboard App State API returned non-JSON response.'); }
+    if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+    return { success: true, stateJson: json.stateJson || null, mode: 'remote-dashboard-state' };
+  } catch(err) {
+    return { success: false, stateJson: null, mode: 'remote-state-unavailable', error: String(err && err.message || err) };
+  }
+}
 
-  const writeDashboardPayload = async (item, payloadObj, rowCount, lastError = null) => {
-    const payloadJson = JSON.stringify(payloadObj);
-
-    await env.DB.prepare(
-      "DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?"
-    ).bind(item.id).run();
-
-    if (payloadJson.length <= DASHBOARD_CHUNK_SIZE) {
-      await env.DB.prepare(`
-        INSERT INTO dashboard_cache (
-          dashboard_item_id, dashboard_name, source_url, payload_json,
-          row_count, last_synced_at, last_error
-        )
-        VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
-        ON CONFLICT(dashboard_item_id) DO UPDATE SET
-          dashboard_name = excluded.dashboard_name,
-          source_url = excluded.source_url,
-          payload_json = excluded.payload_json,
-          row_count = excluded.row_count,
-          last_synced_at = datetime('now'),
-          last_error = excluded.last_error
-      `).bind(
-        item.id,
-        item.name,
-        item.api_url,
-        payloadJson,
-        rowCount,
-        lastError
-      ).run();
+async function apiCall(action, params = {}) {
+  return new Promise((resolve, reject) => {
+    if (DASH_EMBED.enabled) {
+      if (action === 'getTabNames') {
+        resolve([DASH_EMBED.dashboardName]);
+        return;
+      }
+      if (action === 'getTabData') {
+        fetchDashboardEmbedData(params && params.forceReload).then(resolve).catch(reject);
+        return;
+      }
+      if (action === 'getStartupBundle') {
+        Promise.all([fetchDashboardEmbedData(false), fetchDashboardEmbedAppState()]).then(([tabData, appState]) => {
+          resolve({
+            tabNames: [DASH_EMBED.dashboardName],
+            tabData: tabData,
+            appState: appState
+          });
+        }).catch(reject);
+        return;
+      }
+      if (action === 'saveAppState') {
+        const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/app-state';
+        fetch(url, {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', ...getEmbedApiHeaders() },
+          body: JSON.stringify({ stateJson: params.stateJson || '' })
+        }).then(async (res) => {
+          const txt = await res.text();
+          let json = {};
+          try { json = txt ? JSON.parse(txt) : {}; } catch(e) { json = {}; }
+          if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
+          resolve({ success: true, mode: 'remote-dashboard-state', result: json });
+        }).catch((err) => {
+          resolve({ success: false, mode: 'remote-state-unavailable', error: String(err && err.message || err) });
+        });
+        return;
+      }
+      if (action === 'loadAppState') {
+        fetchDashboardEmbedAppState().then(resolve).catch(reject);
+        return;
+      }
+      if (action === 'clearCache') {
+        resolve({ success: true, skipped: true, mode: 'embed' });
+        return;
+      }
+      resolve({ success: true, skipped: true, action, mode: 'embed' });
       return;
     }
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      console.log('Real-Time Sheet DB Call [' + action + '] with params:', params);
+      let runner = google.script.run
+        .withSuccessHandler(function(result) {
+          console.log('Real-Time Sheet DB Response [' + action + ']:', result);
+          resolve(result);
+        })
+        .withFailureHandler(function(error) {
+          console.error('Real-Time Sheet DB Error [' + action + ']:', error);
+          reject(error);
+        });
 
-    const chunks = [];
-    for (let i = 0; i < payloadJson.length; i += DASHBOARD_CHUNK_SIZE) {
-      chunks.push(payloadJson.slice(i, i + DASHBOARD_CHUNK_SIZE));
-    }
-
-    const manifest = JSON.stringify({ chunked: true, parts: chunks.length });
-
-    await env.DB.prepare(`
-      INSERT INTO dashboard_cache (
-        dashboard_item_id, dashboard_name, source_url, payload_json,
-        row_count, last_synced_at, last_error
-      )
-      VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
-      ON CONFLICT(dashboard_item_id) DO UPDATE SET
-        dashboard_name = excluded.dashboard_name,
-        source_url = excluded.source_url,
-        payload_json = excluded.payload_json,
-        row_count = excluded.row_count,
-        last_synced_at = datetime('now'),
-        last_error = excluded.last_error
-    `).bind(
-      item.id,
-      item.name,
-      item.api_url,
-      manifest,
-      rowCount,
-      lastError
-    ).run();
-
-    for (let idx = 0; idx < chunks.length; idx++) {
-      await env.DB.prepare(`
-        INSERT OR REPLACE INTO dashboard_cache_chunks (dashboard_item_id, chunk_index, payload_chunk)
-        VALUES (?, ?, ?)
-      `).bind(item.id, idx, chunks[idx]).run();
-    }
-  };
-
-  const readDashboardPayload = async (cacheRow) => {
-    if (!cacheRow?.payload_json) return [];
-
-    const parsed = safeJson(cacheRow.payload_json, null);
-
-    if (parsed && parsed.chunked) {
-      const chunkRows = (await env.DB.prepare(`
-        SELECT payload_chunk
-        FROM dashboard_cache_chunks
-        WHERE dashboard_item_id=?
-        ORDER BY chunk_index ASC
-      `).bind(cacheRow.dashboard_item_id).all()).results ?? [];
-
-      const combined = chunkRows.map(r => r.payload_chunk || '').join('');
-      return safeJson(combined, []);
-    }
-
-    return parsed ?? [];
-  };
-
-  const getDashboardItem = async (id) => {
-    await ensureDashboardTables();
-    return await env.DB.prepare(`
-      SELECT di.*, dis.settings_json
-      FROM dashboard_items di
-      LEFT JOIN dashboard_item_settings dis
-        ON dis.dashboard_item_id = di.id
-      WHERE di.id = ?
-    `).bind(id).first();
-  };
-
-  const syncDashboardItem = async (item) => {
-    await ensureDashboardTables();
-
-    try {
-      const res = await fetch(item.api_url, {
-        headers: { 'Accept': 'application/json' }
-      });
-
-      if (!res.ok) {
-        if (res.status === 404) {
-          throw new Error('Source HTTP 404 — check the dashboard API URL / Google Sheets API URL / sheet ID configuration');
+      if (action === 'getTabNames') {
+        runner.getTabNames();
+      } else if (action === 'getTabData') {
+        runner.getTabData(params.tab || params.tabName || params.name);
+      } else if (action === 'getStartupBundle') {
+        runner.getStartupBundle(params);
+      } else if (action === 'clearCache') {
+        runner.clearCache();
+      } else if (action === 'processUploadedFile') {
+        runner.processUploadedFile(params);
+      } else if (action === 'processPivotStructure') {
+        runner.processPivotStructure(params.payload || params);
+      } else if (typeof runner[action] === 'function') {
+        runner[action](params);
+      } else {
+        reject(new Error('Unknown real-time database action: ' + action));
+      }
+    } else if (GAS_WEB_APP_URL && GAS_WEB_APP_URL.trim() !== "") {
+      console.log('Cloudflare Pages API Call [' + action + '] -> ' + GAS_WEB_APP_URL);
+      
+      // For read-only actions in Google Apps Script Web Apps, GET/JSONP avoids 302 CORS redirects completely!
+      let isReadOnly = (action === 'getTabNames' || action === 'getTabData' || action === 'loadAppState');
+      if (isReadOnly) {
+        let cbName = 'gas_cb_' + Date.now() + '_' + Math.floor(Math.random()*10000);
+        let url = GAS_WEB_APP_URL + (GAS_WEB_APP_URL.indexOf('?') >= 0 ? '&' : '?') + 'action=' + encodeURIComponent(action) + '&callback=' + cbName;
+        if (params && typeof params === 'object') {
+          Object.keys(params).forEach(k => {
+            if (typeof params[k] === 'string' || typeof params[k] === 'number') {
+              url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+            }
+          });
         }
-        throw new Error(`Source HTTP ${res.status}`);
-      }
-
-      const rawText = await res.text();
-      const rawPayload = JSON.parse(rawText);
-      const storedPayload = buildStoredDashboardPayload(rawPayload);
-      const rowCount = Array.isArray(storedPayload.rows) ? storedPayload.rows.length : 0;
-
-      await writeDashboardPayload(item, storedPayload, rowCount, null);
-
-      await env.DB.prepare(`
-        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
-        VALUES (?, 'success', ?, 'OK', datetime('now'))
-      `).bind(item.id, rowCount).run();
-
-      return {
-        payload: storedPayload,
-        rowCount,
-        lastSynced: new Date().toISOString(),
-        settings: normalizeDashboardSettings(item.settings_json)
-      };
-    } catch (e) {
-      await env.DB.prepare(`
-        INSERT INTO dashboard_sync_logs (dashboard_item_id, sync_status, row_count, message, synced_at)
-        VALUES (?, 'failed', 0, ?, datetime('now'))
-      `).bind(item.id, e.message || 'Unknown error').run();
-
-      await writeDashboardPayload(
-        item,
-        {
-          rows: [],
-          generatedAt: new Date().toISOString(),
-          sourceMeta: { rowCount: 0 }
-        },
-        0,
-        e.message || 'Unknown error'
-      );
-
-      throw e;
-    }
-  };
-
-  const fetchDashboardSource = async (item) => {
-    const res = await fetch(item.api_url, { headers: { 'Accept': 'application/json' } });
-    if (!res.ok) {
-      if (res.status === 404) {
-        throw new Error('Source HTTP 404 — check the dashboard API URL / Google Sheets API URL / sheet ID configuration');
-      }
-      throw new Error(`Source HTTP ${res.status}`);
-    }
-    const rawText = await res.text();
-    const rawPayload = JSON.parse(rawText);
-    const storedPayload = buildStoredDashboardPayload(rawPayload);
-    const rowCount = Array.isArray(storedPayload.rows) ? storedPayload.rows.length : 0;
-    return {
-      payload: storedPayload,
-      rowCount,
-      lastSynced: new Date().toISOString(),
-      settings: normalizeDashboardSettings(item.settings_json)
-    };
-  };
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  Presence Management
-  // ════════════════════════════════════════════════════════════════════════════
-  if (path === "presence/offline" && method === "POST") {
-    const authUser = await getAuth();
-    if (!authUser) return err("Unauthorized", 401);
-    try {
-      await env.DB.prepare(
-        "UPDATE users SET last_seen = datetime('now', '-10 minutes') WHERE id = ?"
-      ).bind(authUser.id).run();
-    } catch (_) { /* ignore */ }
-    return ok({ success: true });
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  PUBLIC — Login
-  // ════════════════════════════════════════════════════════════════════════════
-  if (path === "login" && method === "POST") {
-    const user = await getAuth();
-    if (!user) return err("Invalid credentials", 401);
-    return ok({ success: true, user });
-  }
-
-  // All other routes require auth
-  const user = await getAuth();
-  if (!user) return err("Unauthorized", 401);
-
-  const uRank   = ROLE_RANK[user.role] ?? 1;
-  const isAdmin = user.role === "admin";
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  SESSION — lightweight auth check
-  // ════════════════════════════════════════════════════════════════════════════
-  if (path === "session" && method === "GET") {
-    return ok({
-      success: true,
-      currentUser: {
-        id          : user.id,
-        username    : user.username,
-        accountName : user.accountName || user.account_name || user.username,
-        account_name: user.account_name || user.accountName || user.username,
-        role        : user.role,
-      }
-    });
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  getData
-  // ════════════════════════════════════════════════════════════════════════════
-  if (path === "getData" && method === "GET") {
-    try { await ensureDashboardTables(); } catch (_) { /* keep app usable */ }
-
-    const folderRows = isAdmin
-      ? await env.DB.prepare("SELECT * FROM folders").all()
-      : await env.DB.prepare(`SELECT * FROM folders WHERE ${rbacWhere('min_role_required', uRank)}`).all();
-
-    let liRows;
-    try {
-      liRows = isAdmin
-        ? await env.DB.prepare("SELECT * FROM learning_items").all()
-        : await env.DB.prepare(`
-            SELECT li.*
-            FROM learning_items li
-            LEFT JOIN folders f ON f.id = li.folderId
-            WHERE ${rbacWhere('li.min_role_required', uRank)}
-              AND (f.id IS NULL OR ${rbacWhere('f.min_role_required', uRank)})
-          `).all();
-    } catch {
-      liRows = isAdmin
-        ? await env.DB.prepare("SELECT * FROM learning_items").all()
-        : await env.DB.prepare(`
-            SELECT li.*
-            FROM learning_items li
-            LEFT JOIN folders f ON f.id = li.folderId
-            WHERE (f.id IS NULL OR ${rbacWhere('f.min_role_required', uRank)})
-          `).all();
-    }
-
-    let icRows;
-    try {
-      icRows = isAdmin
-        ? await env.DB.prepare("SELECT * FROM info_cards").all()
-        : await env.DB.prepare(`SELECT * FROM info_cards WHERE ${rbacWhere('min_role_required', uRank)}`).all();
-    } catch {
-      icRows = await env.DB.prepare("SELECT * FROM info_cards").all();
-    }
-
-    let catRows;
-    try {
-      catRows = isAdmin
-        ? await env.DB.prepare("SELECT * FROM categories ORDER BY sort_order ASC, id ASC").all()
-        : await env.DB.prepare(`
-            SELECT * FROM categories
-            WHERE ${rbacWhere('min_role_required', uRank)}
-            ORDER BY sort_order ASC, id ASC
-          `).all();
-    } catch {
-      catRows = await env.DB.prepare("SELECT * FROM categories ORDER BY id ASC").all();
-    }
-
-    let updRows;
-    try {
-      updRows = await env.DB.prepare("SELECT * FROM updates ORDER BY id DESC").all();
-    } catch {
-      updRows = { results: [] };
-    }
-
-    let dashRows = { results: [] };
-    let dashPageRows = { results: [] };
-    if (uRank >= ROLE_RANK.leader) {
-      try {
-        dashRows = isAdmin
-          ? await env.DB.prepare(`
-              SELECT di.*, dis.settings_json
-              FROM dashboard_items di
-              LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
-              ORDER BY di.sort_order ASC, di.id ASC
-            `).all()
-          : await env.DB.prepare(`
-              SELECT di.*, dis.settings_json
-              FROM dashboard_items di
-              LEFT JOIN dashboard_item_settings dis ON dis.dashboard_item_id = di.id
-              WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)}
-              ORDER BY di.sort_order ASC, di.id ASC
-            `).all();
-        for (const item of (dashRows.results ?? [])) {
-          await ensureDefaultDashboardPages(item.id);
-        }
-        dashPageRows = isAdmin
-          ? await env.DB.prepare(`SELECT * FROM dashboard_pages ORDER BY dashboard_item_id ASC, sort_order ASC, id ASC`).all()
-          : await env.DB.prepare(`SELECT dp.* FROM dashboard_pages dp JOIN dashboard_items di ON di.id = dp.dashboard_item_id WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)} ORDER BY dp.dashboard_item_id ASC, dp.sort_order ASC, dp.id ASC`).all();
-      } catch (_) {
-        dashRows = { results: [] };
-        dashPageRows = { results: [] };
-      }
-    }
-
-    let dashWidgetRows = { results: [] };
-    if (uRank >= ROLE_RANK.leader) {
-      try {
-        dashWidgetRows = await env.DB.prepare(`SELECT * FROM dashboard_widgets ORDER BY dashboard_page_id ASC, sort_order ASC, id ASC`).all();
-      } catch (_) {
-        dashWidgetRows = { results: [] };
-      }
-    }
-
-    return ok({
-      updates      : updRows.results ?? [],
-      categories   : catRows.results ?? [],
-      infoCards    : icRows.results ?? [],
-      learningItems: liRows.results ?? [],
-      folders      : folderRows.results ?? [],
-      dashboardItems: (dashRows.results ?? []).map(r => ({
-        ...r,
-        settings: normalizeDashboardSettings(r.settings_json)
-      })),
-      dashboardPages: dashPageRows.results ?? [],
-      dashboardWidgets: dashWidgetRows.results ?? [],
-      currentUser  : {
-        id          : user.id,
-        username    : user.username,
-        accountName : user.accountName || user.account_name || user.username,
-        account_name: user.account_name || user.accountName || user.username,
-        role        : user.role,
-      },
-      users        : isAdmin
-        ? ((await env.DB.prepare("SELECT * FROM users").all()).results ?? [])
-        : [],
-    });
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  DASHBOARD ITEMS CRUD — dedicated endpoints for admin
-  // ════════════════════════════════════════════════════════════════════════════
-  if (path === "dashboardItems" && method === "POST") {
-    if (!isAdmin) return err("Admin only", 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-
-    let body;
-    try { body = await request.json(); } catch { return err("Invalid JSON"); }
-
-    const name = String(body.name || '').trim();
-    const apiUrl = String(body.api_url || body.apiUrl || '').trim();
-    const icon = String(body.icon || 'fa-chart-line').trim() || 'fa-chart-line';
-    const slug = String(body.slug || body.name || '')
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-
-    if (!name || !apiUrl) return err('name and api_url are required', 400);
-
-    const maxRow = await env.DB.prepare(
-      "SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM dashboard_items"
-    ).first();
-    const nextSort = (maxRow?.max_sort ?? -1) + 1;
-
-    const inserted = await env.DB.prepare(`
-      INSERT INTO dashboard_items (name, slug, icon, api_url, min_role_required, is_active, sort_order, updated_at)
-      VALUES (?, ?, ?, ?, 'leader', 1, ?, datetime('now'))
-    `).bind(name, slug, icon, apiUrl, nextSort).run();
-
-    await env.DB.prepare(`
-      INSERT INTO dashboard_item_settings (dashboard_item_id, settings_json, updated_at)
-      VALUES (?, ?, datetime('now'))
-    `).bind(inserted.meta?.last_row_id, JSON.stringify(cloneDashDefaults())).run();
-    await ensureDefaultDashboardPages(inserted.meta?.last_row_id);
-
-    return ok({ success: true, id: inserted.meta?.last_row_id }, 201);
-  }
-
-
-  const dashboardPagesSortMatch = path === 'dashboardPages/sort';
-  if (dashboardPagesSortMatch && method === 'POST') {
-    if (!isAdmin) return err('Admin only', 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
-    const order = Array.isArray(body.order) ? body.order : [];
-    if (!order.length) return err('order must be a non-empty array', 400);
-    for (let i = 0; i < order.length; i++) {
-      const pageId = parseInt(order[i], 10);
-      if (!isNaN(pageId)) {
-        await env.DB.prepare('UPDATE dashboard_pages SET sort_order=? WHERE id=?').bind(i, pageId).run();
-      }
-    }
-    return ok({ success: true });
-  }
-
-  const dashboardPagesCreateMatch = path.match(/^dashboards\/(\d+)\/pages$/);
-  if (dashboardPagesCreateMatch && method === 'POST') {
-    if (!isAdmin) return err('Admin only', 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    const dashId = parseInt(dashboardPagesCreateMatch[1], 10);
-    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
-    const name = String(body.name || '').trim();
-    const slug = String(body.slug || body.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    const icon = String(body.icon || 'fa-layer-group').trim() || 'fa-layer-group';
-    if (!name) return err('name is required', 400);
-    const maxRow = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM dashboard_pages WHERE dashboard_item_id=?').bind(dashId).first();
-    const nextSort = (maxRow?.max_sort ?? -1) + 1;
-    const inserted = await env.DB.prepare('INSERT INTO dashboard_pages (dashboard_item_id, slug, name, icon, sort_order) VALUES (?, ?, ?, ?, ?)').bind(dashId, slug || 'page', name, icon, nextSort).run();
-    return ok({ success: true, id: inserted.meta?.last_row_id }, 201);
-  }
-
-  const dashboardPageItemMatch = path.match(/^dashboardPages\/(\d+)$/);
-  if (dashboardPageItemMatch && method === 'PUT') {
-    if (!isAdmin) return err('Admin only', 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    const pageId = parseInt(dashboardPageItemMatch[1], 10);
-    const existing = await env.DB.prepare('SELECT * FROM dashboard_pages WHERE id=?').bind(pageId).first();
-    if (!existing) return err('Dashboard page not found', 404);
-    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
-    const name = String(body.name || existing.name || '').trim();
-    const slug = String(body.slug || body.name || name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    const icon = String(body.icon || existing.icon || 'fa-layer-group').trim() || 'fa-layer-group';
-    if (!name) return err('name is required', 400);
-    await env.DB.prepare('UPDATE dashboard_pages SET name=?, slug=?, icon=? WHERE id=?').bind(name, slug || 'page', icon, pageId).run();
-    return ok({ success: true, id: pageId });
-  }
-  if (dashboardPageItemMatch && method === 'DELETE') {
-    if (!isAdmin) return err('Admin only', 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    const pageId = parseInt(dashboardPageItemMatch[1], 10);
-    const existing = await env.DB.prepare('SELECT * FROM dashboard_pages WHERE id=?').bind(pageId).first();
-    if (!existing) return err('Dashboard page not found', 404);
-    const countRow = await env.DB.prepare('SELECT COUNT(*) AS c FROM dashboard_pages WHERE dashboard_item_id=?').bind(existing.dashboard_item_id).first();
-    if (Number(countRow?.c || 0) <= 1) return err('At least one page must remain', 400);
-    await env.DB.prepare('DELETE FROM dashboard_widgets WHERE dashboard_page_id=?').bind(pageId).run();
-    await env.DB.prepare('DELETE FROM dashboard_pages WHERE id=?').bind(pageId).run();
-    return ok({ success: true });
-  }
-
-
-  const dashboardWidgetsSortMatch = path === 'dashboardWidgets/sort';
-  if (dashboardWidgetsSortMatch && method === 'POST') {
-    if (!isAdmin) return err('Admin only', 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
-    const order = Array.isArray(body.order) ? body.order : [];
-    if (!order.length) return err('order must be a non-empty array', 400);
-    for (let i = 0; i < order.length; i++) {
-      const widgetId = parseInt(order[i], 10);
-      if (!isNaN(widgetId)) {
-        await env.DB.prepare('UPDATE dashboard_widgets SET sort_order=? WHERE id=?').bind(i, widgetId).run();
-      }
-    }
-    return ok({ success: true });
-  }
-
-  const dashboardWidgetsCreateMatch = path.match(/^dashboardPages\/(\d+)\/widgets$/);
-  if (dashboardWidgetsCreateMatch && method === 'POST') {
-    if (!isAdmin) return err('Admin only', 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    const pageId = parseInt(dashboardWidgetsCreateMatch[1], 10);
-    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
-    const widgetType = String(body.widget_type || body.widgetType || '').trim();
-    const title = String(body.title || '').trim();
-    const settingsJson = typeof body.settings_json === 'string' ? body.settings_json : JSON.stringify(body.settings_json || {});
-    if (!widgetType) return err('widget_type is required', 400);
-    const maxRow = await env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM dashboard_widgets WHERE dashboard_page_id=?').bind(pageId).first();
-    const nextSort = (maxRow?.max_sort ?? -1) + 1;
-    const inserted = await env.DB.prepare('INSERT INTO dashboard_widgets (dashboard_page_id, widget_type, title, settings_json, sort_order) VALUES (?, ?, ?, ?, ?)').bind(pageId, widgetType, title || null, settingsJson, nextSort).run();
-    return ok({ success: true, id: inserted.meta?.last_row_id }, 201);
-  }
-
-  const dashboardWidgetItemMatch = path.match(/^dashboardWidgets\/(\d+)$/);
-  if (dashboardWidgetItemMatch && method === 'PUT') {
-    if (!isAdmin) return err('Admin only', 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    const widgetId = parseInt(dashboardWidgetItemMatch[1], 10);
-    const existing = await env.DB.prepare('SELECT * FROM dashboard_widgets WHERE id=?').bind(widgetId).first();
-    if (!existing) return err('Dashboard widget not found', 404);
-    let body; try { body = await request.json(); } catch { return err('Invalid JSON'); }
-    const widgetType = String(body.widget_type || body.widgetType || existing.widget_type || '').trim();
-    const title = String(body.title ?? existing.title ?? '').trim();
-    const settingsJson = typeof body.settings_json === 'string' ? body.settings_json : JSON.stringify(body.settings_json || safeJson(existing.settings_json, {}));
-    if (!widgetType) return err('widget_type is required', 400);
-    await env.DB.prepare('UPDATE dashboard_widgets SET widget_type=?, title=?, settings_json=? WHERE id=?').bind(widgetType, title || null, settingsJson, widgetId).run();
-    return ok({ success: true, id: widgetId });
-  }
-  if (dashboardWidgetItemMatch && method === 'DELETE') {
-    if (!isAdmin) return err('Admin only', 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    const widgetId = parseInt(dashboardWidgetItemMatch[1], 10);
-    await env.DB.prepare('DELETE FROM dashboard_widgets WHERE id=?').bind(widgetId).run();
-    return ok({ success: true });
-  }
-
-  const dashboardCacheMatch = path.match(/^dashboards\/(\d+)\/cache$/);
-  if (dashboardCacheMatch && method === 'DELETE') {
-    if (!isAdmin) return err('Admin only', 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    const dashId = parseInt(dashboardCacheMatch[1], 10);
-    return ok({ success: true, dashboardId: dashId, cleared: false, mode: 'disabled-lightweight' });
-  }
-
-  const dashboardItemMatch = path.match(/^dashboardItems\/(\d+)$/);
-  if (dashboardItemMatch && method === "PUT") {
-    if (!isAdmin) return err("Admin only", 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-
-    const dashId = parseInt(dashboardItemMatch[1], 10);
-    const existing = await env.DB.prepare(
-      "SELECT * FROM dashboard_items WHERE id=?"
-    ).bind(dashId).first();
-    if (!existing) return err("Dashboard item not found", 404);
-
-    let body;
-    try { body = await request.json(); } catch { return err("Invalid JSON"); }
-
-    const name = String(body.name || existing.name || '').trim();
-    const apiUrl = String(body.api_url || body.apiUrl || existing.api_url || '').trim();
-    const icon = String(body.icon || existing.icon || 'fa-chart-line').trim() || 'fa-chart-line';
-    const slug = String(body.slug || body.name || name)
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-
-    if (!name || !apiUrl) return err('name and api_url are required', 400);
-
-    await env.DB.prepare(`
-      UPDATE dashboard_items
-      SET name=?, slug=?, icon=?, api_url=?, min_role_required='leader', updated_at=datetime('now')
-      WHERE id=?
-    `).bind(name, slug, icon, apiUrl, dashId).run();
-
-    return ok({ success: true, id: dashId });
-  }
-
-  if (dashboardItemMatch && method === "DELETE") {
-    if (!isAdmin) return err("Admin only", 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-
-    const dashId = parseInt(dashboardItemMatch[1], 10);
-    const pageRows = (await env.DB.prepare("SELECT id FROM dashboard_pages WHERE dashboard_item_id=?").bind(dashId).all()).results ?? [];
-    for (const row of pageRows) {
-      await env.DB.prepare("DELETE FROM dashboard_widgets WHERE dashboard_page_id=?").bind(row.id).run();
-    }
-    await env.DB.prepare("DELETE FROM dashboard_pages WHERE dashboard_item_id=?").bind(dashId).run();
-    await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(dashId).run();
-    await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(dashId).run();
-    await env.DB.prepare("DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?").bind(dashId).run();
-    await env.DB.prepare("DELETE FROM dashboard_sync_logs WHERE dashboard_item_id=?").bind(dashId).run();
-    await env.DB.prepare("DELETE FROM dashboard_items WHERE id=?").bind(dashId).run();
-    return ok({ success: true });
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  DASHBOARDS — item list, caching, per-item settings
-  // ════════════════════════════════════════════════════════════════════════════
-  if (path === "dashboards/sort" && method === "POST") {
-    if (!isAdmin) return err("Admin only", 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-
-    let body;
-    try { body = await request.json(); } catch { return err("Invalid JSON"); }
-
-    const order = Array.isArray(body.order) ? body.order : [];
-    if (!order.length) return err("order must be a non-empty array", 400);
-
-    for (let i = 0; i < order.length; i++) {
-      const id = parseInt(order[i], 10);
-      if (!isNaN(id)) {
-        await env.DB.prepare(
-          "UPDATE dashboard_items SET sort_order=?, updated_at=datetime('now') WHERE id=?"
-        ).bind(i, id).run();
-      }
-    }
-    return ok({ success: true });
-  }
-
-  const dashSettingsMatch = path.match(/^dashboards\/(\d+)\/settings$/);
-  if (dashSettingsMatch && method === "GET") {
-    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-
-    const dashId = parseInt(dashSettingsMatch[1], 10);
-    const item = await getDashboardItem(dashId);
-    if (!item) return err("Dashboard item not found", 404);
-
-    return ok({
-      success: true,
-      dashboardId: dashId,
-      settings: normalizeDashboardSettings(item.settings_json)
-    });
-  }
-
-  if (dashSettingsMatch && method === "PUT") {
-    if (!isAdmin) return err("Admin only", 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-
-    const dashId = parseInt(dashSettingsMatch[1], 10);
-    const item = await getDashboardItem(dashId);
-    if (!item) return err("Dashboard item not found", 404);
-
-    let body;
-    try { body = await request.json(); } catch { return err("Invalid JSON"); }
-
-    const normalized = normalizeDashboardSettings(body.settings || body);
-    await env.DB.prepare(`
-      INSERT INTO dashboard_item_settings (dashboard_item_id, settings_json, updated_at)
-      VALUES (?, ?, datetime('now'))
-      ON CONFLICT(dashboard_item_id) DO UPDATE SET
-        settings_json = excluded.settings_json,
-        updated_at = datetime('now')
-    `).bind(dashId, JSON.stringify(normalized)).run();
-
-    return ok({
-      success: true,
-      dashboardId: dashId,
-      settings: normalized
-    });
-  }
-
-  const dashAppStateMatch = path.match(/^dashboards\/(\d+)\/app-state$/);
-  if (dashAppStateMatch && method === "GET") {
-    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    const dashId = parseInt(dashAppStateMatch[1], 10);
-    const item = await getDashboardItem(dashId);
-    if (!item) return err("Dashboard item not found", 404);
-    if (!isAdmin && (item.is_active !== 1 || (ROLE_RANK[item.min_role_required] ?? 1) > uRank)) {
-      return err("Access denied", 403);
-    }
-    const row = await env.DB.prepare(`SELECT state_json, updated_at FROM dashboard_app_state WHERE dashboard_item_id=?`).bind(dashId).first();
-    return ok({ success: true, dashboardId: dashId, stateJson: row?.state_json || null, updatedAt: row?.updated_at || null });
-  }
-  if (dashAppStateMatch && method === "PUT") {
-    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-    const dashId = parseInt(dashAppStateMatch[1], 10);
-    const item = await getDashboardItem(dashId);
-    if (!item) return err("Dashboard item not found", 404);
-    if (!isAdmin && (item.is_active !== 1 || (ROLE_RANK[item.min_role_required] ?? 1) > uRank)) {
-      return err("Access denied", 403);
-    }
-    let body;
-    try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const stateJson = typeof body.stateJson === 'string' ? body.stateJson : JSON.stringify(body.stateJson || body || {});
-    await env.DB.prepare(`
-      INSERT INTO dashboard_app_state (dashboard_item_id, state_json, updated_at)
-      VALUES (?, ?, datetime('now'))
-      ON CONFLICT(dashboard_item_id) DO UPDATE SET
-        state_json = excluded.state_json,
-        updated_at = datetime('now')
-    `).bind(dashId, stateJson).run();
-    return ok({ success: true, dashboardId: dashId, updatedAt: new Date().toISOString() });
-  }
-
-  if (path === "dashboards/prefetch" && method === "POST") {
-    return ok({ success: true, queued: 0, synced: 0, skipped: true, mode: 'disabled-lightweight' });
-  }
-
-  const dashDataMatch = path.match(/^dashboards\/(\d+)\/data$/);
-  if (dashDataMatch && method === "GET") {
-    if (uRank < ROLE_RANK.leader) return err("Leader or above required", 403);
-    try { await ensureDashboardTables(); } catch (e) { return err(`Dashboard tables error: ${e.message}`, 500); }
-
-    const dashId = parseInt(dashDataMatch[1], 10);
-    const item = await getDashboardItem(dashId);
-    if (!item) return err("Dashboard item not found", 404);
-
-    if (!isAdmin && (item.is_active !== 1 || (ROLE_RANK[item.min_role_required] ?? 1) > uRank)) {
-      return err("Access denied", 403);
-    }
-
-    try {
-      const result = await fetchDashboardSource(item);
-      return ok({
-        success: true,
-        dashboardId: dashId,
-        name: item.name,
-        lastSynced: result.lastSynced,
-        rowCount: result.rowCount,
-        extractedRowCount: result.rowCount,
-        sourceMeta: result.payload?.sourceMeta || null,
-        sourceSummary: result.payload?.sourceSummary || null,
-        sourceUrl: item.api_url,
-        lastError: null,
-        settings: normalizeDashboardSettings(item.settings_json),
-        data: result.payload,
-      });
-    } catch (e) {
-      return err(`Dashboard sync failed: ${e.message}`, 502);
-    }
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  STICKY NOTES (D1-backed, per-user)
-  // ════════════════════════════════════════════════════════════════════════════
-  if (path === "sticky" && method === "GET") {
-    const rows = (await env.DB.prepare(
-      "SELECT sn.*, u.accountName, u.account_name, u.username FROM sticky_notes sn LEFT JOIN users u ON u.id = sn.user_id ORDER BY sn.sort_order ASC, sn.id ASC"
-    ).all()).results ?? [];
-    return ok({ notes: rows });
-  }
-
-  if (path === "sticky" && method === "POST") {
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { text = "", color = "#fef9c3", sort_order = 0 } = body;
-    const r = await env.DB.prepare(
-      "INSERT INTO sticky_notes (user_id, text, color, sort_order, updated_at) VALUES (?,?,?,?,datetime('now'))"
-    ).bind(user.id, text, color, sort_order).run();
-    const note = await env.DB.prepare(
-      "SELECT sn.*, u.accountName, u.account_name, u.username FROM sticky_notes sn LEFT JOIN users u ON u.id = sn.user_id WHERE sn.id=?"
-    ).bind(r.meta?.last_row_id).first();
-    return ok({ success: true, note }, 201);
-  }
-
-  if (path.startsWith("sticky/") && method === "PUT") {
-    const noteId = parseInt(path.split("/")[1]);
-    if (isNaN(noteId)) return err("Invalid note id");
-
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const existing = await env.DB.prepare(
-      "SELECT * FROM sticky_notes WHERE id=? AND user_id=?"
-    ).bind(noteId, user.id).first();
-    if (!existing) return err("Note not found or not yours", 404);
-
-    const text  = "text"  in body ? body.text  : existing.text;
-    const color = "color" in body ? body.color : existing.color;
-    await env.DB.prepare(
-      "UPDATE sticky_notes SET text=?, color=?, updated_at=datetime('now') WHERE id=? AND user_id=?"
-    ).bind(text, color, noteId, user.id).run();
-    return ok({ success: true });
-  }
-
-  if (path.startsWith("sticky/") && method === "DELETE") {
-    const noteId = parseInt(path.split("/")[1]);
-    if (isNaN(noteId)) return err("Invalid note id");
-    const existing = await env.DB.prepare(
-      "SELECT id FROM sticky_notes WHERE id=?"
-    ).bind(noteId).first();
-    if (!existing) return err("Note not found", 404);
-    await env.DB.prepare("DELETE FROM sticky_notes WHERE id=?").bind(noteId).run();
-    return ok({ success: true });
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  UPDATES — all roles can create; delete scoped to creator (admin = any)
-  // ════════════════════════════════════════════════════════════════════════════
-  if (path === "updates" && method === "POST") {
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { topic, badge = "general", message } = body;
-    if (!topic?.trim() || !message?.trim()) return err("topic and message are required");
-
-    const r = await env.DB.prepare(
-      "INSERT INTO updates (topic, badge, message, author, date, created_by) VALUES (?,?,?,?,?,?)"
-    ).bind(
-      topic.trim(),
-      badge,
-      message.trim(),
-      user.accountName || user.account_name || user.username,
-      (() => {
-        const now = new Date();
-        const mmt = new Date(now.getTime() + (6 * 60 + 30) * 60 * 1000);
-        return mmt.toISOString().slice(0, 10);
-      })(),
-      user.id
-    ).run();
-
-    return ok({ success: true, id: r.meta?.last_row_id }, 201);
-  }
-
-  if (path.startsWith("updates/") && method === "PUT") {
-    const upId = parseInt(path.split("/")[1]);
-    if (isNaN(upId)) return err("Invalid id");
-
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const existing = await env.DB.prepare("SELECT * FROM updates WHERE id=?").bind(upId).first();
-    if (!existing) return err("Update not found", 404);
-    if (!isAdmin && existing.created_by !== user.id) return err("You can only edit your own updates", 403);
-
-    const { topic = existing.topic, badge = existing.badge, message = existing.message } = body;
-    await env.DB.prepare(
-      "UPDATE updates SET topic=?, badge=?, message=? WHERE id=?"
-    ).bind(topic, badge, message, upId).run();
-    return ok({ success: true });
-  }
-
-  if (path.startsWith("updates/") && method === "DELETE") {
-    const upId = parseInt(path.split("/")[1]);
-    if (isNaN(upId)) return err("Invalid id");
-    const existing = await env.DB.prepare("SELECT * FROM updates WHERE id=?").bind(upId).first();
-    if (!existing) return err("Update not found", 404);
-    if (!isAdmin && existing.created_by !== user.id) return err("You can only delete your own updates", 403);
-    await env.DB.prepare("DELETE FROM updates WHERE id=?").bind(upId).run();
-    return ok({ success: true });
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  INFO CARDS & CATEGORIES — permission-gated create/edit/delete
-  // ════════════════════════════════════════════════════════════════════════════
-  const CAN_MANAGE_INFO = uRank >= ROLE_RANK.leader;
-
-  if (path === "infoCards" && method === "POST") {
-    if (!CAN_MANAGE_INFO) return err("Insufficient permissions", 403);
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { title, displayType = "icon", icon = "fa-link", image = null, link, categoryId, min_role_required = "intern" } = body;
-    if (!title?.trim() || !link?.trim() || !categoryId) return err("title, link, categoryId required");
-    const r = await env.DB.prepare(
-      "INSERT INTO info_cards (title, displayType, icon, image, link, categoryId, min_role_required) VALUES (?,?,?,?,?,?,?)"
-    ).bind(title.trim(), displayType, icon, image, link.trim(), categoryId, min_role_required).run();
-    return ok({ success: true, id: r.meta?.last_row_id }, 201);
-  }
-
-  if (path.startsWith("infoCards/") && method === "PUT") {
-    if (!CAN_MANAGE_INFO) return err("Insufficient permissions", 403);
-    const icId = parseInt(path.split("/")[1]);
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const ex = await env.DB.prepare("SELECT * FROM info_cards WHERE id=?").bind(icId).first();
-    if (!ex) return err("Not found", 404);
-    await env.DB.prepare(
-      "UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, min_role_required=? WHERE id=?"
-    ).bind(
-      body.title ?? ex.title,
-      body.displayType ?? ex.displayType,
-      body.icon ?? ex.icon,
-      body.image ?? ex.image,
-      body.link ?? ex.link,
-      body.categoryId ?? ex.categoryId,
-      body.min_role_required ?? ex.min_role_required ?? 'intern',
-      icId
-    ).run();
-    return ok({ success: true });
-  }
-
-  if (path.startsWith("infoCards/") && method === "DELETE") {
-    if (!CAN_MANAGE_INFO) return err("Insufficient permissions", 403);
-    const icId = parseInt(path.split("/")[1]);
-    await env.DB.prepare("DELETE FROM info_cards WHERE id=?").bind(icId).run();
-    return ok({ success: true });
-  }
-
-  if (path === "categories/sort" && method === "POST") {
-    if (!isAdmin) return err("Admin only", 403);
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { order } = body;
-    if (!Array.isArray(order) || !order.length) return err("order must be a non-empty array of ids");
-    for (let i = 0; i < order.length; i++) {
-      const catId = parseInt(order[i]);
-      if (isNaN(catId)) continue;
-      try {
-        await env.DB.prepare("UPDATE categories SET sort_order=? WHERE id=?").bind(i, catId).run();
-      } catch {
-        try {
-          await env.DB.prepare("ALTER TABLE categories ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0").run();
-          await env.DB.prepare("UPDATE categories SET sort_order=? WHERE id=?").bind(i, catId).run();
-        } catch { /* ignore */ }
-      }
-    }
-    return ok({ success: true });
-  }
-
-  if (path === "categories" && method === "POST") {
-    if (!isAdmin) return err("Only admins can create categories", 403);
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { name, icon = "fa-link", min_role_required = "intern" } = body;
-    if (!name?.trim()) return err("name required");
-    const r = await env.DB.prepare(
-      "INSERT INTO categories (name, icon, min_role_required) VALUES (?,?,?)"
-    ).bind(name.trim(), icon, min_role_required).run();
-    return ok({ success: true, id: r.meta?.last_row_id }, 201);
-  }
-
-  if (path.startsWith("categories/") && method === "PUT") {
-    if (!isAdmin) return err("Only admins can edit categories", 403);
-    const cId = parseInt(path.split("/")[1]);
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const ex = await env.DB.prepare("SELECT * FROM categories WHERE id=?").bind(cId).first();
-    if (!ex) return err("Not found", 404);
-    await env.DB.prepare(
-      "UPDATE categories SET name=?, icon=?, min_role_required=? WHERE id=?"
-    ).bind(
-      body.name ?? ex.name,
-      body.icon ?? ex.icon,
-      body.min_role_required ?? ex.min_role_required ?? 'intern',
-      cId
-    ).run();
-    return ok({ success: true });
-  }
-
-  if (path.startsWith("categories/") && method === "DELETE") {
-    if (!isAdmin) return err("Only admins can delete categories", 403);
-    const cId = parseInt(path.split("/")[1]);
-    await env.DB.prepare("DELETE FROM categories WHERE id=?").bind(cId).run();
-    return ok({ success: true });
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  LEARNING — RBAC-filtered endpoints
-  // ════════════════════════════════════════════════════════════════════════════
-  if (path === "learning" && method === "GET") {
-    const search      = (url.searchParams.get("search") ?? "").trim();
-    const folderParam = url.searchParams.get("folder_id") ?? "";
-    let folders = [], files = [], breadcrumb = [];
-
-    if (search) {
-      const term = `%${search}%`;
-      folders = (await env.DB.prepare(`
-        SELECT id, name, parent_id, parentId, min_role_required, created_at
-        FROM folders
-        WHERE name LIKE ? AND ${rbacWhere('min_role_required', uRank)}
-        ORDER BY name
-      `).bind(term).all()).results ?? [];
-
-      try {
-        files = (await env.DB.prepare(`
-          SELECT id, name, type, content, url, folder_id, min_role_required, created_at
-          FROM files
-          WHERE (name LIKE ? OR content LIKE ?) AND ${rbacWhere('min_role_required', uRank)}
-          ORDER BY name
-        `).bind(term, term).all()).results ?? [];
-      } catch {
-        files = [];
+        let timeoutTimer = setTimeout(() => {
+          if (window[cbName]) {
+            delete window[cbName];
+            let s = document.getElementById(cbName);
+            if (s) s.remove();
+            reject(new Error("Request timed out after 20 seconds. Please check if your GAS URL is correct and set to 'Anyone'."));
+          }
+        }, 20000);
+        window[cbName] = function(data) {
+          clearTimeout(timeoutTimer);
+          delete window[cbName];
+          let s = document.getElementById(cbName);
+          if (s) s.remove();
+          resolve(data);
+        };
+        let script = document.createElement('script');
+        script.id = cbName;
+        script.src = url;
+        script.onerror = function() {
+          clearTimeout(timeoutTimer);
+          delete window[cbName];
+          script.remove();
+          reject(new Error("Network error calling Google Apps Script via JSONP."));
+        };
+        document.head.appendChild(script);
+      } else {
+        let payload = { action: action, params: params };
+        fetch(GAS_WEB_APP_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload),
+          redirect: 'follow'
+        })
+        .then(response => response.json())
+        .then(res => resolve(res))
+        .catch(err => reject(err));
       }
     } else {
-      const isRoot = !folderParam || folderParam === "root";
-      const folderId = isRoot ? null : parseInt(folderParam, 10);
-      if (!isRoot && isNaN(folderId)) return err("Invalid folder_id");
-
-      if (!isRoot) {
-        const target = await env.DB.prepare(
-          "SELECT id, name, min_role_required FROM folders WHERE id=?"
-        ).bind(folderId).first();
-        if (!target) return err("Folder not found", 404);
-        if ((ROLE_RANK[target.min_role_required] ?? 1) > uRank) return err("Access denied", 403);
-
-        let cur = folderId;
-        const vis = new Set();
-        while (cur) {
-          if (vis.has(cur)) break;
-          vis.add(cur);
-          const row = await env.DB.prepare(
-            "SELECT id, name, parent_id, parentId FROM folders WHERE id=?"
-          ).bind(cur).first();
-          if (!row) break;
-          breadcrumb.unshift({ id: row.id, name: row.name });
-          cur = row.parent_id ?? row.parentId ?? null;
-        }
-      }
-
-      const fw = isRoot
-        ? "(parent_id IS NULL OR parent_id=0) AND (parentId IS NULL OR parentId=0)"
-        : `(parent_id=${folderId} OR parentId=${folderId})`;
-
-      folders = (await env.DB.prepare(`
-        SELECT id, name, parent_id, parentId, min_role_required, created_at
-        FROM folders
-        WHERE (${fw}) AND ${rbacWhere('min_role_required', uRank)}
-        ORDER BY name
-      `).all()).results ?? [];
-
-      try {
-        const fw2 = isRoot ? "folder_id IS NULL" : `folder_id=${folderId}`;
-        files = (await env.DB.prepare(`
-          SELECT id, name, type, content, url, folder_id, min_role_required, created_at
-          FROM files
-          WHERE ${fw2} AND ${rbacWhere('min_role_required', uRank)}
-          ORDER BY name
-        `).all()).results ?? [];
-      } catch {
-        files = [];
+      // Offline / Simulator Fallback for Local Viewer Preview
+      console.warn('Google Apps Script database environment not detected (google.script.run is undefined). Using simulated real-time database response for [' + action + '].');
+      if (action === 'getTabNames') {
+        resolve(['NOC Live Database (Simulated)', 'Network Incidents', 'Hardware Logs']);
+      } else if (action === 'getTabData') {
+        let tabName = params.tab || 'NOC Live Database (Simulated)';
+        resolve({
+          tabName: tabName,
+          headers: ['Ticket ID', 'Category', 'Status', 'Engineer Site Status', 'Region', 'Month', 'Duration'],
+          rawData: [
+            ['INC-1001', 'Hardware', 'Closed', 'On-Site', 'R1', 'January', 4.5],
+            ['INC-1002', 'Network', 'Active', 'Remote', 'R2', 'January', 2.0],
+            ['INC-1003', 'Software', 'Closed', 'On-Site', 'R1', 'February', 1.5],
+            ['INC-1004', 'Hardware', 'Pending', 'On-Site', 'R2', 'February', 6.0],
+            ['INC-1005', 'Network', 'Closed', 'Remote', 'R1', 'March', 3.5],
+            ['INC-1006', 'Security', 'Active', 'On-Site', 'R2', 'March', 8.0],
+            ['INC-1007', 'Hardware', 'Closed', 'Remote', 'R1', 'April', 5.0],
+            ['INC-1008', 'Software', 'Closed', 'On-Site', 'R2', 'April', 2.5],
+            ['INC-1009', 'Network', 'Pending', 'Remote', 'R1', 'May', 4.0],
+            ['INC-1010', 'Hardware', 'Closed', 'On-Site', 'R2', 'May', 3.0]
+          ],
+          isPivot: false
+        });
+      } else if (action === 'saveAppState') {
+        try { localStorage.setItem('noc_universal_state', params.stateJson || ''); } catch(e) {}
+        resolve({ success: true, message: 'Simulated cloud save for action: ' + action });
+      } else if (action === 'loadAppState') {
+        let simState = null;
+        try { simState = localStorage.getItem('noc_universal_state'); } catch(e) {}
+        resolve({ success: true, stateJson: simState || null });
+      } else {
+        resolve({ success: true, message: 'Simulated real-time database execution for action: ' + action });
       }
     }
+  });
+}
 
-    return ok({ folders, files, breadcrumb });
+// Global error handler
+window.addEventListener('error', function(e) {
+  console.error('Global error:', e.error);
+  hideL();
+  let area = document.getElementById("main");
+  if (area) {
+    area.innerHTML = '<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-info"/></svg></div><div class="e-t">An error occurred</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Please check the browser console (F12) for details.</p></div>';
   }
+});
 
-  if (path === "learning/create" && method === "POST") {
-    if (user.role === "intern") return err("Interns cannot create items", 403);
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { kind } = body;
 
-    if (kind === "folder") {
-      const { name, parent_id = null, min_role_required = "intern" } = body;
-      if (!name?.trim()) return err("Folder name required");
-      const r = await env.DB.prepare(
-        "INSERT INTO folders (name, parentId, parent_id, created_by, min_role_required) VALUES (?,?,?,?,?)"
-      ).bind(name.trim(), parent_id, parent_id, user.id, min_role_required).run();
-      return ok({ success: true, id: r.meta?.last_row_id }, 201);
-    }
-
-    if (kind === "file") {
-      const { name, type = "link", content = null, url: fu = null, folder_id = null, min_role_required = "intern" } = body;
-      if (!name?.trim()) return err("File name required");
-      const r = await env.DB.prepare(
-        "INSERT INTO files (name, type, content, url, folder_id, created_by, min_role_required) VALUES (?,?,?,?,?,?,?)"
-      ).bind(name.trim(), type, content, fu, folder_id, user.id, min_role_required).run();
-      return ok({ success: true, id: r.meta?.last_row_id }, 201);
-    }
-
-    return err('kind must be "folder" or "file"');
+/* ═══════════ SAFE CHART WRAPPER (PREVENTS CRASH & DESTROYS EXISTING CHARTS) ═══════════ */
+function createSafeChart(target, config) {
+  let el = typeof target === 'string' ? document.getElementById(target) : (target && target.canvas ? target.canvas : target);
+  if (!el) {
+    console.warn("Chart target element not found in DOM:", target);
+    return { destroy: () => {}, update: () => {} };
   }
-
-  if (path === "learning/edit" && method === "PUT") {
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { kind, id } = body;
-    if (!id) return err("id required");
-
-    if (kind === "folder") {
-      const ex = await env.DB.prepare("SELECT * FROM folders WHERE id=?").bind(id).first();
-      if (!ex) return err("Not found", 404);
-      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader") return err("Insufficient permissions", 403);
-      await env.DB.prepare(
-        "UPDATE folders SET name=?, min_role_required=? WHERE id=?"
-      ).bind(body.name ?? ex.name, body.min_role_required ?? ex.min_role_required, id).run();
-      return ok({ success: true });
-    }
-
-    if (kind === "file") {
-      const ex = await env.DB.prepare("SELECT * FROM files WHERE id=?").bind(id).first();
-      if (!ex) return err("Not found", 404);
-      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader") return err("Insufficient permissions", 403);
-      await env.DB.prepare(
-        "UPDATE files SET name=?, type=?, content=?, url=?, min_role_required=? WHERE id=?"
-      ).bind(
-        body.name ?? ex.name,
-        body.type ?? ex.type,
-        "content" in body ? body.content : ex.content,
-        "url" in body ? body.url : ex.url,
-        body.min_role_required ?? ex.min_role_required,
-        id
-      ).run();
-      return ok({ success: true });
-    }
-
-    return err('kind must be "folder" or "file"');
-  }
-
-  if (path === "learning/move" && method === "PUT") {
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { kind, id, target_id = null } = body;
-    if (!id) return err("id required");
-
-    if (kind === "folder") {
-      const ex = await env.DB.prepare("SELECT * FROM folders WHERE id=?").bind(id).first();
-      if (!ex) return err("Not found", 404);
-      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader") return err("Insufficient permissions", 403);
-      if (target_id === id) return err("Cannot be own parent");
-      await env.DB.prepare(
-        "UPDATE folders SET parent_id=?, parentId=? WHERE id=?"
-      ).bind(target_id, target_id, id).run();
-      return ok({ success: true });
-    }
-
-    if (kind === "file") {
-      const ex = await env.DB.prepare("SELECT * FROM files WHERE id=?").bind(id).first();
-      if (!ex) return err("Not found", 404);
-      if (ex.created_by !== user.id && !isAdmin && user.role !== "leader") return err("Insufficient permissions", 403);
-      await env.DB.prepare("UPDATE files SET folder_id=? WHERE id=?").bind(target_id, id).run();
-      return ok({ success: true });
-    }
-
-    return err('kind must be "folder" or "file"');
-  }
-
-  if (path === "learning/delete" && method === "DELETE") {
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { kind, id } = body;
-    if (!id) return err("id required");
-
-    const tbl = kind === "folder" ? "folders" : kind === "file" ? "files" : null;
-    if (!tbl) return err('kind must be "folder" or "file"');
-
-    const ex = await env.DB.prepare(`SELECT * FROM ${tbl} WHERE id=?`).bind(id).first();
-    if (!ex) return err("Not found", 404);
-    if (ex.created_by !== user.id && !isAdmin && user.role !== "leader") return err("Insufficient permissions", 403);
-    await env.DB.prepare(`DELETE FROM ${tbl} WHERE id=?`).bind(id).run();
-    return ok({ success: true });
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  CHANGE PASSWORD — all roles, self only
-  // ════════════════════════════════════════════════════════════════════════════
-  if (path === "changePassword" && method === "POST") {
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { oldPassword, newPassword } = body;
-    if (!oldPassword || !newPassword) return err("Both fields required");
-    if (newPassword.length < 5) return err("New password must be at least 5 characters");
-    const dbUser = await env.DB.prepare("SELECT id, password FROM users WHERE id=?").bind(user.id).first();
-    if (!dbUser) return err("User not found", 404);
-    if (dbUser.password !== oldPassword) return err("Current password is incorrect", 403);
-    if (oldPassword === newPassword) return err("New password must differ from current");
-    await env.DB.prepare("UPDATE users SET password=? WHERE id=?").bind(newPassword, user.id).run();
-    return ok({ success: true, message: "Password changed successfully" });
-  }
-
-  // ════════════════════════════════════════════════════════════════════════════
-  //  LEGACY Admin CRUD (POST action=save|delete) — admin only
-  // ════════════════════════════════════════════════════════════════════════════
-  if (method === "POST" && isAdmin) {
-    let body; try { body = await request.json(); } catch { return err("Invalid JSON"); }
-    const { action, table, data, id } = body;
-
+  
+  if (typeof window.Chart !== 'undefined' || typeof Chart !== 'undefined') {
+    let ChartClass = window.Chart || Chart;
     try {
-      if (action === "delete") {
-        if (!id || !table) throw new Error("Missing id or table");
-        const allowed = ["updates", "categories", "info_cards", "learning_items", "folders", "files", "users", "sticky_notes", "dashboard_items"];
-        if (!allowed.includes(table)) throw new Error("Invalid table");
-
-        if (table === "dashboard_items") {
-          await ensureDashboardTables();
-          const pageRows = (await env.DB.prepare("SELECT id FROM dashboard_pages WHERE dashboard_item_id=?").bind(id).all()).results ?? [];
-          for (const row of pageRows) {
-            await env.DB.prepare("DELETE FROM dashboard_widgets WHERE dashboard_page_id=?").bind(row.id).run();
-          }
-          await env.DB.prepare("DELETE FROM dashboard_pages WHERE dashboard_item_id=?").bind(id).run();
-          await env.DB.prepare("DELETE FROM dashboard_item_settings WHERE dashboard_item_id=?").bind(id).run();
-          await env.DB.prepare("DELETE FROM dashboard_cache WHERE dashboard_item_id=?").bind(id).run();
-          await env.DB.prepare("DELETE FROM dashboard_cache_chunks WHERE dashboard_item_id=?").bind(id).run();
-          await env.DB.prepare("DELETE FROM dashboard_sync_logs WHERE dashboard_item_id=?").bind(id).run();
-          await env.DB.prepare("DELETE FROM dashboard_items WHERE id=?").bind(id).run();
-        } else {
-          await env.DB.prepare(`DELETE FROM ${table} WHERE id=?`).bind(id).run();
-        }
-        return ok({ success: true });
+      let existing = ChartClass.getChart ? ChartClass.getChart(el) : null;
+      if (existing) {
+        existing.destroy();
       }
-
-      if (action === "save") {
-        if (table === "users") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE users SET accountName=?, account_name=?, username=?, password=?, role=? WHERE id=?"
-            ).bind(data.accountName, data.accountName, data.username, data.password, data.role, data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO users (accountName, account_name, username, password, role) VALUES (?,?,?,?,?)"
-            ).bind(data.accountName, data.accountName, data.username, data.password, data.role).run();
-          }
-        }
-        else if (table === "updates") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE updates SET topic=?, badge=?, message=?, author=?, date=? WHERE id=?"
-            ).bind(data.topic, data.badge, data.message, data.author, data.date, data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO updates (topic, badge, message, author, date, created_by) VALUES (?,?,?,?,?,?)"
-            ).bind(data.topic, data.badge, data.message, data.author, data.date, user.id).run();
-          }
-        }
-        else if (table === "categories") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE categories SET name=?, icon=?, min_role_required=? WHERE id=?"
-            ).bind(data.name, data.icon, data.min_role_required ?? "intern", data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO categories (name, icon, min_role_required) VALUES (?,?,?)"
-            ).bind(data.name, data.icon, data.min_role_required ?? "intern").run();
-          }
-        }
-        else if (table === "info_cards") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE info_cards SET title=?, displayType=?, icon=?, image=?, link=?, categoryId=?, min_role_required=? WHERE id=?"
-            ).bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, data.min_role_required ?? "intern", data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO info_cards (title, displayType, icon, image, link, categoryId, min_role_required) VALUES (?,?,?,?,?,?,?)"
-            ).bind(data.title, data.displayType, data.icon, data.image, data.link, data.categoryId, data.min_role_required ?? "intern").run();
-          }
-        }
-        else if (table === "folders") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE folders SET name=?, parentId=?, parent_id=?, min_role_required=? WHERE id=?"
-            ).bind(data.name, data.parentId ?? null, data.parentId ?? null, data.min_role_required ?? "intern", data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO folders (name, parentId, parent_id, min_role_required) VALUES (?,?,?,?)"
-            ).bind(data.name, data.parentId ?? null, data.parentId ?? null, data.min_role_required ?? "intern").run();
-          }
-        }
-        else if (table === "learning_items") {
-          if (data.id) {
-            await env.DB.prepare(
-              "UPDATE learning_items SET topic=?, type=?, link=?, content=?, folderId=?, min_role_required=? WHERE id=?"
-            ).bind(data.topic, data.type, data.link, data.content, data.folderId, data.min_role_required ?? "intern", data.id).run();
-          } else {
-            await env.DB.prepare(
-              "INSERT INTO learning_items (topic, type, link, content, folderId, min_role_required) VALUES (?,?,?,?,?,?)"
-            ).bind(data.topic, data.type, data.link, data.content, data.folderId, data.min_role_required ?? "intern").run();
-          }
-        }
-        else if (table === "dashboard_items") {
-          await ensureDashboardTables();
-          const slug = (data.slug || data.name || '')
-            .toString()
-            .trim()
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '');
-
-          if (!data.name || !data.api_url) throw new Error("name and api_url are required");
-
-          if (data.id) {
-            await env.DB.prepare(`
-              UPDATE dashboard_items
-              SET name=?, slug=?, icon=?, api_url=?, min_role_required=?, is_active=?, updated_at=datetime('now')
-              WHERE id=?
-            `).bind(
-              data.name,
-              slug,
-              data.icon || 'fa-chart-line',
-              data.api_url,
-              data.min_role_required || 'leader',
-              data.is_active ?? 1,
-              data.id
-            ).run();
-          } else {
-            const maxRow = await env.DB.prepare(
-              "SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM dashboard_items"
-            ).first();
-            const nextSort = (maxRow?.max_sort ?? -1) + 1;
-
-            const inserted = await env.DB.prepare(`
-              INSERT INTO dashboard_items (name, slug, icon, api_url, min_role_required, is_active, sort_order, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-            `).bind(
-              data.name,
-              slug,
-              data.icon || 'fa-chart-line',
-              data.api_url,
-              data.min_role_required || 'leader',
-              data.is_active ?? 1,
-              nextSort
-            ).run();
-
-            await env.DB.prepare(`
-              INSERT INTO dashboard_item_settings (dashboard_item_id, settings_json, updated_at)
-              VALUES (?, ?, datetime('now'))
-            `).bind(inserted.meta?.last_row_id, JSON.stringify(cloneDashDefaults())).run();
-          }
-        }
-
-        return ok({ success: true });
-      }
-    } catch (e) {
-      return err(e.message, 500);
+    } catch(e) {}
+    let ctx = el.getContext ? el.getContext('2d') : null;
+    return new ChartClass(ctx || el, config);
+  } else {
+    console.warn("Chart.js CDN not loaded due to network connection reset. Rendering visual text summary fallback.");
+    let canvas = el;
+    if (canvas && canvas.parentNode && !canvas.getAttribute('data-fallback-rendered')) {
+      canvas.setAttribute('data-fallback-rendered', 'true');
+      let div = document.createElement('div');
+      div.className = 'empty-card';
+      div.style.padding = '16px';
+      div.style.fontSize = '12px';
+      div.style.color = 'var(--t2)';
+      div.style.border = '1px dashed var(--border)';
+      div.style.borderRadius = '8px';
+      div.style.margin = '8px 0';
+      div.innerHTML = `<div style="font-weight:700;margin-bottom:6px;color:var(--ac);">📊 [Chart View: ${config.type ? config.type.toUpperCase() : 'DATA'}]</div><div>Data points: ${config.data && config.data.labels ? config.data.labels.length : 0} items</div><div style="font-size:10.5px;color:var(--t3);margin-top:4px;">(Visual chart simplified because external CDN was rate-limited or reset by firewall)</div>`;
+      canvas.style.display = 'none';
+      canvas.parentNode.appendChild(div);
     }
+    return { destroy: () => {}, update: () => {} };
   }
+}
 
-  return err("Not Found", 404);
-  } catch (e) {
-    const msg = e && e.message ? e.message : String(e);
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS", "Access-Control-Allow-Headers": "Authorization, Content-Type" }
+/* ═══════════ UNIVERSAL MODE DESELECTION HELPER ═══════════ */
+function resetAllAnalyticalModes(exceptId) {
+  if (exceptId !== 'cmpTab') { COMPARE_MODE = false; let b = document.getElementById("cmpTab"); if (b) b.classList.remove('on'); let s = document.getElementById("cmpStrip"); if (s) s.classList.remove('on'); }
+  if (exceptId !== 'dupTab') { DUPLICATE_MODE = false; let b = document.getElementById("dupTab"); if (b) b.classList.remove('on'); }
+  if (exceptId !== 'ovrTab') { OVERTIME_MODE = false; let b = document.getElementById("ovrTab"); if (b) b.classList.remove('on'); }
+  if (exceptId !== 'pvtTab') { PIVOT_BUILDER_MODE = false; let b = document.getElementById("pvtTab"); if (b) b.classList.remove('on'); }
+  if (exceptId !== 'fltTab') { FILTER_MODE = false; PIVOT_FILTER_MODE = false; let b = document.getElementById("fltTab"); if (b) b.classList.remove('on'); }
+  
+  if (exceptId) {
+    document.querySelectorAll('.tp-b[data-r]').forEach(p => {
+      if (p.id !== 'cmpTab' && p.id !== 'dupTab' && p.id !== 'ovrTab' && p.id !== 'fltTab' && p.id !== 'pvtTab') {
+        p.classList.remove('on');
+      }
     });
   }
+}
+
+/* ═══════════ STATE ═══════════ */
+
+/* ═══════════ FLOATING TOAST & HOME NAVIGATION ENGINE ═══════════ */
+
+/* ═══════════ ACTIVE DATA POOL & RANGE EMPTY CHECK HELPERS ═══════════ */
+function getActiveTicketPool() {
+  if (typeof F !== 'undefined' && F !== null) {
+    if (F.length > 0) return F;
+    if (typeof range !== 'undefined' && range !== 'all') return []; // 0 matching tickets in selected period! Do not fallback!
+  }
+  return (D && D.rawData) ? D.rawData : [];
+}
+
+
+/* ═══════════ RIGHT-CLICK CONTEXT MENU ENGINE (RENAME, EDIT, DELETE) ═══════════ */
+function showAppContextMenu(e, items) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (e && e.stopPropagation) e.stopPropagation();
+  
+  let old = document.getElementById('appContextMenu');
+  if (old) old.remove();
+
+  let m = document.createElement('div');
+  m.id = 'appContextMenu';
+  m.style.cssText = `
+    position: fixed;
+    left: ${e.clientX}px;
+    top: ${e.clientY}px;
+    background: var(--bg2);
+    border: 1px solid var(--ac);
+    border-radius: 10px;
+    padding: 6px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.28);
+    z-index: 1000000;
+    min-width: 170px;
+    font-family: 'Inter', sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    animation: fadeInMenu 0.15s ease;
+  `;
+
+  // Collision detection with viewport bottom/right
+  requestAnimationFrame(() => {
+    let rect = m.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 10) {
+      m.style.left = Math.max(10, window.innerWidth - rect.width - 10) + 'px';
+    }
+    if (rect.bottom > window.innerHeight - 10) {
+      m.style.top = Math.max(10, window.innerHeight - rect.height - 10) + 'px';
+    }
+  });
+
+  items.forEach(item => {
+    let btn = document.createElement('button');
+    btn.type = 'button';
+    let isDanger = item.danger;
+    btn.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 14px;
+      border: none;
+      background: transparent;
+      color: ${isDanger ? '#ef4444' : 'var(--t1)'};
+      font-size: 12.5px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      transition: all 0.15s ease;
+    `;
+    btn.innerHTML = `<span style="font-size:15px;">${item.icon}</span> <span>${escapeHtml(item.label)}</span>`;
+    btn.onmouseover = () => {
+      btn.style.background = isDanger ? 'rgba(239, 68, 68, 0.12)' : 'var(--ac-bg)';
+      if (!isDanger) btn.style.color = 'var(--ac)';
+    };
+    btn.onmouseout = () => {
+      btn.style.background = 'transparent';
+      btn.style.color = isDanger ? '#ef4444' : 'var(--t1)';
+    };
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      m.remove();
+      if (item.onClick) item.onClick();
+    };
+    m.appendChild(btn);
+  });
+
+  document.body.appendChild(m);
+
+  // Close menu on click anywhere or Escape
+  function closeMenu(ev) {
+    if (m && !m.contains(ev.target)) {
+      m.remove();
+      document.removeEventListener('click', closeMenu, true);
+      document.removeEventListener('contextmenu', closeMenu, true);
+      document.removeEventListener('keydown', keyClose, true);
+    }
+  }
+  function keyClose(ev) {
+    if (ev.key === 'Escape') {
+      m.remove();
+      document.removeEventListener('click', closeMenu, true);
+      document.removeEventListener('contextmenu', closeMenu, true);
+      document.removeEventListener('keydown', keyClose, true);
+    }
+  }
+  setTimeout(() => {
+    document.addEventListener('click', closeMenu, true);
+    document.addEventListener('contextmenu', closeMenu, true);
+    document.addEventListener('keydown', keyClose, true);
+  }, 20);
+}
+
+function onGraphCardRightClick(e, scId) {
+  let sc = SAVED_CHARTS.find(c => c.id === scId);
+  if (!sc) return;
+  showAppContextMenu(e, [
+    {
+      icon: '✏️',
+      label: 'Rename',
+      onClick: () => {
+        showNamingModal(sc.title, function(newTitle) {
+          sc.title = newTitle;
+          saveSavedCharts();
+          doRender();
+          showAppToast("Chart Renamed Successfully!", "success");
+        });
+      }
+    },
+    {
+      icon: '🔧',
+      label: 'Edit',
+      onClick: () => {
+        editSavedChartTitle(sc.id);
+      }
+    },
+    {
+      icon: '🗑️',
+      label: 'Delete',
+      danger: true,
+      onClick: () => {
+        removeFromDashboard(sc.id);
+      }
+    }
+  ]);
+}
+function openDefaultGraphContextMenu(e, zKey, fallbackTitle, extraItems){
+  let items=[{
+    icon:'✏️',
+    label:'Rename',
+    onClick:()=>renameDefaultGraph(zKey, fallbackTitle)
+  }];
+  if(Array.isArray(extraItems) && extraItems.length) items=items.concat(extraItems);
+  showAppContextMenu(e, items);
+}
+
+function onPivotCardRightClick(e, idx) {
+  let pvt = SAVED_PIVOT_TABLES[idx];
+  if (!pvt) return;
+  showAppContextMenu(e, [
+    {
+      icon: '✏️',
+      label: 'Rename',
+      onClick: () => {
+        showNamingModal(pvt.name || pvt.title || 'Pivot Table ' + (idx+1), function(newTitle) {
+          pvt.name = newTitle;
+          pvt.title = newTitle;
+          saveSavedPivotTables();
+          let mainArea = document.getElementById('main');
+          if (mainArea) renderPivotLibraryView(mainArea);
+          showAppToast("Pivot Table Renamed Successfully!", "success");
+        });
+      }
+    },
+    {
+      icon: '🔧',
+      label: 'Edit',
+      onClick: () => {
+        editSavedPivotTable(idx);
+      }
+    },
+    {
+      icon: '🗑️',
+      label: 'Delete',
+      danger: true,
+      onClick: () => {
+        deleteSavedPivotTable(idx);
+      }
+    }
+  ]);
+}
+
+function getSavedFilterChartRows(sc) {
+  let pool = getActiveTicketPool();
+  if (!pool.length || !sc || sc.type !== 'filter') return [];
+  let allFilters = sc.config.allFilters || {};
+  let filterColumns = Object.keys(allFilters).filter(c => allFilters[c] && allFilters[c].length > 0);
+  let filteredRows = pool;
+  if (filterColumns.length > 0) {
+    filteredRows = pool.filter(r => {
+      return filterColumns.every(filterCol => {
+        let selVals = allFilters[filterCol];
+        let v = r[filterCol];
+        let k = (v != null && v.toString().trim() !== '') ? v.toString().trim() : '(Blank)';
+        return selVals.includes(k);
+      });
+    });
+  }
+  return filteredRows;
+}
+function savedChartHasData(sc) {
+  let pool = getActiveTicketPool();
+  if (!pool.length) return false;
+  if (sc.type === 'filter') return getSavedFilterChartRows(sc).length > 0;
+  return true;
+}
+
+function showAppToast(msg, type = 'success') {
+  let old = document.getElementById('appFloatingToast');
+  if (old) old.remove();
+  
+  let t = document.createElement('div');
+  t.id = 'appFloatingToast';
+  let isSuccess = type === 'success';
+  let bg = isSuccess ? 'rgba(16, 185, 129, 0.95)' : 'rgba(59, 130, 246, 0.95)';
+  let border = isSuccess ? '#059669' : '#2563eb';
+  let icon = isSuccess ? '✅' : 'ℹ️';
+  
+  t.style.cssText = `
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    background: ${bg};
+    color: #fff;
+    padding: 14px 22px;
+    border-radius: 10px;
+    border: 1px solid ${border};
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    z-index: 100000;
+    font-family: 'Inter', sans-serif;
+    font-size: 13.5px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    opacity: 0;
+    transform: translateY(-15px) scale(0.95);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: auto;
+  `;
+  t.innerHTML = `<span>${icon}</span> <span>${escapeHtml(msg)}</span>`;
+  document.body.appendChild(t);
+  
+  requestAnimationFrame(() => {
+    t.style.opacity = '1';
+    t.style.transform = 'translateY(0) scale(1)';
+  });
+  
+  setTimeout(() => {
+    if (t && t.parentElement) {
+      t.style.opacity = '0';
+      t.style.transform = 'translateY(-15px) scale(0.95)';
+      setTimeout(() => t.remove(), 300);
+    }
+  }, 3200);
+}
+
+function returnToHomePageFromGraph() {
+  editingChartId = null;
+  let restoreState = PRE_COMPARE_STATE ? {
+    range: PRE_COMPARE_STATE.range,
+    subPeriod: PRE_COMPARE_STATE.subPeriod,
+    trendGran: PRE_COMPARE_STATE.trendGran,
+    manualTrendAllowed: !!PRE_COMPARE_STATE.manualTrendAllowed
+  } : null;
+  if (restoreState) {
+    range = restoreState.range;
+    subPeriod = restoreState.subPeriod;
+    TREND_GRAN = restoreState.trendGran || TREND_GRAN;
+    RETURN_MODE_STATE_ON_NEXT_PROCESS = { ...restoreState };
+    PRE_COMPARE_STATE = null;
+  }
+  if (typeof resetAllAnalyticalModes === 'function') {
+    resetAllAnalyticalModes('none');
+  } else {
+    FILTER_MODE = false;
+    PIVOT_FILTER_MODE = false;
+    COMPARE_MODE = false;
+    DUPLICATE_MODE = false;
+    OVERTIME_MODE = false;
+    PIVOT_BUILDER_MODE = false;
+  }
+  document.querySelectorAll('.tp-b[data-r]').forEach(p => p.classList.remove('on'));
+  let activeRangeBtn = document.querySelector('.tp-b[data-r="'+range+'"]');
+  if (activeRangeBtn) activeRangeBtn.classList.add('on');
+  if (typeof updateSubPeriodUI === 'function') updateSubPeriodUI();
+  if (typeof applyFilter === 'function') applyFilter(); else doRender();
+  if (restoreState && restoreState.manualTrendAllowed && restoreState.trendGran && typeof switchTicketTrend === 'function') {
+    setTimeout(() => {
+      TREND_GRAN = restoreState.trendGran;
+      switchTicketTrend(restoreState.trendGran);
+    }, 80);
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+let D={},F=[],CH={},dataModal,zoomModal2,settingsModal;
+let range='all',subPeriod='all',dateCol=null;
+let zoomCH=null,zoomD=null;
+let allDates=[];
+let CHART_META={};
+let HIDDEN_CHARTS={};
+let COMPARE_MODE=false;
+let COMPARE_GRAN='month'; // day | week | month | year
+let COMPARE_PICKS=[];      // array of period keys like 'm_2026_5'
+let PRE_COMPARE_STATE=null;
+let RETURN_MODE_STATE_ON_NEXT_PROCESS=null;
+let DUPLICATE_MODE=false;
+let DETECTED_CUST_COL=null;
+let DETECTED_TKT_COL=null;
+let DUP_SEARCH_QUERY='';
+let OVERTIME_MODE=false;
+let OVR_SEARCH_QUERY='';
+let DETECTED_CRE_COL=null;
+let DETECTED_RES_COL=null;
+
+/* ═══ FILTER MODE STATE ═══ */
+let FILTER_MODE=false;
+let PIVOT_FILTER_MODE=false;
+let PIVOT_BUILDER_MODE=false;
+let FILTER_SELECTIONS={}; // { columnName: [selectedValue1, selectedValue2, ...] }
+let FILTER_OPEN_DROPDOWN=null;
+
+
+
+/* ═══ SAVED DASHBOARD CHARTS ═══ */
+let SAVED_CHARTS=[]; // [{id, title, type:'filter'|'pivot', config:{...}, tabName}]
+let editingChartId = null; // Track which chart is being edited
+let namingModalCallback = null; // Callback for naming modal
+function getGraphTitleStoreForTab(tab){
+  let t=tab || (D && D.tabName) || '';
+  if(!S.graphNamesByTab || typeof S.graphNamesByTab!=='object') S.graphNamesByTab={};
+  if(!S.graphNamesByTab[t] || typeof S.graphNamesByTab[t]!=='object') S.graphNamesByTab[t]={};
+  return S.graphNamesByTab[t];
+}
+function getGraphDisplayTitle(zKey, fallbackTitle){
+  let store=getGraphTitleStoreForTab();
+  return store[zKey] || fallbackTitle;
+}
+function setGraphDisplayTitle(zKey, title){
+  let store=getGraphTitleStoreForTab();
+  store[zKey]=title;
+  saveSettings();
+}
+function renameDefaultGraph(zKey, fallbackTitle){
+  showNamingModal(getGraphDisplayTitle(zKey, fallbackTitle), function(newTitle){
+    setGraphDisplayTitle(zKey, newTitle);
+    if (CHART_META && CHART_META[zKey]) CHART_META[zKey].title = newTitle;
+    if (D && D.rawData) doRender();
+    showAppToast('Graph Renamed Successfully!', 'success');
+  });
+}
+function renderDashboardBackToolbar(){
+  return `<div class="mode-backbar"><button class="expand-back mode-back-btn" type="button" onclick="returnToHomePageFromGraph()"><svg class="ic"><use href="#i-x"/></svg> Back to Dashboard</button></div>`;
+}
+function loadSavedCharts(){SAVED_CHARTS = Array.isArray(SAVED_CHARTS) ? SAVED_CHARTS : [];}
+function buildUniversalStateSnapshot(){
+  return {
+    savedCharts: typeof SAVED_CHARTS !== 'undefined' ? SAVED_CHARTS : [],
+    savedPivots: typeof SAVED_PIVOT_TABLES !== 'undefined' ? SAVED_PIVOT_TABLES : [],
+    settings: typeof S !== 'undefined' ? S : {},
+    hiddenCharts: typeof HIDDEN_CHARTS !== 'undefined' ? HIDDEN_CHARTS : {},
+    dropdownState: {
+      lastSelectedTab: (typeof D !== 'undefined' && D.tabName) ? D.tabName : '',
+      lastSelectedRange: typeof range !== 'undefined' ? range : 'all',
+      lastSelectedSubPeriod: typeof subPeriod !== 'undefined' ? subPeriod : 'all',
+      lastActiveMode: getCurrentActiveMode(),
+      dupState: { cust: typeof DETECTED_CUST_COL !== 'undefined' ? DETECTED_CUST_COL : '', tkt: typeof DETECTED_TKT_COL !== 'undefined' ? DETECTED_TKT_COL : '', search: typeof DUP_SEARCH_QUERY !== 'undefined' ? DUP_SEARCH_QUERY : '' },
+      ovrState: { cre: typeof DETECTED_CRE_COL !== 'undefined' ? DETECTED_CRE_COL : '', res: typeof DETECTED_RES_COL !== 'undefined' ? DETECTED_RES_COL : '' },
+      compareState: { gran: typeof COMPARE_GRAN !== 'undefined' ? COMPARE_GRAN : 'month', picks: typeof COMPARE_PICKS !== 'undefined' ? COMPARE_PICKS : [] },
+      filterState: { selections: typeof FILTER_SELECTIONS !== 'undefined' ? FILTER_SELECTIONS : {} }
+    },
+    timestamp: Date.now()
+  };
+}
+function persistUniversalStateLocalNow(){
+  /* Intentionally disabled for sync state.
+     Created graphs / pivots / hidden graphs / dashboard settings are stored online only. */
+}
+function saveSavedCharts(){
+  persistUniversalStateLocalNow();
+  if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'created graphs');
+}
+function addToDashboard(chartConfig){
+  if(!chartConfig)return;
+  let id='sc_'+Date.now()+'_'+Math.random().toString(36).substr(2,5);
+  let entry={id:id,title:chartConfig.title,type:chartConfig.savedType||'filter',config:JSON.parse(JSON.stringify(chartConfig)),tabName:D.tabName||''};
+  SAVED_CHARTS.push(entry);
+  saveSavedCharts();
+  // Visual feedback
+  let btn=event&&event.target;
+  if(btn){let orig=btn.innerHTML;btn.innerHTML='<svg class="ic ic-sm"><use href="#i-check"/></svg> Added!';btn.style.background='var(--green)';btn.style.borderColor='var(--green)';setTimeout(()=>{btn.innerHTML=orig;btn.style.background='';btn.style.borderColor='';},1500);}
+}
+function removeFromDashboard(id){
+  let chart = SAVED_CHARTS.find(c => c.id === id);
+  if (!chart) return;
+  showDeleteConfirmModal(id, chart.title);
+}
+
+let TREND_GRAN='weekly';
+let TABLE_STATE={page:1,pageSize:25,sortCol:'',sortDir:1,search:''};
+
+const S={dark:false,accent:'indigo',fontSize:'md',defaultTab:'',defaultRange:'all',advSummary:true,trendChart:true,chartLimit:0};
+
+const P=['#4f46e5','#ec4899','#22c55e','#f59e0b','#3b82f6','#14b8a6','#ef4444','#7c3aed','#06b6d4','#a855f7','#f97316','#84cc16','#d946ef','#0ea5e9','#64748b'];
+const DT=['#4f46e5','#ec4899','#3b82f6','#22c55e','#f59e0b','#ef4444','#14b8a6','#7c3aed'];
+const TG=['#4f46e5','#7c3aed','#ec4899','#3b82f6','#22c55e'];
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS_S=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+
+// Draw values directly on chart bars / points / slices so users can read data at a glance.
+function roundRectPath(ctx,x,y,w,h,r){
+  r=Math.min(r,w/2,h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+const VALUE_LABEL_PLUGIN={
+  id:'valueLabels',
+  afterDatasetsDraw(chart,args,opts){
+    opts=opts||{}; if(opts.display===false)return;
+    const ctx=chart.ctx;
+    ctx.save();
+    const fs=opts.fontSize||10;
+    ctx.font='800 '+fs+'px Inter, sans-serif';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    const chartType=chart.config.type;
+    chart.data.datasets.forEach((ds,di)=>{
+      const meta=chart.getDatasetMeta(di); if(meta.hidden)return;
+      meta.data.forEach((el,i)=>{
+        const raw=Array.isArray(ds.data)?ds.data[i]:0;
+        const val=(typeof raw==='object'&&raw!==null)?raw.y:raw;
+        if(val==null||val===''||isNaN(Number(val))||Number(val)===0)return;
+        const txt=(typeof opts.formatter==='function')
+          ? String(opts.formatter(val,{chart:chart,dataset:ds,datasetIndex:di,dataIndex:i,raw:raw}) ?? '')
+          : Number(val).toLocaleString();
+        if(!txt) return;
+        let pos=el.tooltipPosition?el.tooltipPosition():{x:el.x,y:el.y};
+        let x=pos.x,y=pos.y;
+        if(chartType==='bar'){
+          y=(el.y||pos.y)-13;
+          if(y<16)y=(el.y||pos.y)+14;
+          const padX=8,padY=4,w=ctx.measureText(txt).width+(padX*2),h=fs+(padY*2);
+          const gx=x-w/2, gy=y-h/2;
+          const grad=ctx.createLinearGradient(gx,gy,gx+w,gy+h);
+          // Use a high-contrast pill color, not the same color as the bar.
+          grad.addColorStop(0,opts.pillFrom||'#111827');
+          grad.addColorStop(1,opts.pillTo||'#475569');
+          ctx.fillStyle=grad;
+          roundRectPath(ctx,gx,gy,w,h,999);
+          ctx.fill();
+          ctx.shadowColor='rgba(15,23,42,.18)';ctx.shadowBlur=4;ctx.shadowOffsetY=1;
+          ctx.fill();
+          ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+          ctx.fillStyle='#fff';
+          ctx.fillText(txt,x,y+0.5);
+        }else if(chartType==='doughnut'||chartType==='polarArea'||chartType==='pie'){
+          ctx.fillStyle='#fff';
+          ctx.strokeStyle='rgba(0,0,0,.35)';
+          ctx.lineWidth=3;
+          ctx.strokeText(txt,x,y);
+          ctx.fillText(txt,x,y);
+        }else{
+          y=pos.y-10;
+          ctx.fillStyle=document.documentElement.getAttribute('data-theme')==='dark'?'#f8fafc':'#111827';
+          ctx.fillText(txt,x,y);
+        }
+      });
+    });
+    ctx.restore();
+  }
 };
+try{Chart.register(VALUE_LABEL_PLUGIN);}catch(e){}
+function wrapAxisLabel(label,maxLen=11){
+  label=String(label==null?'':label);
+  if(label.length<=maxLen)return label;
+  let words=label.split(/\s+/), lines=[], line='';
+  words.forEach(w=>{
+    if(w.length>maxLen){ if(line){lines.push(line);line='';} for(let i=0;i<w.length;i+=maxLen)lines.push(w.substring(i,i+maxLen)); }
+    else if((line+' '+w).trim().length>maxLen){ if(line)lines.push(line); line=w; }
+    else line=(line+' '+w).trim();
+  });
+  if(line)lines.push(line);
+  return lines.slice(0,3);
+}
+function wrapAxisLabels(labels,maxLen=11){return (labels||[]).map(l=>wrapAxisLabel(l,maxLen));}
+function ordinalWord(n){
+  const words=['Zero','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen','Twenty','Twenty One','Twenty Two','Twenty Three','Twenty Four','Twenty Five','Twenty Six','Twenty Seven','Twenty Eight','Twenty Nine','Thirty','Thirty One'];
+  return words[n]||String(n);
+}
+function formatTrendSubLabel(gran,d){
+  if(gran==='daily')return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  if(gran==='weekly'){
+    let e=new Date(d);e.setDate(e.getDate()+6);
+    return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'–'+e.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  }
+  return d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+}
+
+/* ═══════════ INIT ═══════════ */
+document.addEventListener("DOMContentLoaded",()=>{
+  showL();
+  function createSafeModal(el) {
+    if (!el) return null;
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+      return new bootstrap.Modal(el);
+    } else {
+      console.warn("Bootstrap CDN not ready due to network reset; using safe CSS modal fallback.");
+      return {
+        show: () => { el.style.display = 'block'; el.classList.add('show'); document.body.classList.add('modal-open'); },
+        hide: () => { el.style.display = 'none'; el.classList.remove('show'); document.body.classList.remove('modal-open'); }
+      };
+    }
+  }
+  dataModal = createSafeModal(document.getElementById('dModal'));
+  zoomModal2 = createSafeModal(document.getElementById('zoomModal'));
+  settingsModal = createSafeModal(document.getElementById('settingsModal'));
+
+  loadSettings();applyTheme();buildSwatchRow();bindSegs();loadSavedCharts();updateDashboardItemBadge();
+  setInterval(() => {
+    let prevTheme = document.documentElement.getAttribute('data-theme');
+    let prevAcc = document.documentElement.getAttribute('data-acc');
+    let prevFs = document.documentElement.getAttribute('data-fs');
+    syncPortalAppearanceFromParent();
+    if (prevTheme !== (S.dark?'dark':'light') || prevAcc !== S.accent || prevFs !== S.fontSize) {
+      applyTheme();
+      if (D && D.rawData) doRender();
+    }
+  }, 1200);
+  
+  showL("Loading dashboard from Google Sheets…");
+  apiCall('getStartupBundle', { defaultTab: S.defaultTab }).then(bundle => {
+    console.log("Received fast startup bundle:", bundle);
+    
+    // 1. Process cloud state if present
+    if (bundle.appState) {
+      if (bundle.appState.success && bundle.appState.stateJson) {
+        try {
+          let cloudState = JSON.parse(bundle.appState.stateJson);
+          if (cloudState.savedCharts && Array.isArray(cloudState.savedCharts)) SAVED_CHARTS = cloudState.savedCharts;
+          if (cloudState.savedPivots && Array.isArray(cloudState.savedPivots)) SAVED_PIVOT_TABLES = cloudState.savedPivots;
+          if (cloudState.settings && typeof cloudState.settings === 'object') {
+            Object.assign(S, cloudState.settings);
+            applyTheme(); buildSwatchRow();
+          }
+          if (cloudState.hiddenCharts) HIDDEN_CHARTS = cloudState.hiddenCharts;
+          if (cloudState.dropdownState) {
+            let ds = cloudState.dropdownState;
+            /* Do NOT restore lastSelectedRange / lastSelectedSubPeriod here.
+               Startup must respect S.defaultRange so Default period works reliably. */
+            if (ds.compareState) { COMPARE_GRAN = ds.compareState.gran || 'month'; COMPARE_PICKS = ds.compareState.picks || []; }
+            if (ds.filterState && ds.filterState.selections) FILTER_SELECTIONS = ds.filterState.selections;
+            if (ds.dupState) { DUP_SEARCH_QUERY = ds.dupState.search || ''; DETECTED_CUST_COL = ds.dupState.cust || null; DETECTED_TKT_COL = ds.dupState.tkt || null; }
+            if (ds.ovrState) { DETECTED_CRE_COL = ds.ovrState.cre || null; DETECTED_RES_COL = ds.ovrState.res || null; }
+          }
+        } catch(e) { console.error("Error parsing startup appState:", e); }
+      } else {
+        console.warn('Startup app-state unavailable; continuing without remote state.', bundle.appState);
+      }
+    }
+    
+    // 2. Populate tab dropdowns
+    let t = bundle.tabNames || [];
+    let dd = document.getElementById("tabDD");
+    if (dd) dd.innerHTML = t.map(x => `<option value="${x}">${x}</option>`).join('');
+    let defSel = document.getElementById("defTabSel");
+    if (defSel) defSel.innerHTML = '<option value="">— First tab —</option>' + t.map(x => `<option value="${x}">${x}</option>`).join('');
+    if (S.defaultTab && defSel) defSel.value = S.defaultTab;
+    
+    let startTab = (S.defaultTab && t.indexOf(S.defaultTab) >= 0) ? S.defaultTab : (t[0] || '');
+    if (startTab && dd) dd.value = startTab;
+    if (typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects();
+    
+    document.getElementById("defRangeSel").value = S.defaultRange || 'all';
+    let sortSel = document.getElementById("defDateSortSel"); if (sortSel) sortSel.value = S.dateSortOrder || 'desc';
+    
+    // 3. Render tab data directly from bundle if available!
+    if (bundle.tabData && bundle.tabData.tabName === startTab && bundle.tabData.rawData) {
+      window.TAB_DATA_CACHE = window.TAB_DATA_CACHE || {};
+      window.TAB_DATA_CACHE[startTab] = bundle.tabData;
+      processFetchedTabData(bundle.tabData);
+    } else if (startTab) {
+      fetchTab(startTab);
+    } else {
+      hideL();
+    }
+  }).catch(err => {
+    hideL();
+    console.warn("getStartupBundle failed, falling back to sequential load:", err);
+    if(typeof loadUniversalAppStateFromCloud==='function') loadUniversalAppStateFromCloud();
+    apiCall('getTabNames').then(t => {
+      let dd = document.getElementById("tabDD");
+      if (dd) dd.innerHTML = t.map(x => `<option value="${x}">${x}</option>`).join('');
+      let defSel = document.getElementById("defTabSel");
+      if (defSel) defSel.innerHTML = '<option value="">— First tab —</option>' + t.map(x => `<option value="${x}">${x}</option>`).join('');
+      if (S.defaultTab && defSel) defSel.value = S.defaultTab;
+      let startTab = (S.defaultTab && t.indexOf(S.defaultTab) >= 0) ? S.defaultTab : (t[0] || '');
+      if (startTab && dd) dd.value = startTab;
+      if (typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects();
+      document.getElementById("defRangeSel").value = S.defaultRange || 'all';
+      let sortSel = document.getElementById("defDateSortSel"); if (sortSel) sortSel.value = S.dateSortOrder || 'desc';
+      if (startTab) fetchTab(startTab);
+    }).catch(e => { hideL(); alert('Failed to load tabs: ' + e.message); });
+  });
+});
+
+/* ═══════════ SETTINGS ═══════════ */
+
+/* ═══════════ UNIVERSAL CLOUD STATE PERSISTENCE ENGINE (ACROSS ALL DEVICES) ═══════════ */
+let CLOUD_SYNC_TIMER = null;
+function getCurrentActiveMode() {
+  if (typeof COMPARE_MODE !== 'undefined' && COMPARE_MODE) return 'cmpTab';
+  if (typeof DUPLICATE_MODE !== 'undefined' && DUPLICATE_MODE) return 'dupTab';
+  if (typeof OVERTIME_MODE !== 'undefined' && OVERTIME_MODE) return 'ovrTab';
+  if (typeof PIVOT_BUILDER_MODE !== 'undefined' && PIVOT_BUILDER_MODE) return 'pvtTab';
+  if ((typeof FILTER_MODE !== 'undefined' && FILTER_MODE) || (typeof PIVOT_FILTER_MODE !== 'undefined' && PIVOT_FILTER_MODE)) return 'fltTab';
+  return 'home';
+}
+
+function saveUniversalAppStateToCloud(immediate, reason) {
+  let stateObj = buildUniversalStateSnapshot();
+
+  const doSync = () => {
+    if (typeof apiCall === 'function') {
+      if (immediate && typeof showL === 'function') showL(reason ? ('Saving ' + reason + '…') : 'Saving…');
+      apiCall('saveAppState', { stateJson: JSON.stringify(stateObj) })
+        .then(res => {
+          if (res && res.success) console.log('Universal App State synced to online store:', res);
+          else console.warn('Universal App State remote sync unavailable:', res);
+          if (immediate && typeof hideL === 'function') hideL();
+        })
+        .catch(err => {
+          console.warn('Cloud Sync failed:', err);
+          if (immediate && typeof hideL === 'function') hideL();
+        });
+    }
+  };
+
+  if (CLOUD_SYNC_TIMER) clearTimeout(CLOUD_SYNC_TIMER);
+  if (immediate) {
+    doSync();
+    return;
+  }
+  CLOUD_SYNC_TIMER = setTimeout(doSync, 1000);
+}
+
+function loadUniversalAppStateFromCloud() {
+  if (typeof apiCall !== 'function') return Promise.resolve(null);
+  return apiCall('loadAppState')
+    .then(res => {
+      if (res && res.success && res.stateJson) {
+        try {
+          let cloudState = JSON.parse(res.stateJson);
+          console.log('Loaded Universal App State from Cloud:', cloudState);
+          
+          let changed = false;
+          if (cloudState.savedCharts && Array.isArray(cloudState.savedCharts)) {
+            SAVED_CHARTS = cloudState.savedCharts;
+            changed = true;
+          }
+          if (cloudState.savedPivots && Array.isArray(cloudState.savedPivots)) {
+            SAVED_PIVOT_TABLES = cloudState.savedPivots;
+            changed = true;
+          }
+          if (cloudState.settings && typeof cloudState.settings === 'object') {
+            Object.assign(S, cloudState.settings);
+            S.defaultTab='';
+            S.advSummary=true;
+            S.trendChart=true;
+            if (typeof applyTheme === 'function') applyTheme();
+            if (typeof buildSwatchRow === 'function') buildSwatchRow();
+            changed = true;
+          }
+          if (cloudState.hiddenCharts && typeof cloudState.hiddenCharts === 'object') {
+            HIDDEN_CHARTS = cloudState.hiddenCharts;
+            changed = true;
+          }
+          
+          if (cloudState.dropdownState && typeof cloudState.dropdownState === 'object') {
+            let ds = cloudState.dropdownState;
+            /* Do NOT restore lastSelectedRange / lastSelectedSubPeriod from cloud here.
+               Default period setting should remain the source of truth on load. */
+            if (ds.compareState) {
+              if (typeof COMPARE_GRAN !== 'undefined') COMPARE_GRAN = ds.compareState.gran || 'month';
+              if (typeof COMPARE_PICKS !== 'undefined') COMPARE_PICKS = ds.compareState.picks || [];
+            }
+            if (ds.filterState && ds.filterState.selections) {
+              if (typeof FILTER_SELECTIONS !== 'undefined') FILTER_SELECTIONS = ds.filterState.selections;
+            }
+            if (ds.dupState) {
+              if (typeof DUP_SEARCH_QUERY !== 'undefined') DUP_SEARCH_QUERY = ds.dupState.search || '';
+              if (typeof DETECTED_CUST_COL !== 'undefined' && ds.dupState.cust) DETECTED_CUST_COL = ds.dupState.cust;
+              if (typeof DETECTED_TKT_COL !== 'undefined' && ds.dupState.tkt) DETECTED_TKT_COL = ds.dupState.tkt;
+            }
+            if (ds.ovrState) {
+              if (typeof DETECTED_CRE_COL !== 'undefined' && ds.ovrState.cre) DETECTED_CRE_COL = ds.ovrState.cre;
+              if (typeof DETECTED_RES_COL !== 'undefined' && ds.ovrState.res) DETECTED_RES_COL = ds.ovrState.res;
+            }
+            
+            // Restore active sheet tab if different
+            if (ds.lastSelectedTab && ds.lastSelectedTab !== (D.tabName || '')) {
+              let tabSel = document.getElementById('tabDD');
+              if (tabSel) {
+                tabSel.value = ds.lastSelectedTab;
+                if (typeof syncModernSelectFromNative === 'function') syncModernSelectFromNative(tabSel);
+              }
+              if (typeof fetchTab === 'function') fetchTab(ds.lastSelectedTab);
+            } else if (D && D.rawData) {
+              if (typeof doRender === 'function') doRender();
+            }
+          } else if (changed && D && D.rawData) {
+            if (typeof doRender === 'function') doRender();
+          }
+          
+          if (typeof buildChartVisibilityList === 'function') buildChartVisibilityList();
+          if (typeof refreshAllAppSelects === 'function') refreshAllAppSelects();
+        } catch(e) {
+          console.error("Error applying cloud state:", e);
+        }
+      }
+      return res;
+    })
+    .catch(err => {
+      console.warn('loadUniversalAppStateFromCloud failed:', err);
+      return null;
+    });
+}
+
+
+function saveGasApiUrl(url) {
+  GAS_WEB_APP_URL = (url || "").trim();
+  try { localStorage.setItem('noc_gas_api_url', GAS_WEB_APP_URL); } catch(e) {}
+}
+function testGasApiUrl() {
+  let status = document.getElementById('gasApiStatus');
+  if (!GAS_WEB_APP_URL) {
+    if (status) { status.textContent = "Please enter a valid Google Apps Script URL first."; status.style.color = "#ef4444"; }
+    return;
+  }
+  if (status) { status.textContent = "Testing connection..."; status.style.color = "var(--ac)"; }
+  apiCall('getTabNames')
+    .then(tabs => {
+      if (status) { status.textContent = "✅ Success! Connected to Google Sheets (" + tabs.length + " tabs found)."; status.style.color = "#10b981"; }
+      if (typeof showAppToast === 'function') showAppToast("Successfully connected to Google Sheets API!", "success");
+      let dd = document.getElementById("tabDD");
+      if (dd && tabs && tabs.length) {
+        dd.innerHTML = tabs.map(x => `<option value="${x}">${x}</option>`).join('');
+        if (typeof syncModernSelectFromNative === 'function') syncModernSelectFromNative(dd);
+        fetchTab(tabs[0]);
+      }
+    })
+    .catch(err => {
+      if (status) { status.textContent = "❌ Connection failed: " + err.message; status.style.color = "#ef4444"; }
+    });
+}
+
+function loadSettings(){
+  try {
+    let parentRoot = (window.parent && window.parent !== window && window.parent.document) ? window.parent.document.documentElement : null;
+    let parentTheme = parentRoot ? (parentRoot.getAttribute('data-theme') || '') : '';
+    let parentAccent = parentRoot ? (parentRoot.getAttribute('data-color') || parentRoot.getAttribute('data-acc') || '') : '';
+    let parentFont = parentRoot ? (parentRoot.getAttribute('data-font') || parentRoot.getAttribute('data-fs') || '') : '';
+    if (localStorage.getItem('noc_dark')==='1' || parentTheme==='dark') S.dark=true; else S.dark=false;
+    S.accent = localStorage.getItem('noc_color') || parentAccent || S.accent;
+    S.fontSize = localStorage.getItem('noc_font') || parentFont || S.fontSize;
+  } catch(e) {
+    if(localStorage.getItem('noc_dark')==='1')S.dark=true;
+  }
+  S.defaultTab='';
+  S.advSummary=true;
+  S.trendChart=true;
+  try { let savedApi = localStorage.getItem('noc_gas_api_url'); if (savedApi) GAS_WEB_APP_URL = savedApi; let inp = document.getElementById('gasApiUrlInput'); if (inp) inp.value = GAS_WEB_APP_URL; } catch(e) {}
+}
+function saveSettings(){persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'dashboard settings');}
+function saveHidden(){persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'graph visibility');}
+function getGraphOrderForTab(tab){
+  let t = tab || (D && D.tabName) || '';
+  if (S.graphOrderByTab && Array.isArray(S.graphOrderByTab[t])) return S.graphOrderByTab[t];
+  if (Array.isArray(S.graphOrder)) return S.graphOrder;
+  return [];
+}
+function setGraphOrderForTab(tab, order){
+  let t = tab || (D && D.tabName) || '';
+  if (!S.graphOrderByTab || typeof S.graphOrderByTab !== 'object') S.graphOrderByTab = {};
+  S.graphOrderByTab[t] = Array.isArray(order) ? order.slice() : [];
+  S.graphOrder = S.graphOrderByTab[t].slice();
+}
+function getChartCardElement(zKey){
+  let el=document.getElementById('card_'+zKey);
+  if (!el && zKey === 'trend_total') el = document.getElementById('card_trend_total') || document.getElementById('ticketTrendCard');
+  if (!el && zKey === 'cpe_complaints') el = document.getElementById('card_cpe_complaints');
+  if (!el && zKey === 'trend_main') el = document.getElementById('card_trend_main');
+  return el || null;
+}
+const DEFAULT_GRAPH_TITLE_MAP={
+  trend_total:'Total Ticket Numbers',
+  cpe_complaints:"CPE Model\'s Complaint Counts",
+  site_summary:'Site Ticket Counts',
+  site_complaint_percent:'Site Complaint Percent',
+  dup_top_cust:'Top Customers with Duplicate Tickets',
+  ot_severity:'OverTime Severity Distribution',
+  dup_trend:'Duplicate Tickets Over Time',
+  ot_trend:'OverTime Tickets Over Time',
+  cmp_totals:'Tickets per period'
+};
+function getModeRelevantDefaultGraphKeys(){
+  let cmp = (typeof COMPARE_MODE !== 'undefined') && COMPARE_MODE;
+  let dup = (typeof DUPLICATE_MODE !== 'undefined') && DUPLICATE_MODE;
+  let ovr = (typeof OVERTIME_MODE !== 'undefined') && OVERTIME_MODE;
+  let flt = (typeof FILTER_MODE !== 'undefined') && FILTER_MODE;
+  let pflt = (typeof PIVOT_FILTER_MODE !== 'undefined') && PIVOT_FILTER_MODE;
+  let pvt = (typeof PIVOT_BUILDER_MODE !== 'undefined') && PIVOT_BUILDER_MODE;
+  if (cmp) return ['cmp_totals'];
+  if (dup) return ['dup_trend','dup_top_cust'];
+  if (ovr) return ['ot_trend','ot_severity'];
+  if (flt || pflt) return [];
+  if (pvt) return [];
+  return ['trend_total','cpe_complaints','site_summary','site_complaint_percent','dup_top_cust','ot_severity'];
+}
+function isGraphKeyRelevantToCurrentMode(k){
+  if (!k) return false;
+  let cmp = (typeof COMPARE_MODE !== 'undefined') && COMPARE_MODE;
+  let dup = (typeof DUPLICATE_MODE !== 'undefined') && DUPLICATE_MODE;
+  let ovr = (typeof OVERTIME_MODE !== 'undefined') && OVERTIME_MODE;
+  let flt = (typeof FILTER_MODE !== 'undefined') && FILTER_MODE;
+  let pflt = (typeof PIVOT_FILTER_MODE !== 'undefined') && PIVOT_FILTER_MODE;
+  let pvt = (typeof PIVOT_BUILDER_MODE !== 'undefined') && PIVOT_BUILDER_MODE;
+  if (String(k).startsWith('saved_')) return true;
+  if (cmp) return k==='cmp_totals' || String(k).startsWith('cmp_cat_');
+  if (dup) return k==='dup_trend' || k==='dup_top_cust';
+  if (ovr) return k==='ot_trend' || k==='ot_severity';
+  if (flt || pflt) return String(k).startsWith('flt_');
+  if (pvt) return String(k).startsWith('pv_') || String(k).startsWith('pvt_');
+  return getModeRelevantDefaultGraphKeys().includes(k);
+}
+function getCurrentDashboardGraphKeys(tab){
+  let activeTab = tab || (D && D.tabName) || '';
+  let keys = [];
+  getModeRelevantDefaultGraphKeys().forEach(k=>{ if(keys.indexOf(k)<0) keys.push(k); });
+  if (CHART_META) {
+    Object.keys(CHART_META).forEach(k => {
+      if (isGraphKeyRelevantToCurrentMode(k) && keys.indexOf(k) < 0) keys.push(k);
+    });
+  }
+  let hidden = HIDDEN_CHARTS[activeTab] || [];
+  hidden.forEach(k => {
+    if (isGraphKeyRelevantToCurrentMode(k) && keys.indexOf(k) < 0) keys.push(k);
+  });
+  SAVED_CHARTS.filter(sc => sc.tabName === activeTab).forEach(sc => {
+    let sk='saved_' + sc.id;
+    if (keys.indexOf(sk) < 0) keys.push(sk);
+  });
+  return keys;
+}
+function applyHiddenStateToCurrentDashboard(){
+  let tab = (D && D.tabName) || '';
+  let hidden = HIDDEN_CHARTS[tab] || [];
+  let allKeys = Array.from(new Set([...(getCurrentDashboardGraphKeys(tab)||[]), ...hidden]));
+  allKeys.forEach(k => {
+    let el = getChartCardElement(k);
+    if (!el) return;
+    if (hidden.indexOf(k) >= 0) el.style.setProperty('display','none','important');
+    else {
+      el.style.removeProperty('display');
+      el.style.display='';
+    }
+  });
+  updateCreatedGraphsVisibility();
+}
+function normalizePortalAccent(v){
+  let x=String(v||'').trim().toLowerCase();
+  if(!x) return '';
+  let map={ purple:'indigo', indigo:'indigo', blue:'blue', green:'green', orange:'orange', red:'rose', rose:'rose', teal:'teal' };
+  return map[x] || x;
+}
+function normalizePortalFont(v){
+  let x=String(v||'').trim().toLowerCase();
+  if(!x) return '';
+  let map={ s:'sm', sm:'sm', m:'md', md:'md', l:'lg', lg:'lg', xl:'xl' };
+  return map[x] || x;
+}
+function syncPortalAppearanceFromParent(){
+  try {
+    let parentRoot = (window.parent && window.parent !== window && window.parent.document) ? window.parent.document.documentElement : null;
+    let parentTheme = parentRoot ? (parentRoot.getAttribute('data-theme') || '') : '';
+    let parentAccent = parentRoot ? (parentRoot.getAttribute('data-color') || parentRoot.getAttribute('data-acc') || '') : '';
+    let parentFont = parentRoot ? (parentRoot.getAttribute('data-font') || parentRoot.getAttribute('data-fs') || '') : '';
+    if (!parentTheme) parentTheme = localStorage.getItem('noc_dark')==='1' ? 'dark' : 'light';
+    if (!parentAccent) parentAccent = localStorage.getItem('noc_color') || localStorage.getItem('noc_acc') || S.accent || 'indigo';
+    if (!parentFont) parentFont = localStorage.getItem('noc_font') || S.fontSize || 'md';
+    parentAccent = normalizePortalAccent(parentAccent);
+    parentFont = normalizePortalFont(parentFont);
+    S.dark = parentTheme === 'dark';
+    S.accent = parentAccent || S.accent;
+    S.fontSize = parentFont || S.fontSize;
+  } catch(e) {}
+}
+function applyTheme(){
+  syncPortalAppearanceFromParent();
+  document.documentElement.setAttribute('data-theme',S.dark?'dark':'light');
+  document.documentElement.setAttribute('data-acc',S.accent);
+  document.documentElement.setAttribute('data-fs',S.fontSize);
+  let dm=document.getElementById("dmT");if(dm)dm.classList.toggle('on',S.dark);
+  let adv=document.getElementById("advT");if(adv)adv.classList.toggle('on',S.advSummary);
+  let tr=document.getElementById("trT");if(tr)tr.classList.toggle('on',S.trendChart);
+  let limitInput = document.getElementById("chartLimitInput");
+  if (limitInput) limitInput.value = S.chartLimit || "";
+  document.querySelectorAll('#fsSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.fontSize));
+  document.querySelectorAll('#swRow .sw').forEach(s=>s.classList.toggle('on',s.dataset.id===S.accent));
+}
+function toggleDark(){S.dark=!S.dark;saveSettings();applyTheme();if(D.rawData)doRender();}
+function toggleAdvSum(){S.advSummary=!S.advSummary;saveSettings();applyTheme();renderSum();}
+function toggleTrend(){S.trendChart=!S.trendChart;saveSettings();applyTheme();if(D.rawData)doRender();}
+function onChartLimitChange(val) {
+  S.chartLimit = parseInt(val) || 0;
+  saveSettings();
+  if (D.rawData) doRender();
+}
+
+const ACCENTS=[{id:'indigo',c:'#4f46e5'},{id:'blue',c:'#2563eb'},{id:'green',c:'#16a34a'},{id:'rose',c:'#e11d48'},{id:'orange',c:'#ea580c'},{id:'teal',c:'#0d9488'}];
+function buildSwatchRow(){
+  let row=document.getElementById("swRow");
+  if(!row) return;
+  row.innerHTML=ACCENTS.map(a=>`<div class="sw ${a.id===S.accent?'on':''}" data-id="${a.id}" style="background:${a.c};" onclick="setAccent('${a.id}')" title="${a.id}"></div>`).join('');
+}
+function setAccent(id){S.accent=id;saveSettings();applyTheme();if(D.rawData)doRender();}
+function bindSegs(){
+  document.querySelectorAll('#fsSeg button').forEach(b=>b.addEventListener('click',()=>{S.fontSize=b.dataset.v;saveSettings();applyTheme();}));
+  let defTabSel=document.getElementById("defTabSel");
+  if(defTabSel) defTabSel.addEventListener('change',e=>{S.defaultTab=e.target.value;saveSettings();});
+  let defRangeSel=document.getElementById("defRangeSel");
+  if(defRangeSel) defRangeSel.addEventListener('change',e=>{
+    S.defaultRange=e.target.value;
+    saveSettings();
+    range=S.defaultRange||'all';
+    subPeriod = range==='all' ? 'all' : '';
+    document.querySelectorAll('.tp-b[data-r]').forEach(p=>p.classList.toggle('on', p.dataset.r===range));
+    if(typeof updateSubPeriodUI==='function') updateSubPeriodUI();
+    if(D && D.rawData && typeof applyFilter==='function') applyFilter();
+  });
+  document.querySelectorAll('#cmpGranSeg button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('#cmpGranSeg button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');COMPARE_GRAN=b.dataset.g;COMPARE_PICKS=[];
+      buildComparePeriodList();
+      if(D.rawData)doRender();
+    });
+  });
+}
+let SETTINGS_CONTENT_HOME = null;
+function openSettings(){
+  buildChartVisibilityList();
+  let modal=document.getElementById('settingsModal');
+  let dialog=modal ? modal.querySelector('.modal-dialog') : null;
+  let content=modal ? modal.querySelector('.modal-content') : null;
+  if(!dialog || !content) return;
+  let existing=document.getElementById('settingsExtendedPage');
+  if(existing){ existing.classList.add('show'); }
+  else {
+    SETTINGS_CONTENT_HOME = dialog;
+    let page=document.createElement('div');
+    page.id='settingsExtendedPage';
+    page.className='settings-extended-page';
+    page.innerHTML='<div class="settings-extended-shell"></div>';
+    let shell=page.querySelector('.settings-extended-shell');
+    shell.appendChild(content);
+    document.body.appendChild(page);
+    document.body.style.overflow='hidden';
+    let closeBtn=content.querySelector('.modal-header .btn-close');
+    if(closeBtn){
+      closeBtn.removeAttribute('data-bs-dismiss');
+      closeBtn.setAttribute('onclick','closeSettingsPage()');
+    }
+    let doneBtn=content.querySelector('.modal-footer .btn-mc:not(.sec)');
+    if(doneBtn){
+      doneBtn.removeAttribute('data-bs-dismiss');
+      doneBtn.setAttribute('onclick','updateCreatedGraphsVisibility();closeSettingsPage()');
+    }
+    page.addEventListener('click',function(ev){ if(ev.target===page) closeSettingsPage(); });
+    requestAnimationFrame(()=>page.classList.add('show'));
+  }
+  setTimeout(()=>{ if(typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects(); }, 60);
+  Promise.resolve().then(async()=>{
+    try {
+      if (typeof loadUniversalAppStateFromCloud === 'function') {
+        await loadUniversalAppStateFromCloud();
+        buildChartVisibilityList();
+        if(typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects();
+      }
+    } catch(e) {}
+  });
+}
+function closeSettingsPage(immediate){
+  let page=document.getElementById('settingsExtendedPage');
+  let modal=document.getElementById('settingsModal');
+  let dialog=modal ? modal.querySelector('.modal-dialog') : null;
+  let content=page ? page.querySelector('.modal-content') : null;
+  let finish=()=>{
+    if(dialog && content) dialog.appendChild(content);
+    let closeBtn=dialog ? dialog.querySelector('.modal-header .btn-close') : null;
+    if(closeBtn){
+      closeBtn.removeAttribute('onclick');
+      closeBtn.setAttribute('data-bs-dismiss','modal');
+    }
+    let doneBtn=dialog ? dialog.querySelector('.modal-footer .btn-mc:not(.sec)') : null;
+    if(doneBtn){
+      doneBtn.setAttribute('data-bs-dismiss','modal');
+      doneBtn.setAttribute('onclick','updateCreatedGraphsVisibility()');
+    }
+    if(page) page.remove();
+    document.body.style.overflow='';
+  };
+  if(!page){ finish(); return; }
+  if(immediate){ finish(); return; }
+  page.classList.remove('show');
+  page.classList.add('closing');
+  setTimeout(finish,180);
+}
+function resetSettings(){
+  S.dark=false;S.accent='indigo';S.fontSize='md';S.defaultTab='';S.defaultRange='all';S.advSummary=true;S.trendChart=true;
+  S.graphOrder=[];S.graphOrderByTab={};
+  HIDDEN_CHARTS={};saveSettings();saveHidden();applyTheme();buildSwatchRow();buildChartVisibilityList();
+  let defTabSel=document.getElementById("defTabSel"); if(defTabSel) defTabSel.value='';
+  let defRangeSel=document.getElementById("defRangeSel"); if(defRangeSel) defRangeSel.value='all';
+  S.dateSortOrder='desc';let sortSel=document.getElementById("defDateSortSel");if(sortSel)sortSel.value='desc';if(typeof updateSubPeriodUI==='function')updateSubPeriodUI();
+  if(D.rawData)doRender();
+  if(typeof refreshAllAppSelects === 'function') refreshAllAppSelects();
+}
+function buildChartVisibilityList(){
+  let list=document.getElementById("chList");let tab=D.tabName||'';
+  let tabSaved=SAVED_CHARTS.filter(sc=>sc.tabName===tab);
+  let hidden=HIDDEN_CHARTS[tab]||[];
+  let autoChartKeys = Array.from(new Set([
+    ...Object.keys((CHART_META||{})).filter(k => !k.startsWith('saved_') && isGraphKeyRelevantToCurrentMode(k)),
+    ...hidden.filter(k => !String(k).startsWith('saved_') && isGraphKeyRelevantToCurrentMode(k)),
+    ...getModeRelevantDefaultGraphKeys()
+  ]));
+  if(!autoChartKeys.length && !tabSaved.length){list.innerHTML='<div style="padding:14px;text-align:center;color:var(--t3);font-size:11px;">Load a tab to manage chart visibility.</div>';return;}
+  let html='';
+  
+  let defaultSortPriority = (k) => {
+    if (k === 'trend_total') return -110;
+    if (k === 'cpe_complaints') return -100;
+    if (k === 'trend_main') return -90;
+    return 0;
+  };
+  
+  let tabOrder = getGraphOrderForTab(tab);
+  let sortKeyFunc = (a, b) => {
+    let idxA = tabOrder.indexOf(a);
+    let idxB = tabOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    let prioDiff = defaultSortPriority(a) - defaultSortPriority(b);
+    if (prioDiff !== 0) return prioDiff;
+    return a.localeCompare(b);
+  };
+  
+  // Auto-generated charts (exclude saved charts which start with "saved_")
+  autoChartKeys.sort(sortKeyFunc);
+  if(autoChartKeys.length > 0){
+    html+='<div style="padding:6px 8px;font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;"><span>Default Graphs</span><span style="font-size:9.5px;color:var(--ac);text-transform:none;font-weight:700;">↕ Drag to sort</span></div>';
+    html+=autoChartKeys.map(k=>{
+      let m=CHART_META[k] || { title: getGraphDisplayTitle(k, DEFAULT_GRAPH_TITLE_MAP[k] || k) };
+      let checked=hidden.indexOf(k)<0?'checked':'';
+      return `<div class="ch-item" data-graph-key="${k}" draggable="true" style="cursor:grab;display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;transition:all 0.15s;user-select:none;margin-bottom:2px;">
+        <span class="drag-handle" style="cursor:grab;color:var(--t3);font-size:16px;padding:0 6px;line-height:1;" title="Drag to sort graph in dashboard">⋮⋮</span>
+        <input type="checkbox" id="cv_${k}" ${checked} onchange="toggleChartVis('${k}',this.checked)">
+        <label for="cv_${k}" style="flex:1;cursor:pointer;margin:0;font-weight:600;color:var(--t1);">${escapeHtml(m.title)}</label>
+      </div>`;
+    }).join('');
+  }
+  
+  // Saved/Created charts
+  if(tabSaved.length){
+    let savedKeys = tabSaved.map(sc => 'saved_' + sc.id);
+    savedKeys.sort(sortKeyFunc);
+    
+    html+='<div id="createdGraphsSettingsHeader" style="padding:6px 8px;font-size:10px;font-weight:800;color:var(--ac);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);margin:8px 0 2px;display:flex;justify-content:space-between;align-items:center;"><span>Created Graphs</span><span style="font-size:9.5px;color:var(--ac);text-transform:none;font-weight:700;">↕ Drag to sort</span></div>';
+    html+=savedKeys.map(sKey=>{
+      let scId = sKey.substring(6);
+      let sc = tabSaved.find(x => x.id === scId);
+      if (!sc) return '';
+      let checked=hidden.indexOf(sKey)<0?'checked':'';
+      return `<div class="ch-item" data-graph-key="${sKey}" data-created-graph="true" draggable="true" style="cursor:grab;display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;transition:all 0.15s;user-select:none;margin-bottom:2px;">
+        <span class="drag-handle" style="cursor:grab;color:var(--ac);font-size:16px;padding:0 6px;line-height:1;" title="Drag to sort graph in dashboard">⋮⋮</span>
+        <input type="checkbox" id="cv_${sKey}" ${checked} onchange="toggleChartVis('${sKey}',this.checked);toggleCreatedGraphsHeader()">
+        <label for="cv_${sKey}" style="flex:1;cursor:pointer;margin:0;color:var(--ac);font-weight:700;">${escapeHtml(sc.title)}</label>
+      </div>`;
+    }).join('');
+  }
+  list.innerHTML=html || '<div style="padding:14px;text-align:center;color:var(--t3);font-size:11px;">No charts.</div>';
+  
+  setTimeout(() => { initGraphDragAndDrop(); }, 20);
+}
+
+let DRAGGED_ITEM = null;
+
+function initGraphDragAndDrop() {
+  let list = document.getElementById("chList");
+  if (!list) return;
+  
+  let items = list.querySelectorAll(".ch-item[data-graph-key]");
+  items.forEach(item => {
+    item.addEventListener("dragstart", function(e) {
+      DRAGGED_ITEM = this;
+      this.style.opacity = "0.4";
+      this.style.background = "var(--bg3)";
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", this.getAttribute("data-graph-key"));
+    });
+    
+    item.addEventListener("dragover", function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (DRAGGED_ITEM && DRAGGED_ITEM !== this) {
+        let rect = this.getBoundingClientRect();
+        let next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+        this.parentNode.insertBefore(DRAGGED_ITEM, next ? this.nextSibling : this);
+      }
+    });
+    
+    item.addEventListener("dragend", function(e) {
+      this.style.opacity = "1";
+      this.style.background = "";
+      DRAGGED_ITEM = null;
+      saveNewGraphOrderFromSettings();
+    });
+  });
+}
+
+function saveNewGraphOrderFromSettings() {
+  let list = document.getElementById("chList");
+  if (!list) return;
+  
+  let items = list.querySelectorAll(".ch-item[data-graph-key]");
+  let newOrder = [];
+  items.forEach(item => {
+    let key = item.getAttribute("data-graph-key");
+    if (key) newOrder.push(key);
+  });
+  
+  setGraphOrderForTab((D && D.tabName) || '', newOrder);
+  saveSettings();
+  applyGraphOrderToDashboard();
+}
+
+function applyGraphOrderToDashboard() {
+  let mainArea = document.getElementById("main");
+  if (!mainArea) return;
+  let createdGrid = document.getElementById('createdGraphsGrid');
+  let heading = document.getElementById('createdGraphsHeading');
+  let tab = (D && D.tabName) || '';
+  let allKeys = getCurrentDashboardGraphKeys(tab);
+  let tabOrder = getGraphOrderForTab(tab);
+  
+  let defaultSortPriority = (k) => {
+    if (k === 'trend_total') return -110;
+    if (k === 'cpe_complaints') return -100;
+    if (k === 'trend_main') return -90;
+    return 0;
+  };
+  
+  let sortFn = (a, b) => {
+    let idxA = tabOrder.indexOf(a);
+    let idxB = tabOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    let prioDiff = defaultSortPriority(a) - defaultSortPriority(b);
+    if (prioDiff !== 0) return prioDiff;
+    return a.localeCompare(b);
+  };
+
+  let mainKeys = allKeys.filter(k => !String(k).startsWith('saved_')).sort(sortFn);
+  let savedKeys = allKeys.filter(k => String(k).startsWith('saved_')).sort(sortFn);
+  
+  mainKeys.forEach(k => {
+    let card = getChartCardElement(k);
+    if (!card) return;
+    mainArea.appendChild(card);
+  });
+
+  if (heading && createdGrid) {
+    mainArea.appendChild(heading);
+    mainArea.appendChild(createdGrid);
+    savedKeys.forEach(k => {
+      let card = getChartCardElement(k);
+      if (!card) return;
+      createdGrid.appendChild(card);
+    });
+  } else {
+    savedKeys.forEach(k => {
+      let card = getChartCardElement(k);
+      if (!card) return;
+      mainArea.appendChild(card);
+    });
+  }
+  applyHiddenStateToCurrentDashboard();
+}
+function toggleChartVis(zKey,visible){
+  let tab=D.tabName||'';if(!HIDDEN_CHARTS[tab])HIDDEN_CHARTS[tab]=[];
+  let idx=HIDDEN_CHARTS[tab].indexOf(zKey);
+  if(visible){if(idx>=0)HIDDEN_CHARTS[tab].splice(idx,1);}else{if(idx<0)HIDDEN_CHARTS[tab].push(zKey);}
+
+  let el=getChartCardElement(zKey);
+  if(el){
+    if(visible){
+      el.style.removeProperty('display');
+      el.style.display='';
+    }else{
+      el.style.setProperty('display','none','important');
+    }
+  }
+  persistUniversalStateLocalNow();
+  applyHiddenStateToCurrentDashboard();
+  saveHidden();
+  
+  if(D.rawData && !FILTER_MODE && !PIVOT_BUILDER_MODE && !COMPARE_MODE && !DUPLICATE_MODE && !OVERTIME_MODE) {
+    doRender();
+    setTimeout(()=>applyHiddenStateToCurrentDashboard(), 80);
+    setTimeout(()=>applyHiddenStateToCurrentDashboard(), 220);
+  } else {
+    setTimeout(()=>applyHiddenStateToCurrentDashboard(), 30);
+    setTimeout(()=>applyHiddenStateToCurrentDashboard(), 120);
+  }
+}
+
+function updateCreatedGraphsVisibility(){
+  let tab = (D && D.tabName) || '';
+  let tabCharts = SAVED_CHARTS.filter(sc=>sc.tabName===tab);
+  let hidden = HIDDEN_CHARTS[tab] || [];
+  let visibleCharts = tabCharts.filter(sc => hidden.indexOf('saved_' + sc.id) < 0 && savedChartHasData(sc));
+  let anyVisible = visibleCharts.length > 0;
+
+  let dashboardHeading = document.getElementById('createdGraphsHeading');
+  if (dashboardHeading) {
+    dashboardHeading.style.display = anyVisible ? '' : 'none';
+    let txt = dashboardHeading.querySelector('.enterprise-title p');
+    if (txt) txt.textContent = `${visibleCharts.length} saved chart${visibleCharts.length===1?'':'s'}`;
+  }
+  let dashboardGrid = document.getElementById('createdGraphsGrid');
+  if (dashboardGrid) {
+    dashboardGrid.style.display = anyVisible ? 'grid' : 'none';
+  }
+}
+
+function toggleCreatedGraphsHeader(){
+  updateCreatedGraphsVisibility();
+}
+function toggleAllCharts(showAll){
+  let tab=D.tabName||'';
+  let keys=getCurrentDashboardGraphKeys(tab);
+  HIDDEN_CHARTS[tab]=showAll?[]:keys.slice();
+  saveHidden();
+  buildChartVisibilityList();
+  keys.forEach(k=>{let el=getChartCardElement(k);if(el)el.style.display=showAll?'':'none';});
+  updateCreatedGraphsVisibility();
+}
+function isHidden(zKey){return ((HIDDEN_CHARTS[D.tabName||'']||[]).indexOf(zKey)>=0);}
+
+/* ═══════════ LOAD / FILTER ═══════════ */
+function showL(customMsg){
+  let ld = document.getElementById("ld");
+  if (!ld) return;
+  ld.style.display = "flex";
+  let txtEl = ld.querySelector(".ld-txt");
+  if (txtEl) txtEl.textContent = typeof customMsg === "string" ? customMsg : "Loading live data from Google Sheets…";
+}
+function hideL(){
+  let ld = document.getElementById("ld");
+  if (ld) ld.style.display = "none";
+}
+function useSimulatedMode() {
+  GAS_WEB_APP_URL = "";
+  try { localStorage.removeItem('noc_gas_api_url'); } catch(e){}
+  if (typeof showAppToast === 'function') showAppToast("Switched to Offline Simulated Mode!", "success");
+  apiCall('getTabNames').then(t => {
+    let dd = document.getElementById("tabDD");
+    if (dd) dd.innerHTML = t.map(x => `<option value="${x}">${x}</option>`).join('');
+    if (typeof syncModernSelectFromNative === 'function' && dd) syncModernSelectFromNative(dd);
+    if (t.length) fetchTab(t[0]);
+  });
+}
+function forceRefreshData() {
+  window.TAB_DATA_CACHE = {};
+  try { sessionStorage.clear(); } catch(e){}
+  showL("Refreshing live data from Google Sheets…");
+  apiCall('clearCache').then(() => {
+    let dd = document.getElementById("tabDD");
+    let curTab = (dd && dd.value) ? dd.value : (D && D.tabName ? D.tabName : "");
+    if (curTab) fetchTab(curTab, true);
+    else {
+      apiCall('getTabNames').then(t => {
+        if (t.length) fetchTab(t[0], true);
+      });
+    }
+    if (typeof showAppToast === 'function') showAppToast("Live data refreshed successfully!", "success");
+  }).catch(err => {
+    hideL();
+    alert("Failed to refresh: " + err.message);
+  });
+}
+function fetchTab(n, forceReload){
+  TABLE_STATE.page=1;TABLE_STATE.search='';TABLE_STATE.sortCol=''; if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();
+  showL("Loading tab: " + n + "…");
+  document.getElementById("subLbl").textContent=n;
+  console.log('Fetching tab:', n);
+  
+  window.TAB_DATA_CACHE = window.TAB_DATA_CACHE || {};
+  if (!forceReload && window.TAB_DATA_CACHE[n]) {
+    console.log("Loading tab from fast local memory cache:", n);
+    processFetchedTabData(window.TAB_DATA_CACHE[n]);
+    return;
+  }
+  
+  apiCall('getTabData', {tab: n, forceReload: !!forceReload}).then(d => {
+    console.log('Tab data received:', d);
+    if (!d) throw new Error('No data received from API');
+    if (!d.headers) d.headers = [];
+    if (!d.rawData) d.rawData = [];
+    if (d.isPivot === undefined) d.isPivot = false;
+    
+    window.TAB_DATA_CACHE[n] = d;
+    processFetchedTabData(d);
+  }).catch(err => {
+    hideL();
+    alert('Failed to load tab data: ' + err.message);
+  });
+}
+
+function processFetchedTabData(d) {
+  D=d;findDateCol();collectDates();
+  let savedDup = (S.dupColsByTab && S.dupColsByTab[D.tabName]) ? S.dupColsByTab[D.tabName] : {};
+  DETECTED_CUST_COL = savedDup.cust || null;
+  DETECTED_TKT_COL = savedDup.tkt || null;
+  let savedOvr = (S.ovrColsByTab && S.ovrColsByTab[D.tabName]) ? S.ovrColsByTab[D.tabName] : {};
+  DETECTED_CRE_COL = savedOvr.cre || null;
+  DETECTED_RES_COL = savedOvr.res || null;
+  if (RETURN_MODE_STATE_ON_NEXT_PROCESS) {
+    range = RETURN_MODE_STATE_ON_NEXT_PROCESS.range || (S.defaultRange||'all');
+    subPeriod = RETURN_MODE_STATE_ON_NEXT_PROCESS.subPeriod || (range==='all' ? 'all' : '');
+    TREND_GRAN = RETURN_MODE_STATE_ON_NEXT_PROCESS.trendGran || TREND_GRAN;
+    RETURN_MODE_STATE_ON_NEXT_PROCESS = null;
+  } else {
+    range=S.defaultRange||'all';
+    subPeriod = range==='all' ? 'all' : '';
+  }
+  COMPARE_PICKS=[];
+  document.querySelectorAll('.tp-b').forEach(p=>{
+    if (p.id !== 'cmpTab' && p.id !== 'dupTab' && p.id !== 'ovrTab' && p.id !== 'fltTab' && p.id !== 'pvtTab') {
+      p.classList.toggle('on',p.dataset.r===range);
+    }
+  });
+  let cmpBtn = document.getElementById("cmpTab"); if (cmpBtn) cmpBtn.classList.toggle('on',COMPARE_MODE);
+  let dupBtn = document.getElementById("dupTab"); if (dupBtn) dupBtn.classList.toggle('on',DUPLICATE_MODE);
+  let ovrBtn = document.getElementById("ovrTab"); if (ovrBtn) ovrBtn.classList.toggle('on',OVERTIME_MODE);
+  let fltBtn = document.getElementById("fltTab"); if (fltBtn) fltBtn.classList.toggle('on',FILTER_MODE);
+  FILTER_SELECTIONS={};FILTER_OPEN_DROPDOWN=null;
+  PF_ROW_FIELD='';PF_COL_FIELDS=[];PF_ROW_VALS_SELECTED=[];
+  updateSubPeriodUI();buildComparePeriodList();applyFilter();
+  hideL();
+}
+function findDateCol(){
+  dateCol=null;if(!D.headers)return;
+  for(let h of D.headers){
+    let l=h.toLowerCase();
+    if(l.includes('date')||l.includes('created')||l.includes('timestamp')||l.includes('start')||l.includes('opened')){
+      let s=D.rawData&&D.rawData.length?D.rawData[0][h]:null;
+      if(s){let ds=parseLocalDate(s);if(ds){dateCol=h;break;}}
+    }
+  }
+}
+function parseLocalDate(v){
+  if(!v)return null;let s=v.toString().trim();
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}))?/);
+  if(m){return new Date(+m[1],+m[2]-1,+m[3],m[4]?+m[4]:0,m[5]?+m[5]:0,0);}
+  let dt=new Date(s);return isNaN(dt)?null:dt;
+}
+function toLocalDateStr(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function collectDates(){allDates=[];if(!dateCol||!D.rawData)return;D.rawData.forEach(r=>{let d=parseLocalDate(r[dateCol]);if(d)allDates.push(d);});allDates.sort((a,b)=>a-b);}
+
+function setRange(r){
+  range=r;subPeriod='all'; if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();
+  document.querySelectorAll('.tp-b').forEach(p=>{
+    if (p.id !== 'cmpTab' && p.id !== 'dupTab' && p.id !== 'ovrTab' && p.id !== 'fltTab' && p.id !== 'pvtTab') {
+      p.classList.toggle('on',p.dataset.r===r);
+    }
+  });
+  if(COMPARE_MODE){COMPARE_MODE=false;document.getElementById("cmpTab").classList.remove('on');document.getElementById("cmpStrip").classList.remove('on');}
+  updateSubPeriodUI();
+  if(PERIOD_TRAY_OPEN && r!=='all'){
+    let sel=document.getElementById('spSel');
+    setTimeout(()=>{ if(sel){ try{ sel.focus(); }catch(e){} } }, 20);
+  }
+  applyFilter();
+}
+
+function toggleDateSortOrder() {
+  S.dateSortOrder = S.dateSortOrder === 'asc' ? 'desc' : 'asc';
+  saveSettings();
+  updateSubPeriodUI();
+}
+
+function getSubPeriodOptionsForRange(){
+  let opts=[];
+  let asc = S.dateSortOrder === 'asc';
+  if(range==='yearly'){
+    let years=new Set();
+    allDates.forEach(d=>years.add(d.getFullYear()));
+    [...years].sort((a,b) => asc ? a - b : b - a).forEach(y=>opts.push({v:'y_'+y,t:y.toString()}));
+    opts.unshift({v:'all',t:'All Years'});
+  }
+  else if(range==='monthly'){
+    let ym=new Set();
+    allDates.forEach(d=>ym.add(d.getFullYear()+'_'+d.getMonth()));
+    [...ym].map(x=>{let p=x.split('_');return{y:+p[0],m:+p[1]};})
+      .sort((a,b) => asc ? (a.y - b.y || a.m - b.m) : (b.y - a.y || b.m - a.m))
+      .forEach(x=>opts.push({v:'m_'+x.y+'_'+x.m,t:MONTHS[x.m]+' '+x.y}));
+    opts.unshift({v:'all',t:'All Months'});
+  }
+  else if(range==='weekly'){
+    let weeks=new Set();
+    allDates.forEach(d=>weeks.add(toLocalDateStr(getWeekStart(d))));
+    let sortedWeeks = [...weeks].sort();
+    if (!asc) sortedWeeks.reverse();
+    sortedWeeks.forEach(ws=>{
+      let sd=parseLocalDate(ws),ed=new Date(sd);
+      ed.setDate(ed.getDate()+6);
+      let fmt=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      opts.push({v:'w_'+ws,t:'Week '+getWeekNumber(sd)+' ('+fmt(sd)+' — '+fmt(ed)+')'});
+    });
+    opts.unshift({v:'all',t:'All Weeks'});
+  }
+  else if(range==='daily'){
+    let days=new Set();
+    allDates.forEach(d=>days.add(toLocalDateStr(d)));
+    let sortedDays = [...days].sort();
+    if (!asc) sortedDays.reverse();
+    sortedDays.forEach(ds=>{
+      let d=parseLocalDate(ds);
+      opts.push({v:'d_'+ds,t:d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})});
+    });
+    opts.unshift({v:'all',t:'All Days'});
+  }
+  return opts;
+}
+function getCurrentSubPeriodValue(rangeType){
+  if(!dateCol) return 'all';
+  let now=new Date();
+  if(rangeType==='daily') return 'd_' + toLocalDateStr(now);
+  if(rangeType==='weekly') return 'w_' + toLocalDateStr(getWeekStart(now));
+  if(rangeType==='monthly') return 'm_' + now.getFullYear() + '_' + now.getMonth();
+  if(rangeType==='yearly') return 'y_' + now.getFullYear();
+  return 'all';
+}
+function chooseDefaultSubPeriodValue(rangeType, opts){
+  opts=opts||[];
+  if(!opts.length) return 'all';
+  let currentVal=getCurrentSubPeriodValue(rangeType);
+  if(currentVal && opts.some(o=>o.v===currentVal)) return currentVal;
+  let nonAll=opts.filter(o=>o.v!=='all');
+  if(!nonAll.length) return 'all';
+  return S.dateSortOrder==='asc' ? nonAll[nonAll.length-1].v : nonAll[0].v;
+}
+function updateSubPeriodUI(){
+  let wrap=document.getElementById("spWrap"),sel=document.getElementById("spSel"),hint=document.getElementById('periodSelectionHint');
+  if(range==='all'||!dateCol||D.isPivot||allDates.length===0){
+    if(wrap) wrap.style.display='none';
+    if(hint) hint.style.display='flex';
+    return;
+  }
+  if(wrap) wrap.style.display='flex';
+  if(hint) hint.style.display='none';
+  let opts=getSubPeriodOptionsForRange();
+  sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.t}</option>`).join(''); if(typeof refreshAllHeaderSelects === 'function') refreshAllHeaderSelects();
+  let chosen = (subPeriod && subPeriod!=='all' && opts.some(o=>o.v===subPeriod)) ? subPeriod : chooseDefaultSubPeriodValue(range, opts);
+  subPeriod = chosen || 'all';
+  sel.value = subPeriod;
+}
+function onSubPeriodChange(){subPeriod=document.getElementById("spSel").value;togglePeriodTray(false);applyFilter(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();}
+let PERIOD_TRAY_OPEN=false;
+let TOOLS_TRAY_OPEN=false;
+function togglePeriodTray(forceState){
+  let tray=document.getElementById('periodTray');
+  let btn=document.getElementById('periodToggleBtn');
+  if(!tray||!btn)return;
+  PERIOD_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !PERIOD_TRAY_OPEN;
+  tray.classList.toggle('open', PERIOD_TRAY_OPEN);
+  btn.classList.toggle('act', PERIOD_TRAY_OPEN);
+  if(PERIOD_TRAY_OPEN){
+    TOOLS_TRAY_OPEN=false;
+    let tt=document.getElementById('toolsTray'); if(tt) tt.classList.remove('open');
+    let tb=document.getElementById('toolsToggleBtn'); if(tb) tb.classList.remove('act');
+  }
+}
+function toggleToolsTray(forceState){
+  let tray=document.getElementById('toolsTray');
+  let btn=document.getElementById('toolsToggleBtn');
+  if(!tray||!btn)return;
+  TOOLS_TRAY_OPEN = typeof forceState === 'boolean' ? forceState : !TOOLS_TRAY_OPEN;
+  tray.classList.toggle('open', TOOLS_TRAY_OPEN);
+  btn.classList.toggle('act', TOOLS_TRAY_OPEN);
+  if(TOOLS_TRAY_OPEN){
+    PERIOD_TRAY_OPEN=false;
+    let pt=document.getElementById('periodTray'); if(pt) pt.classList.remove('open');
+    let pb=document.getElementById('periodToggleBtn'); if(pb) pb.classList.remove('act');
+  }
+}
+document.addEventListener('click', function(ev){
+  let wrap=document.getElementById('periodLaunchWrap');
+  let tWrap=document.getElementById('toolsLaunchWrap');
+  if(PERIOD_TRAY_OPEN && wrap && !wrap.contains(ev.target)) togglePeriodTray(false);
+  if(TOOLS_TRAY_OPEN && tWrap && !tWrap.contains(ev.target)) toggleToolsTray(false);
+}, true);
+function getWeekStart(d){let dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay());dt.setHours(0,0,0,0);return dt;}
+function getWeekNumber(d){let s=new Date(d.getFullYear(),0,1);return Math.ceil(((d-s)/86400000+s.getDay()+1)/7);}
+
+function applyFilter(){
+  if(!D.rawData){F=[];doRender();return;}
+  if(COMPARE_MODE){F=D.rawData.slice();doRender();return;} // compare uses all rows, then groups by period
+  if(range==='all'||!dateCol||D.isPivot){F=D.rawData.slice();}
+  else{
+    F=D.rawData.filter(r=>{
+      let v=r[dateCol];if(!v)return false;let d=parseLocalDate(v);if(!d)return false;
+      if(subPeriod&&subPeriod!=='all'){
+        if(subPeriod.startsWith('y_'))return d.getFullYear()===+subPeriod.split('_')[1];
+        if(subPeriod.startsWith('m_')){let p=subPeriod.split('_');return d.getFullYear()===+p[1]&&d.getMonth()===+p[2];}
+        if(subPeriod.startsWith('w_')){let ws=parseLocalDate(subPeriod.substring(2));let we=new Date(ws);we.setDate(we.getDate()+7);return d>=ws&&d<we;}
+        if(subPeriod.startsWith('d_'))return toLocalDateStr(d)===subPeriod.substring(2);
+      }
+      let now=new Date(),sd;
+      if(range==='daily')sd=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+      else if(range==='weekly')sd=getWeekStart(now);
+      else if(range==='monthly')sd=new Date(now.getFullYear(),now.getMonth(),1);
+      else if(range==='yearly')sd=new Date(now.getFullYear(),0,1);
+      return d>=sd;
+    });
+  }
+  doRender();
+}
+
+/* ═══════════ ANALYTICS ═══════════ */
+function analyzeData(rows){
+  rows=rows||F;let stats={total:rows.length,unique:0,topCat:'-',topCnt:0,avgDay:0,uniqueDays:0};
+  if(!rows.length)return stats;
+  if(dateCol){let dset=new Set();rows.forEach(r=>{let d=parseLocalDate(r[dateCol]);if(d)dset.add(toLocalDateStr(d));});stats.uniqueDays=dset.size;stats.avgDay=dset.size>0?(rows.length/dset.size).toFixed(1):rows.length;}
+  let firstCat=D.headers&&D.headers.find(h=>{let l=h.toLowerCase();return h!==dateCol&&!l.includes('id')&&!l.includes('description')&&!l.includes('note')&&!l.includes('duration');});
+  if(firstCat){let mp={};rows.forEach(r=>{let v=r[firstCat];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';mp[k]=(mp[k]||0)+1;});let keys=Object.keys(mp);stats.unique=keys.length;keys.sort((a,b)=>mp[b]-mp[a]);if(keys[0]){stats.topCat=keys[0];stats.topCnt=mp[keys[0]];}}
+  return stats;
+}
+function trendByDate(rows){
+  rows=rows||F;if(!dateCol||!rows.length)return null;
+  let mp={};rows.forEach(r=>{let d=parseLocalDate(r[dateCol]);if(!d)return;mp[toLocalDateStr(d)]=(mp[toLocalDateStr(d)]||0)+1;});
+  let keys=Object.keys(mp).sort();if(keys.length<2)return null;
+  return {labels:keys,values:keys.map(k=>mp[k])};
+}
+
+
+/* ═══════════ ENTERPRISE KPI / UPLOAD / TABLE ADDITIONS ═══════════ */
+function uploadTicketFile(file) {
+  if (!file) return;
+  let statusEl = document.getElementById("upStatus") || document.querySelector(".upload-status");
+  if (statusEl) statusEl.textContent = "Uploading to real-time Sheet DB...";
+  
+  let reader = new FileReader();
+  reader.onload = function(e) {
+    let base64 = e.target.result.split(',')[1] || e.target.result;
+    apiCall('processUploadedFile', { name: file.name, mimeType: file.type || 'text/csv', data: base64 })
+      .then(res => {
+        if (statusEl) statusEl.textContent = "✅ Synced to live Google Sheet DB!";
+        if (typeof getTabNames === 'function') getTabNames();
+      })
+      .catch(err => {
+        if (statusEl) statusEl.textContent = "❌ Sync failed: " + err.message;
+        alert("Real-time database sync error: " + err.message);
+      });
+  };
+  reader.readAsDataURL(file);
+}
+function refreshTabsAfterUpload(tabNames,newTab){
+  let dd=document.getElementById('tabDD');
+  dd.innerHTML=tabNames.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
+  let defSel=document.getElementById('defTabSel');
+  if(defSel) defSel.innerHTML='<option value="">— First tab —</option>'+tabNames.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
+  dd.value=newTab;fetchTab(newTab);
+}
+function detectStatusCol(){
+  if(!D.headers)return null;
+  return D.headers.find(h=>{let l=h.toLowerCase();return l==='status'||l.includes('ticket status')||l.includes('case status')||l.includes('state');})||null;
+}
+function statusBucket(v){
+  let s=(v==null?'':String(v)).trim().toLowerCase();
+  if(!s)return 'open';
+  if(/in[\s-]*progress|processing|working|ongoing|wip|assigned/.test(s))return 'inprogress';
+  if(/pending|waiting|hold|on hold|awaiting/.test(s))return 'pending';
+  if(/closed|resolved|done|complete|completed|fixed/.test(s))return 'closed';
+  if(/open|new|reopen|created|active/.test(s))return 'open';
+  return 'open';
+}
+function rowsInDateWindow(rows,start,end){
+  if(!dateCol)return [];
+  return rows.filter(r=>{let d=parseLocalDate(r[dateCol]);return d&&d>=start&&d<end;});
+}
+function trendObj(curr,prev){
+  if(prev===0&&curr===0)return {txt:'—',cls:'flat'};
+  if(prev===0)return {txt:'▲ new',cls:'up'};
+  let pct=((curr-prev)/prev*100);let cls=pct>0?'up':pct<0?'down':'flat';let arrow=pct>0?'▲':pct<0?'▼':'●';
+  return {txt:arrow+' '+Math.abs(pct).toFixed(0)+'%',cls};
+}
+function buildTopKpiItems(totalRows){
+  if(!D.rawData||D.isPivot)return [{ic:'i-ticket',v:totalRows.toLocaleString(),l:'Total Tickets',c:'var(--ac)',kpi:'total'}];
+  let pool=COMPARE_MODE?periodFilter(D.rawData,COMPARE_PICKS):F;
+  let statusCol=detectStatusCol();
+  let counts={open:0,closed:0,inprogress:0,pending:0};
+  if(statusCol){pool.forEach(r=>{let b=statusBucket(r[statusCol]);if(counts[b]!=null)counts[b]++;});}
+  else{counts.open=pool.length;}
+  let today=0,thisWeek=0,thisMonth=0,yesterday=0,lastWeek=0,lastMonth=0;
+  if(dateCol){
+    let now=new Date();
+    let d0=new Date(now.getFullYear(),now.getMonth(),now.getDate());let d1=new Date(d0);d1.setDate(d1.getDate()+1);
+    let y0=new Date(d0);y0.setDate(y0.getDate()-1);
+    let w0=getWeekStart(now);let w1=new Date(w0);w1.setDate(w1.getDate()+7);let lw0=new Date(w0);lw0.setDate(lw0.getDate()-7);
+    let m0=new Date(now.getFullYear(),now.getMonth(),1);let m1=new Date(now.getFullYear(),now.getMonth()+1,1);let lm0=new Date(now.getFullYear(),now.getMonth()-1,1);
+    today=rowsInDateWindow(D.rawData,d0,d1).length;yesterday=rowsInDateWindow(D.rawData,y0,d0).length;
+    thisWeek=rowsInDateWindow(D.rawData,w0,w1).length;lastWeek=rowsInDateWindow(D.rawData,lw0,w0).length;
+    thisMonth=rowsInDateWindow(D.rawData,m0,m1).length;lastMonth=rowsInDateWindow(D.rawData,lm0,m0).length;
+  }
+  return [
+    {ic:'i-ticket',v:pool.length.toLocaleString(),l:'Total Tickets',c:'var(--ac)',trend:dateCol?trendObj(thisMonth,lastMonth):null,kpi:'total'},
+    {ic:'i-inbox',v:counts.open.toLocaleString(),l:'Open Tickets',c:'var(--blue)',kpi:'open'},
+    {ic:'i-check',v:counts.closed.toLocaleString(),l:'Closed Tickets',c:'var(--green)',kpi:'closed'},
+    {ic:'i-rocket',v:counts.inprogress.toLocaleString(),l:'In Progress Tickets',c:'var(--orange)',kpi:'inprogress'},
+    {ic:'i-clock',v:counts.pending.toLocaleString(),l:'Pending Tickets',c:'var(--pink)',kpi:'pending'},
+    {ic:'i-calendar',v:today.toLocaleString(),l:"Today's Tickets",c:'var(--teal)',trend:dateCol?trendObj(today,yesterday):null,kpi:'today'},
+    {ic:'i-trend',v:thisWeek.toLocaleString(),l:"This Week's Tickets",c:'var(--red)',trend:dateCol?trendObj(thisWeek,lastWeek):null,kpi:'week'},
+    {ic:'i-chart',v:thisMonth.toLocaleString(),l:"This Month's Tickets",c:'var(--ac2)',trend:dateCol?trendObj(thisMonth,lastMonth):null,kpi:'month'}
+  ];
+}
+function loadDuplicateColumnsForCurrentTab(){
+  let found = findCustomerAndTicketCols();
+  let savedDup = (S.dupColsByTab && S.dupColsByTab[D.tabName]) ? S.dupColsByTab[D.tabName] : {};
+  DETECTED_CUST_COL = savedDup.cust || DETECTED_CUST_COL || found.customerCol || (D.headers ? D.headers[0] : '');
+  DETECTED_TKT_COL = savedDup.tkt || DETECTED_TKT_COL || found.ticketCol || (D.headers ? (D.headers[1] || D.headers[0]) : '');
+  return { customerCol: DETECTED_CUST_COL, ticketCol: DETECTED_TKT_COL };
+}
+function loadOverTimeColumnsForCurrentTab(){
+  let found = findCreatedAndResolvedCols();
+  let savedOvr = (S.ovrColsByTab && S.ovrColsByTab[D.tabName]) ? S.ovrColsByTab[D.tabName] : {};
+  DETECTED_CRE_COL = savedOvr.cre || DETECTED_CRE_COL || found.createdCol || (D.headers ? D.headers[0] : '');
+  DETECTED_RES_COL = savedOvr.res || DETECTED_RES_COL || found.resolvedCol || (D.headers ? (D.headers[1] || D.headers[0]) : '');
+  return { createdCol: DETECTED_CRE_COL, resolvedCol: DETECTED_RES_COL };
+}
+function findSiteFullNameCols(){
+  let siteCodeCol=null, fullNameCol=null, shortCodeCol=null, activeSiteCol=null, activeCountCol=null;
+  if(!D || !D.headers) return { siteCodeCol, fullNameCol, shortCodeCol, activeSiteCol, activeCountCol };
+  for(let h of D.headers){ let l=h.toLowerCase(); if(l.includes('opi site code')||l==='opi site code'){ siteCodeCol=h; break; } }
+  if(!siteCodeCol){ for(let h of D.headers){ let l=h.toLowerCase(); if((l.includes('site')&&l.includes('code'))||l==='site code'){ siteCodeCol=h; break; } } }
+  for(let h of D.headers){ let l=h.toLowerCase(); if(l==='full name' || l.includes('full name')){ fullNameCol=h; break; } }
+  for(let h of D.headers){ let l=h.toLowerCase(); if(l==='short code' || l.includes('short code')){ shortCodeCol=h; break; } }
+  for(let h of D.headers){ let l=h.toLowerCase(); if(l==='active site' || l.includes('active site')){ activeSiteCol=h; break; } }
+  for(let h of D.headers){ let l=h.toLowerCase(); if(l==='active count' || l.includes('active count')){ activeCountCol=h; break; } }
+  if(!shortCodeCol) shortCodeCol = siteCodeCol;
+  if(!activeSiteCol) activeSiteCol = shortCodeCol || siteCodeCol;
+  return { siteCodeCol, fullNameCol, shortCodeCol, activeSiteCol, activeCountCol };
+}
+function loadSiteColumnsForCurrentTab(){
+  let found = findSiteFullNameCols();
+  let saved = (S.siteColsByTab && S.siteColsByTab[D.tabName]) ? S.siteColsByTab[D.tabName] : {};
+  S.SITE_CODE_COL = saved.siteCode || S.SITE_CODE_COL || found.siteCodeCol || (D.headers ? D.headers[0] : '');
+  S.SITE_FULLNAME_COL = saved.fullName || S.SITE_FULLNAME_COL || found.fullNameCol || (D.headers ? D.headers[0] : '');
+  S.SITE_SHORTCODE_COL = saved.shortCode || S.SITE_SHORTCODE_COL || found.shortCodeCol || S.SITE_CODE_COL || (D.headers ? D.headers[0] : '');
+  S.SITE_ACTIVE_SITE_COL = saved.activeSite || S.SITE_ACTIVE_SITE_COL || found.activeSiteCol || S.SITE_SHORTCODE_COL || S.SITE_CODE_COL || (D.headers ? D.headers[0] : '');
+  S.SITE_ACTIVE_COUNT_COL = saved.activeCount || S.SITE_ACTIVE_COUNT_COL || found.activeCountCol || (D.headers ? (D.headers[1] || D.headers[0]) : '');
+  return { siteCodeCol:S.SITE_CODE_COL, fullNameCol:S.SITE_FULLNAME_COL, shortCodeCol:S.SITE_SHORTCODE_COL, activeSiteCol:S.SITE_ACTIVE_SITE_COL, activeCountCol:S.SITE_ACTIVE_COUNT_COL };
+}
+function normalizeSiteLookupKey(v){
+  return String(v==null?'':v).trim().toUpperCase();
+}
+function parseSiteActiveCount(v){
+  if(v==null) return 0;
+  let n=parseFloat(String(v).replace(/,/g,'').trim());
+  return isNaN(n) ? 0 : n;
+}
+function getSiteTicketCounts(rows, siteCodeCol, fullNameCol, shortCodeCol, lookupRows){
+  let sourceRows = Array.isArray(lookupRows) && lookupRows.length ? lookupRows : rows;
+  let codeToFull={};
+  let shortToFull={};
+  (sourceRows||[]).forEach(r=>{
+    let sc=String(r[shortCodeCol] ?? '').trim();
+    let site=String(r[siteCodeCol] ?? '').trim();
+    let fn=String(r[fullNameCol] ?? '').trim();
+    if(fn){
+      if(sc && !shortToFull[sc]) shortToFull[sc]=fn;
+      if(site && !codeToFull[site]) codeToFull[site]=fn;
+    }
+  });
+  let groups={};
+  (rows||[]).forEach(r=>{
+    let site=String(r[siteCodeCol] ?? '').trim();
+    if(!site) return;
+    let shortCode=String(r[shortCodeCol] ?? '').trim() || site;
+    let explicitFull=String(r[fullNameCol] ?? '').trim();
+    let fullName=shortToFull[site] || shortToFull[shortCode] || explicitFull || codeToFull[site] || '';
+    if(!groups[site]) groups[site]={ site, shortCode, fullName, rows:[], count:0 };
+    groups[site].count++;
+    groups[site].rows.push(r);
+    if(!groups[site].fullName && fullName) groups[site].fullName=fullName;
+    if(!groups[site].shortCode && shortCode) groups[site].shortCode=shortCode;
+  });
+  return Object.values(groups).sort((a,b)=>b.count-a.count || String(a.site).localeCompare(String(b.site)));
+}
+function getSiteComplaintPercentData(rows, siteCodeCol, fullNameCol, shortCodeCol, activeSiteCol, activeCountCol, lookupRows){
+  let complaintGroups=getSiteTicketCounts(rows, siteCodeCol, fullNameCol, shortCodeCol, lookupRows);
+  let sourceRows = Array.isArray(lookupRows) && lookupRows.length ? lookupRows : rows;
+  let activeMap={};
+  (sourceRows||[]).forEach(r=>{
+    let activeSiteKey=normalizeSiteLookupKey(r[activeSiteCol]);
+    if(!activeSiteKey) return;
+    let activeCount=parseSiteActiveCount(r[activeCountCol]);
+    if(!(activeSiteKey in activeMap) || activeCount > activeMap[activeSiteKey]) activeMap[activeSiteKey]=activeCount;
+  });
+  return complaintGroups.map(g=>{
+    let activeCount = activeMap[normalizeSiteLookupKey(g.site)] || activeMap[normalizeSiteLookupKey(g.shortCode)] || 0;
+    let complaintCount = Number(g.count||0);
+    let percentValue = activeCount>0 ? (complaintCount/activeCount)*100 : 0;
+    return {
+      site: g.site,
+      shortCode: g.shortCode || g.site,
+      fullName: g.fullName || '',
+      rows: g.rows || [],
+      complaintCount,
+      activeCount,
+      ratioText: complaintCount + '/' + activeCount,
+      percentValue,
+      percentText: percentValue.toFixed(1) + '%'
+    };
+  }).sort((a,b)=>b.complaintCount-a.complaintCount || b.percentValue-a.percentValue || String(a.site).localeCompare(String(b.site)));
+}
+function bindSiteTicketGraphContext(card){
+  if(!card) return;
+  card.oncontextmenu=function(e){
+    openDefaultGraphContextMenu(e,'site_summary','Site Ticket Counts',[
+      {icon:'⚙️',label:'Site Ticket Graph Settings',onClick:openSiteTicketGraphSettingsModal}
+    ]);
+  };
+  card.title='Right-click to rename or change site code / full name / short code fields';
+}
+function bindSiteComplaintPercentGraphContext(card){
+  if(!card) return;
+  card.oncontextmenu=function(e){
+    openDefaultGraphContextMenu(e,'site_complaint_percent','Site Complaint Percent',[
+      {icon:'⚙️',label:'Site Complaint Percent Settings',onClick:openSiteComplaintPercentGraphSettingsModal}
+    ]);
+  };
+  card.title='Right-click to rename or change active site / active count fields';
+}
+function bindSiteGraphContext(card){
+  bindSiteTicketGraphContext(card);
+}
+function renderSiteOverviewInMain(){
+  if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
+  let cols=loadSiteColumnsForCurrentTab();
+  if(!cols.siteCodeCol) return;
+  let sites=getSiteTicketCounts(F, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, (D&&D.rawData)||F);
+  if(!sites.length) return;
+  renderSiteTicketCountsCard(sites, cols);
+}
+function renderSiteComplaintPercentInMain(){
+  if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
+  let cols=loadSiteColumnsForCurrentTab();
+  if(!cols.siteCodeCol || !cols.activeSiteCol || !cols.activeCountCol) return;
+  let sites=getSiteComplaintPercentData(F, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, cols.activeSiteCol, cols.activeCountCol, (D&&D.rawData)||F);
+  if(!sites.length) return;
+  renderSiteComplaintPercentCard(sites, cols);
+}
+function renderSiteTicketCountsCard(sites, cols){
+  let bId='siteTicketCanvas';
+  let zKey='site_summary';
+  let baseTitle='Site Ticket Counts';
+  let title=getGraphDisplayTitle(zKey, baseTitle);
+  let limit=S.chartLimit||0;
+  let displaySites=limit>0?sites.slice(0,limit):sites.slice();
+  let chartLabels=displaySites.map(s=>s.site);
+  let chartValues=displaySites.map(s=>s.count);
+  let total=displaySites.reduce((sum,s)=>sum+s.count,0);
+  let rowsHtml=displaySites.map((s,i)=>{ let pc=total>0?((s.count/total)*100).toFixed(1):0; let fc=P[i%P.length]; return `
+      <tr onclick="showSiteTicketDetailsM('${escapeJs(s.site)}')">
+        <td class="c-link">${escapeHtml(s.site)}</td>
+        <td>${escapeHtml(s.fullName || '—')}</td>
+        <td><span class="cnt-p">${s.count}</span></td>
+        <td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td>
+      </tr>`; }).join('');
+  let area=document.getElementById('main');
+  let card=document.createElement('div');
+  card.className='cd';
+  card.id='card_'+zKey;
+  card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
+  if(isHidden(zKey)) card.style.display='none';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[1]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[1]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th style="width:60px;">Tickets</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  area.appendChild(card);
+  bindSiteTicketGraphContext(card);
+  setTimeout(()=>{
+    let colors=chartLabels.map((_,i)=>P[i%P.length]);
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    CH[bId]=mkChart(bId,'bar',{labels:chartLabels,datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,chartLabels,false);
+    CHART_META[zKey]={ title, labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total, type:'site_summary', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[]}])) };
+  },30);
+}
+function renderSiteComplaintPercentCard(sites, cols){
+  let bId='siteComplaintPercentCanvas';
+  let zKey='site_complaint_percent';
+  let baseTitle='Site Complaint Percent';
+  let title=getGraphDisplayTitle(zKey, baseTitle);
+  let limit=S.chartLimit||0;
+  let displaySites=limit>0?sites.slice(0,limit):sites.slice();
+  let chartLabels=displaySites.map(s=>s.site);
+  let chartValues=displaySites.map(s=>Number(s.percentValue||0));
+  let rowsHtml=displaySites.map((s,i)=>{ let fc=P[i%P.length]; let barPc=Math.max(0,Math.min(100,Number(s.percentValue||0))); return `
+      <tr onclick="showSiteComplaintPercentDetailsM('${escapeJs(s.site)}')">
+        <td class="c-link">${escapeHtml(s.site)}</td>
+        <td>${escapeHtml(s.fullName || '—')}</td>
+        <td><span class="cnt-p">${escapeHtml(s.ratioText)}</span></td>
+        <td><div class="bw"><div class="btt"><div class="bf" style="width:${barPc}%;background:${fc};"></div></div><span class="bn">${escapeHtml(s.percentText)}</span></div></td>
+      </tr>`; }).join('');
+  let area=document.getElementById('main');
+  let card=document.createElement('div');
+  card.className='cd';
+  card.id='card_'+zKey;
+  card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
+  if(isHidden(zKey)) card.style.display='none';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[2]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[2]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  area.appendChild(card);
+  bindSiteComplaintPercentGraphContext(card);
+  setTimeout(()=>{
+    let colors=chartLabels.map((_,i)=>P[i%P.length]);
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    CH[bId]=createSafeChart(document.getElementById(bId),{
+      type:'bar',
+      data:{ labels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}] },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        animation:{duration:350},
+        plugins:{
+          legend:{display:false},
+          valueLabels:{display:true,fontSize:8,formatter:(val)=>Number(val||0).toFixed(1)},
+          tooltip:{
+            callbacks:{
+              title:(ctx)=>chartLabels[ctx[0].dataIndex]||'',
+              label:(ctx)=>{
+                let s=displaySites[ctx.dataIndex];
+                if(!s) return Number(ctx.parsed.y||0).toFixed(1)+'%';
+                return (s.ratioText||'0/0') + ' · ' + (s.percentText||'0.0%');
+              }
+            }
+          }
+        },
+        scales:{
+          y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:9,weight:'600'}}},
+          x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:6.6,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
+        }
+      }
+    });
+    CHART_META[zKey]={ title, labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total:chartValues.reduce((s,v)=>s+Number(v||0),0), type:'site_complaint_percent', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, activeSiteCol: cols.activeSiteCol, activeCountCol: cols.activeCountCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[],ratioText:s.ratioText,percentText:s.percentText,percentValue:Number(s.percentValue||0),activeCount:Number(s.activeCount||0),complaintCount:Number(s.complaintCount||0)}])) };
+  },30);
+}
+function showSiteTicketDetailsM(siteCode){
+  let cols=loadSiteColumnsForCurrentTab();
+  let baseRows=(F||[]).slice();
+  let matches=baseRows.filter(r=>String(r[cols.siteCodeCol] ?? '').trim()===siteCode);
+  let groups=getSiteTicketCounts(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, (D&&D.rawData)||baseRows);
+  let hit=groups.find(g=>g.site===siteCode);
+  let fullName=(hit&&hit.fullName)?(' - ' + hit.fullName):'';
+  let omit=[cols.fullNameCol, cols.shortCodeCol].filter(Boolean);
+  showRowsM(matches, 'Site Ticket Counts: ' + siteCode + fullName, omit);
+}
+function showSiteComplaintPercentDetailsM(siteCode){
+  let cols=loadSiteColumnsForCurrentTab();
+  let baseRows=(F||[]).slice();
+  let matches=baseRows.filter(r=>String(r[cols.siteCodeCol] ?? '').trim()===siteCode);
+  let groups=getSiteComplaintPercentData(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, cols.activeSiteCol, cols.activeCountCol, (D&&D.rawData)||baseRows);
+  let hit=groups.find(g=>g.site===siteCode);
+  let extra='';
+  if(hit){
+    if(hit.fullName) extra += ' - ' + hit.fullName;
+    extra += ' (' + hit.ratioText + ' · ' + hit.percentText + ')';
+  }
+  let omit=[cols.fullNameCol, cols.shortCodeCol].filter(Boolean);
+  showRowsM(matches, 'Site Complaint Percent: ' + siteCode + extra, omit);
+}
+
+function bindDuplicateGraphContext(card,zKey,fallbackTitle){
+  if(!card)return;
+  card.oncontextmenu=function(e){
+    openDefaultGraphContextMenu(e,zKey||'dup_top_cust',fallbackTitle||'Top Customers with Duplicate Tickets',[
+      {icon:'⚙️',label:'Duplicate Field Settings',onClick:openDuplicateGraphSettingsModal}
+    ]);
+  };
+  card.title='Right-click to rename or change duplicate source fields';
+}
+function bindOverTimeGraphContext(card,zKey,fallbackTitle){
+  if(!card)return;
+  card.oncontextmenu=function(e){
+    openDefaultGraphContextMenu(e,zKey||'ot_severity',fallbackTitle||'OverTime Severity Distribution',[
+      {icon:'⚙️',label:'OverTime Field Settings',onClick:openOverTimeGraphSettingsModal}
+    ]);
+  };
+  card.title='Right-click to rename or change overtime source fields';
+}
+function renderDuplicateOverviewInMain(){
+  if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
+  let cols = loadDuplicateColumnsForCurrentTab();
+  if(!cols.customerCol || !cols.ticketCol) return;
+  let dupResult = getDuplicateTicketsDataForCols(F, cols.customerCol, cols.ticketCol);
+  if(!dupResult.duplicates || !dupResult.duplicates.length) return;
+  renderTopCustomersCard(dupResult.duplicates, dupResult.totalDupsCount);
+}
+function renderOverTimeOverviewInMain(){
+  if(!F || !F.length || !D || !D.headers || !D.headers.length) return;
+  let cols = loadOverTimeColumnsForCurrentTab();
+  if(!cols.createdCol || !cols.resolvedCol) return;
+  let otData = getOverTimeTicketsData(F, cols.createdCol, cols.resolvedCol, false);
+  if(!otData.overTimeTickets || !otData.overTimeTickets.length) return;
+  renderOverTimeSeverityCard(otData.counts, otData.overTimeTickets.length);
+}
+function renderEnterpriseSections(){
+  if(D.isPivot)return;
+  renderTicketTrendSection();
+  renderCpeComplaintSection();
+  renderSiteOverviewInMain();
+  renderSiteComplaintPercentInMain();
+  renderDuplicateOverviewInMain();
+  renderOverTimeOverviewInMain();
+}
+
+function renderCpeComplaintSection(){
+  let area = document.getElementById('main');
+  if (!area) return;
+  let zKey='cpe_complaints';
+  let baseTitle="CPE Model's Complaint Counts";
+  let title=getGraphDisplayTitle(zKey, baseTitle);
+  
+  let pool = typeof currentTicketPool === 'function' ? currentTicketPool() : F;
+  if (!pool || !pool.length) return;
+  
+  // Ordered model list: longest prefix first to avoid substring matching bugs (e.g. CF matching inside LCF001778, or FFA matching inside BFFA)
+  const CPE_MODELS = ['BFFA', 'BFFG', 'LCF', 'LCC', 'SCP', 'FFG', 'FFA', 'CW', 'CC', 'CR', 'CG', 'CJ', 'CK', 'CP', 'CM', 'CF'];
+  
+  // Identify candidate columns in headers
+  let candidateCols = [];
+  if (D && D.headers) {
+    let kw = ['cpe', 'model', 'device', 'serial', 'asset', 'equipment', 'circuit', 'description', 'issue', 'summary', 'ticket', 'note'];
+    candidateCols = D.headers.filter(h => kw.some(k => h.toLowerCase().includes(k)));
+    if (!candidateCols.length) candidateCols = D.headers.slice();
+  }
+  
+  let seenCpeNumbers = new Set();
+  let modelCounts = {};
+  let modelTickets = {};
+  CPE_MODELS.forEach(m => { modelCounts[m] = 0; modelTickets[m] = []; });
+  
+  // Regex to match a CPE model prefix followed by optional serial/alphanumeric digits
+  const cpeRegex = new RegExp('(?:^|[^a-z0-9])(' + CPE_MODELS.join('|') + ')([0-9a-z_-]*)', 'i');
+  
+  pool.forEach(r => {
+    let foundCpe = null;
+    let foundModel = null;
+    
+    // First search candidate columns
+    for (let col of candidateCols) {
+      let val = r[col];
+      if (val == null) continue;
+      let str = String(val).trim();
+      if (!str) continue;
+      
+      let m = str.match(cpeRegex);
+      if (m) {
+        foundModel = m[1].toUpperCase();
+        let serial = m[2] ? m[2].toUpperCase() : '';
+        foundCpe = foundModel + serial;
+        break;
+      }
+    }
+    
+    // If not found in candidate columns, search all other columns in the row
+    if (!foundCpe && D && D.headers) {
+      for (let col of D.headers) {
+        if (candidateCols.includes(col)) continue;
+        let val = r[col];
+        if (val == null) continue;
+        let str = String(val).trim();
+        if (!str) continue;
+        let m = str.match(cpeRegex);
+        if (m) {
+          foundModel = m[1].toUpperCase();
+          let serial = m[2] ? m[2].toUpperCase() : '';
+          foundCpe = foundModel + serial;
+          break;
+        }
+      }
+    }
+    
+    if (foundCpe && foundModel) {
+      // Deduplicate CPE number: if we already counted this exact CPE number (e.g. LCF001778), skip duplicate!
+      if (seenCpeNumbers.has(foundCpe)) return;
+      seenCpeNumbers.add(foundCpe);
+      modelCounts[foundModel]++;
+      modelTickets[foundModel].push(r);
+    }
+  });
+  
+  // Filter out models with 0 count, and sort by count descending
+  let activeModels = CPE_MODELS.filter(m => modelCounts[m] > 0).sort((a, b) => modelCounts[b] - modelCounts[a]);
+  if (!activeModels.length) return; // No CPE data found
+  let limit = S.chartLimit || 0;
+  if (limit > 0) activeModels = activeModels.slice(0, limit);
+  
+  let activeCounts = activeModels.map(m => modelCounts[m]);
+  let totalUniqueCpe = activeCounts.reduce((sum, c) => sum + c, 0);
+  
+  let rowsHtml = activeModels.map((m, i) => {
+    let count = modelCounts[m];
+    let pc = totalUniqueCpe > 0 ? ((count / totalUniqueCpe) * 100).toFixed(1) : 0;
+    let fc = P[i % P.length];
+    return `<tr onclick="openCpeModelModal('${escapeJs(m)}')"><td class="c-link">${escapeHtml(m)}</td><td><span class="cnt-p">${count}</span></td><td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td></tr>`;
+  }).join('');
+  
+  let card = document.createElement('div');
+  card.className = 'cd';
+  card.id = 'card_cpe_complaints';
+  card.style.cssText = 'flex:1 1 100%;width:100%;grid-column:1 / -1;margin-bottom:16px;';
+  if (typeof isHidden === 'function' && isHidden('cpe_complaints')) card.style.display = 'none';
+  
+  card.innerHTML = `
+    <div class="chd">
+      <div class="chd-l">
+        <div class="cd-dot" style="background:var(--green);"></div>
+        <h3>${escapeHtml(title)}</h3>
+      </div>
+      <span class="c-tag" style="background:var(--green);">${activeModels.length} models</span>
+      <div class="cd-actions">
+        <button class="btn-expand-dash" onclick="openZoom('cpe_complaints','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button>
+      </div>
+    </div>
+    <div class="cb">
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('cpe_complaints','bar')">
+            <canvas id="cpeComplaintChart"></canvas>
+            
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);">
+            <table class="tb">
+              <thead>
+                <tr><th>CPE Model</th><th style="width:50px;">Count</th><th>Share</th></tr>
+              </thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
+  area.appendChild(card);
+  
+  setTimeout(() => {
+    let canvas = document.getElementById('cpeComplaintChart');
+    if (!canvas) return;
+    if (CH.cpeComplaintChart) { try { CH.cpeComplaintChart.destroy(); } catch(e){} }
+    
+    let gc = S.dark ? 'rgba(255,255,255,.07)' : 'rgba(15,23,42,.06)';
+    let tc = S.dark ? '#94a3b8' : '#64748b';
+    let col = cssVar('--green') || '#10b981';
+    let colors = activeModels.map((_, i) => P[i % P.length]);
+    
+    CHART_META['cpe_complaints'] = {
+      title: title,
+      labels: activeModels,
+      shortLabels: activeModels,
+      datasets: [{ label: 'Unique Devices', data: activeCounts, backgroundColor: colors }],
+      pieLabels: activeModels,
+      pieValues: activeCounts,
+      pieColors: colors,
+      total: totalUniqueCpe,
+      type: 'cpe_complaints',
+      modelTickets: modelTickets
+    };
+    
+    CH.cpeComplaintChart = createSafeChart(canvas, {
+      type: 'bar',
+      data: {
+        labels: activeModels,
+        datasets: [{ label: 'Unique Devices', data: activeCounts, backgroundColor: colors, borderRadius: 8, borderSkipped: false, maxBarThickness: 32, categoryPercentage:.72, barPercentage:.82 }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 350 },
+        plugins: {
+          legend: { display: false },
+          valueLabels: { display: true, fontSize: 9 },
+          tooltip: {
+            backgroundColor: S.dark ? '#252836' : '#111827',
+            cornerRadius: 10,
+            padding: 12,
+            titleFont: { family: 'Inter', weight: '800' },
+            bodyFont: { family: 'Inter', weight: '600' }
+          }
+        },
+        onClick: () => {
+          openZoom('cpe_complaints','bar');
+        },
+        scales: {
+          y: { beginAtZero: true, grid: { color: gc }, ticks: { color: tc, font: { family: 'Inter', size: 9, weight: '600' } } },
+          x: { grid: { display: false }, ticks: { color: tc, font: { family: 'Inter', size: 6.6, weight: '700' }, autoSkip:false, maxRotation:90, minRotation:90, padding:2 } }
+        }
+      }
+    });
+  }, 25);
+}
+function openCpeModelModal(modelName) {
+  let meta = CHART_META['cpe_complaints'];
+  if (!meta || !meta.modelTickets || !meta.modelTickets[modelName]) return;
+  let rows = meta.modelTickets[modelName];
+  showRowsM(rows, 'CPE Model: ' + modelName + ' (' + rows.length + ' unique devices)');
+}
+function getExpandedTableColumnClass(zKey){
+  if(zKey==='cpe_complaints') return 'expand-table-cpe';
+  if(zKey==='site_summary') return 'expand-table-site';
+  if(zKey==='site_complaint_percent') return 'expand-table-site-pct';
+  if(zKey==='dup_top_cust') return 'expand-table-dup';
+  if(zKey==='ot_severity') return 'expand-table-ot';
+  if(zKey==='trend_total') return 'expand-table-trend';
+  return 'expand-table-generic';
+}
+function aggregateTickets(gran,rows){
+  rows=rows||D.rawData||[];
+  if(!dateCol)return {labels:[],displayLabels:[],values:[],keys:[]};
+  let mp={};
+  rows.forEach(r=>{
+    let d=parseLocalDate(r[dateCol]);if(!d)return;
+    let k;
+    if(gran==='daily')k=toLocalDateStr(d);
+    else if(gran==='weekly')k=toLocalDateStr(getWeekStart(d));
+    else k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    mp[k]=(mp[k]||0)+1;
+  });
+  let keys=Object.keys(mp);
+  if(!keys.length)return {labels:[],displayLabels:[],values:[],keys:[]};
+  let cmp=(a,b)=>{
+    if(gran==='daily'||gran==='weekly') return parseLocalDate(a)-parseLocalDate(b);
+    let ap=a.split('-'),bp=b.split('-');
+    return (+ap[0]-+bp[0]) || (+ap[1]-+bp[1]);
+  };
+  keys.sort(cmp);
+  if(S.dateSortOrder !== 'asc') keys.reverse();
+  let labels=[],displayLabels=[],values=[];
+  keys.forEach((key)=>{
+    values.push(mp[key]||0);
+    if(gran==='daily'){
+      let d=parseLocalDate(key);
+      let label=d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):key;
+      labels.push(label);
+      displayLabels.push(label);
+    }else if(gran==='weekly'){
+      let sd=parseLocalDate(key),ed=new Date(sd);ed.setDate(ed.getDate()+6);
+      let label=(sd&&ed)?(sd.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+ed.toLocaleDateString('en-US',{month:'short',day:'numeric'})):key;
+      labels.push(label);
+      displayLabels.push(wrapAxisLabel(label,12));
+    }else{
+      let p=key.split('-');
+      let d=new Date(+p[0],(+p[1])-1,1);
+      let label=d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+      labels.push(label);
+      displayLabels.push(wrapAxisLabel(label,12));
+    }
+  });
+  return {labels,displayLabels,values,keys};
+}
+function rowsForTrendPeriod(gran,key){
+  if(!dateCol||!key)return [];
+  let baseRows = (typeof currentTicketPool === 'function' ? currentTicketPool() : F) || [];
+  return baseRows.filter(r=>{
+    let d=parseLocalDate(r[dateCol]);if(!d)return false;
+    if(gran==='daily')return toLocalDateStr(d)===key;
+    if(gran==='weekly'){
+      let ws=parseLocalDate(key),we=new Date(ws);we.setDate(we.getDate()+7);
+      return d>=ws&&d<we;
+    }
+    if(gran==='monthly'){
+      let p=key.split('-');return d.getFullYear()===+p[0]&&(d.getMonth()+1)===+p[1];
+    }
+    return false;
+  });
+}
+function openTrendPeriodM(gran,key,label){
+  let rows=rowsForTrendPeriod(gran,key);
+  showRowsM(rows,'Total Ticket Numbers · '+cap(gran)+' · '+label);
+}
+function trendTableHtml(a) {
+  let nonZero = [];
+  for (let i = 0; i < a.labels.length; i++) {
+    if (a.values[i] > 0) {
+      nonZero.push({
+        label: a.labels[i],
+        value: a.values[i],
+        key: a.keys[i]
+      });
+    }
+  }
+  if (nonZero.length === 0) return '';
+  let tot = nonZero.reduce((sum, x) => sum + x.value, 0);
+  let rowsHtml = nonZero.map((x, i) => {
+    let pc = tot > 0 ? ((x.value / tot) * 100).toFixed(1) : 0;
+    let fc = P[i % P.length];
+    return `
+      <tr onclick="openTrendPeriodM(TREND_GRAN, '${escapeJs(x.key)}', '${escapeJs(x.label)}')">
+        <td class="c-link">${escapeHtml(x.label)}</td>
+        <td><span class="cnt-p">${x.value}</span></td>
+        <td>
+          <div class="bw">
+            <div class="btt">
+              <div class="bf" style="width:${pc}%;background:${fc};"></div>
+            </div>
+            <span class="bn">${pc}%</span>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  return `
+    <div style="margin-top:16px; border:1px solid var(--border); border-radius:8px; max-height:220px; overflow-y:auto; background:var(--bg2);">
+      <table class="tb">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th style="width:60px;">Tickets</th>
+            <th>Share</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function ticketsOverTimeTableHtml(t) {
+  let labels = t.labels || [];
+  let values = t.values || [];
+  let tot = values.reduce((sum, v) => sum + v, 0);
+  let rowsHtml = labels.map((lb, i) => {
+    let pc = tot > 0 ? ((values[i] / tot) * 100).toFixed(1) : 0;
+    let fc = P[i % P.length];
+    return `
+      <tr onclick="scheduleOpenDateM('${escapeJs(lb)}')">
+        <td class="c-link">${escapeHtml(lb)}</td>
+        <td><span class="cnt-p">${values[i]}</span></td>
+        <td>
+          <div class="bw">
+            <div class="btt">
+              <div class="bf" style="width:${pc}%;background:${fc};"></div>
+            </div>
+            <span class="bn">${pc}%</span>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  return `
+    <div style="margin-top:16px; border:1px solid var(--border); border-radius:8px; max-height:220px; overflow-y:auto; background:var(--bg2);">
+      <table class="tb">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th style="width:60px;">Tickets</th>
+            <th>Share</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function getEffectiveTotalTrendGran(requestedGran){
+  if(range==='yearly') return 'monthly';
+  if(range==='monthly') return 'weekly';
+  if(range==='weekly') return 'daily';
+  if(range==='daily') return 'daily';
+  return requestedGran || TREND_GRAN || 'weekly';
+}
+function renderTicketTrendSection(){
+  let area=document.getElementById('main');
+  let showManual = range==='all';
+  let effectiveGran=getEffectiveTotalTrendGran(TREND_GRAN);
+  let granLabel = effectiveGran==='daily' ? 'Day by Day' : (effectiveGran==='weekly' ? 'Week by Week' : 'Month by Month');
+  let zKey='trend_total';
+  let baseTitle='Total Ticket Numbers';
+  let title=getGraphDisplayTitle(zKey, baseTitle);
+  let card=document.createElement('div');card.className='enterprise-card';card.id='card_trend_total';card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
+  if (typeof isHidden === 'function' && isHidden('trend_total')) card.style.display = 'none';
+  card.innerHTML=`<div class="enterprise-head"><div class="enterprise-title"><div class="badge-ico"><svg class="ic"><use href="#i-trend"/></svg></div><div><h2>${escapeHtml(title)}</h2></div></div>${showManual?`<div class="pill-tabs" id="ticketTrendTabs"><button class="${TREND_GRAN==='daily'?'on':''}" onclick="switchTicketTrend('daily')">Daily View</button><button class="${TREND_GRAN==='weekly'?'on':''}" onclick="switchTicketTrend('weekly')">Weekly View</button><button class="${TREND_GRAN==='monthly'?'on':''}" onclick="switchTicketTrend('monthly')">Monthly View</button></div>`:`<span class="c-tag" style="background:rgba(99,102,241,.10);color:var(--ac);border:1px solid rgba(99,102,241,.16);">${granLabel}</span>`}</div><div class="enterprise-body"><div class="chart-xl" onclick="openZoom('trend_total','bar')" style="cursor:pointer; height:260px;"><canvas id="totalTicketTrendChart"></canvas></div></div>`;
+  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
+  area.appendChild(card);
+  setTimeout(()=>buildTicketTrendChart(TREND_GRAN),20);
+}
+function switchTicketTrend(gran){TREND_GRAN=gran;document.querySelectorAll('#ticketTrendTabs button').forEach((b,i)=>b.classList.toggle('on',(['daily','weekly','monthly'][i]===gran)));buildTicketTrendChart(gran);}
+function buildTicketTrendChart(gran){
+  let canvas=document.getElementById('totalTicketTrendChart');if(!canvas)return;
+  if(CH.totalTicketTrendChart){try{CH.totalTicketTrendChart.destroy();}catch(e){}}
+  let actualGran=getEffectiveTotalTrendGran(gran);
+  let title=getGraphDisplayTitle('trend_total','Total Ticket Numbers');
+  let baseRows = (typeof currentTicketPool === 'function' ? currentTicketPool() : F);
+  let a=aggregateTickets(actualGran,baseRows);
+  let gc=S.dark?'rgba(255,255,255,.07)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b',col=cssVar('--ac');
+  let colors=a.labels.map((_,i)=>P[i%P.length]);
+  
+  CHART_META['trend_total'] = {
+    title: title,
+    labels: a.labels,
+    keys: a.keys,
+    shortLabels: a.labels,
+    datasets: [{ label: 'Tickets', data: a.values, backgroundColor: col }],
+    pieLabels: a.labels,
+    pieValues: a.values,
+    pieColors: colors,
+    total: a.values.reduce((sum,v)=>sum+v, 0),
+    type: 'trend_total',
+    columnName: dateCol
+  };
+
+  CH.totalTicketTrendChart=createSafeChart(canvas,{
+    type:'bar',
+    data:{
+      labels:a.labels,
+      datasets:[{label:'Tickets',data:a.values,backgroundColor:colors.length?colors:col,borderRadius:10,borderSkipped:false,maxBarThickness:34,categoryPercentage:.72,barPercentage:.82}]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      animation:{duration:350},
+      plugins:{
+        legend:{display:false},
+        valueLabels:{display:true,fontSize:9},
+        tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}}
+      },
+      scales:{
+        y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:9,weight:'700'}}},
+        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:6.6,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
+      },
+      onClick:(e,els)=>{
+        openZoom('trend_total', 'bar');
+      },
+      onHover:(e,els)=>{e.native.target.style.cursor=els&&els.length?'pointer':'default';}
+    }
+  });
+}
+function filteredTableRows(){
+  let rows=(COMPARE_MODE?periodFilter(D.rawData,COMPARE_PICKS):F).slice();
+  let q=(TABLE_STATE.search||'').toLowerCase().trim();
+  if(q)rows=rows.filter(r=>D.headers.some(h=>String(r[h]??'').toLowerCase().includes(q)));
+  if(TABLE_STATE.sortCol){let h=TABLE_STATE.sortCol,dir=TABLE_STATE.sortDir;rows.sort((a,b)=>{let av=a[h],bv=b[h];let ad=parseLocalDate(av),bd=parseLocalDate(bv);if(ad&&bd)return (ad-bd)*dir;let an=parseFloat(av),bn=parseFloat(bv);if(!isNaN(an)&&!isNaN(bn))return (an-bn)*dir;return String(av??'').localeCompare(String(bv??''))*dir;});}
+  return rows;
+}
+function renderTicketRecordsTable(){
+  let area=document.getElementById('main');
+  let card=document.createElement('div');card.className='enterprise-card';card.id='ticketRecordsCard';
+  card.innerHTML=`<div class="enterprise-head"><div class="enterprise-title"><div class="badge-ico"><svg class="ic"><use href="#i-search"/></svg></div><div><h2>Ticket Records</h2><p>Search, sort, paginate, and export the ticket-level data.</p></div></div><button class="btn-lite" onclick="exportVisibleTableCSV()"><svg class="ic"><use href="#i-download"/></svg> Export CSV</button></div><div class="enterprise-body"><div class="enterprise-table-tools"><input class="searchbox" id="ticketSearch" placeholder="Search tickets…" value="${escapeHtml(TABLE_STATE.search)}" oninput="TABLE_STATE.search=this.value;TABLE_STATE.page=1;renderTicketTableBody()"><div class="rc" id="ticketTableCount"></div></div><div class="enterprise-table-wrap"><table class="enterprise-table"><thead><tr>${D.headers.map(h=>`<th onclick="setTicketSort('${escapeJs(h)}')">${escapeHtml(h)} <span id="sort_${hashKey(h)}"></span></th>`).join('')}</tr></thead><tbody id="ticketTableBody"></tbody></table></div><div class="pager" id="ticketPager"></div></div>`;
+  area.appendChild(card);renderTicketTableBody();
+}
+function setTicketSort(h){if(TABLE_STATE.sortCol===h)TABLE_STATE.sortDir*=-1;else{TABLE_STATE.sortCol=h;TABLE_STATE.sortDir=1;}TABLE_STATE.page=1;renderTicketTableBody();}
+function renderTicketTableBody(){
+  let body=document.getElementById('ticketTableBody');if(!body)return;
+  let rows=filteredTableRows();let pages=Math.max(1,Math.ceil(rows.length/TABLE_STATE.pageSize));if(TABLE_STATE.page>pages)TABLE_STATE.page=pages;
+  let start=(TABLE_STATE.page-1)*TABLE_STATE.pageSize,end=Math.min(rows.length,start+TABLE_STATE.pageSize),slice=rows.slice(start,end);
+  body.innerHTML=slice.map(r=>'<tr>'+D.headers.map(h=>`<td title="${escapeHtml(r[h]??'')}">${escapeHtml(r[h]??'')}</td>`).join('')+'</tr>').join('') || `<tr><td colspan="${D.headers.length}" class="empty-card">No matching records</td></tr>`;
+  document.getElementById('ticketTableCount').textContent=rows.length.toLocaleString()+' records';
+  document.querySelectorAll('[id^="sort_"]').forEach(s=>s.textContent='');if(TABLE_STATE.sortCol){let el=document.getElementById('sort_'+hashKey(TABLE_STATE.sortCol));if(el)el.textContent=TABLE_STATE.sortDir>0?'▲':'▼';}
+  document.getElementById('ticketPager').innerHTML=`<span>Rows per page</span><select onchange="TABLE_STATE.pageSize=+this.value;TABLE_STATE.page=1;renderTicketTableBody()"><option ${TABLE_STATE.pageSize===10?'selected':''}>10</option><option ${TABLE_STATE.pageSize===25?'selected':''}>25</option><option ${TABLE_STATE.pageSize===50?'selected':''}>50</option><option ${TABLE_STATE.pageSize===100?'selected':''}>100</option></select><span>${rows.length?start+1:0}-${end} of ${rows.length}</span><button ${TABLE_STATE.page<=1?'disabled':''} onclick="TABLE_STATE.page--;renderTicketTableBody()">Prev</button><button ${TABLE_STATE.page>=pages?'disabled':''} onclick="TABLE_STATE.page++;renderTicketTableBody()">Next</button>`;
+}
+function exportVisibleTableCSV(){
+  let rows=filteredTableRows();if(!rows.length)return;
+  let lines=[D.headers.map(csvCell).join(',')];rows.forEach(r=>lines.push(D.headers.map(h=>csvCell(r[h]??'')).join(',')));
+  let blob=new Blob([lines.join('\n')],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(D.tabName||'tickets')+'_filtered_records.csv';document.body.appendChild(a);a.click();a.remove();
+}
+function hashKey(s){let h=0;for(let i=0;i<String(s).length;i++)h=((h<<5)-h)+String(s).charCodeAt(i)|0;return Math.abs(h);}
+function escapeJs(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
+
+/* ═══════════ RENDER ═══════════ */
+let EXPAND_REOPEN_AFTER_FILTER = null;
+function doRender(){
+  renderSum();renderDR();killCH();CHART_META={};
+  let mainEl=document.getElementById("main");
+  if(mainEl){
+    mainEl.innerHTML='';
+    mainEl.className='ct';
+  }
+  if(OVERTIME_MODE){
+    renderOverTimeDashboard();
+  }
+  else if(DUPLICATE_MODE){
+    renderDuplicateDashboard();
+  }
+  else if(COMPARE_MODE){renderCompareDashboard();}
+  else if(FILTER_MODE){renderFilterDashboard();}
+  else if(PIVOT_BUILDER_MODE){renderPivotBuilderDashboard();}
+  
+  else{
+    if(mainEl) mainEl.classList.add('dashboard-stage');
+    if(D.isPivot)renderPivot();
+    else {
+      renderEnterpriseSections();
+      renderSavedDashboardCharts();
+    }
+  }
+  setTimeout(() => { 
+    if (typeof refreshAllAppSelects === 'function') refreshAllAppSelects(); 
+    if (typeof applyGraphOrderToDashboard === 'function') applyGraphOrderToDashboard();
+    if (EXPAND_REOPEN_AFTER_FILTER) {
+      let p = EXPAND_REOPEN_AFTER_FILTER;
+      EXPAND_REOPEN_AFTER_FILTER = null;
+      setTimeout(()=>openExpandedChartPage(p.zKey, p.chartType), 60);
+    }
+  }, 45);
+  hideL();
+  if(COMPARE_MODE)refreshComparePicksUI();
+}
+function showRowsM(rows,title,omitHeaders){
+  let omit=[...(Array.isArray(omitHeaders)?omitHeaders:[]), ...getHiddenPopupHeaders()];
+  MODAL_HEADERS=(D.headers||[]).filter(h=>omit.indexOf(h)<0);
+  MODAL_ROWS=rows||[];MODAL_COL='_kpi';MODAL_CAT=title;MODAL_RENDERED=0;
+  styleGeneralRecordsModal('Records: ' + title, MODAL_ROWS.length);
+  document.getElementById("mH").innerHTML=MODAL_HEADERS.map(h=>`<th style="padding:10px 14px;background:var(--bg3);font-weight:700;color:var(--t1);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;">${escapeHtml(h)}</th>`).join('');
+  document.getElementById("mB").innerHTML='';
+  let _mc=document.getElementById("mC");if(_mc)_mc.textContent=MODAL_ROWS.length+' tickets';
+  renderMoreRows();showRecordsModalOnTop();
+  let body=document.getElementById("mBody");body.scrollTop=0;
+  body.onscroll=()=>{if(MODAL_RENDERED<MODAL_ROWS.length && body.scrollTop+body.clientHeight>=body.scrollHeight-80)renderMoreRows();};
+}
+function currentTicketPool(){return COMPARE_MODE?periodFilter(D.rawData,COMPARE_PICKS):F;}
+function openKpiDataM(kind){
+  if(!D.rawData||D.isPivot)return;
+  let pool=currentTicketPool().slice(), rows=pool, title='Total Tickets';
+  let statusCol=detectStatusCol();
+  if(['open','closed','inprogress','pending'].includes(kind)){
+    title={open:'Open Tickets',closed:'Closed Tickets',inprogress:'In Progress Tickets',pending:'Pending Tickets'}[kind];
+    if(statusCol)rows=pool.filter(r=>statusBucket(r[statusCol])===kind);
+    else rows=kind==='open'?pool:[];
+  }else if(kind==='today'||kind==='week'||kind==='month'){
+    if(!dateCol){rows=[];}else{
+      let now=new Date(),start,end;
+      if(kind==='today'){start=new Date(now.getFullYear(),now.getMonth(),now.getDate());end=new Date(start);end.setDate(end.getDate()+1);title="Today's Tickets";}
+      if(kind==='week'){start=getWeekStart(now);end=new Date(start);end.setDate(end.getDate()+7);title="This Week's Tickets";}
+      if(kind==='month'){start=new Date(now.getFullYear(),now.getMonth(),1);end=new Date(now.getFullYear(),now.getMonth()+1,1);title="This Month's Tickets";}
+      rows=rowsInDateWindow(D.rawData,start,end);
+    }
+  }
+  showRowsM(rows,title);
+}
+function renderSum(){
+  // KPI summary cards removed per request.
+  let el=document.getElementById("sumRow");
+  if(el){el.innerHTML='';el.style.display='none';}
+}
+function renderDR(){
+  let el=document.getElementById("drInfo");
+  if(!el) return;
+  if(COMPARE_MODE){
+    if(!COMPARE_PICKS.length){el.innerHTML='';return;}
+    el.innerHTML=`<span class="dr-b"><svg class="ic ic-sm"><use href="#i-compare"/></svg> Comparing ${COMPARE_PICKS.length} ${COMPARE_GRAN}s: ${COMPARE_PICKS.map(periodLabel).join(' · ')}</span>`;
+    return;
+  }
+  if(!dateCol||D.isPivot){el.innerHTML='';return;}
+  let label='All Periods';
+  if(range!=='all'){
+    let opts=getSubPeriodOptionsForRange();
+    let found=opts.find(o=>o.v===subPeriod);
+    label=found ? found.t : cap(range);
+  }
+  el.innerHTML=`<span class="dr-b"><svg class="ic ic-sm"><use href="#i-calendar"/></svg> ${escapeHtml(label)} · ${F.length.toLocaleString()} tickets</span>`;
+}
+
+/* trend card */
+function renderTrendCard(){
+  if(!S.trendChart||D.isPivot)return;
+  let t=trendByDate();if(!t)return;
+  let zKey='trend_main';let area=document.getElementById("main");
+  let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  if(isHidden(zKey))card.style.display='none';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>Tickets over time</h3></div><span class="c-tag" style="background:var(--ac);">${t.values.reduce((a,b)=>a+b,0)} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','line')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','line')"><canvas id="trC"></canvas></div></div>`;
+  area.appendChild(card);
+  setTimeout(()=>{
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    let col=cssVar('--ac');
+    CH['trC']=mkChart('trC','line',{labels:t.labels,datasets:[{label:'Tickets',data:t.values,borderColor:col,backgroundColor:col+'33',fill:true,tension:.3,pointRadius:2,borderWidth:2}]},gc,tc,t.labels,false);
+    CHART_META[zKey]={title:'Tickets over time',labels:t.labels,shortLabels:t.labels,datasets:[{data:t.values,backgroundColor:col}],pieLabels:t.labels,pieValues:t.values,pieColors:t.labels.map((_,i)=>P[i%P.length]),total:t.values.reduce((a,b)=>a+b,0),type:'trend',columnName:dateCol};
+  },30);
+}
+function cssVar(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim();}
+
+/* Pivot */
+function renderPivot(){
+  let area=document.getElementById("main");
+  if(!F.length){area.innerHTML=emptyH();return;}
+  let h=D.headers,lc=h[0],vc=h.slice(1),hasG=vc.some(x=>x.includes(' | '));
+  let thd='';
+  if(hasG){let gs={},go=[];vc.forEach(x=>{let p=x.split(' | '),g=p[0].trim();if(!gs[g]){gs[g]=[];go.push(g);}gs[g].push({f:x,s:p[1]?p[1].trim():g});});thd=`<tr><th rowspan="2">${lc}</th>`;go.forEach(g=>{thd+=`<th colspan="${gs[g].length}">${g}</th>`;});thd+='</tr><tr>';go.forEach(g=>{gs[g].forEach(s=>{thd+=`<th>${s.s}</th>`;});});thd+='</tr>';}
+  else thd=`<tr><th>${lc}</th>${vc.map(x=>'<th>'+x+'</th>').join('')}</tr>`;
+  let tb=F.map(r=>{let cells=vc.map((x,i)=>{let v=r[x];if(v==null)v='';let n=typeof v==='number';return `<td class="${n?'pv-n':''}" style="${n?'color:'+P[i%P.length]:''}">${n?v.toLocaleString():v}</td>`;}).join('');return `<tr><td>${r[lc]||'(Blank)'}</td>${cells}</tr>`;}).join('');
+  let gt='';if(D.grandTotalRow){let g=D.grandTotalRow;gt='<tr class="gt"><td>Grand Total</td>'+vc.map(x=>{let v=g[x];if(v==null)v='';return `<td class="pv-n">${typeof v==='number'?v.toLocaleString():v}</td>`;}).join('')+'</tr>';}
+  area.insertAdjacentHTML('beforeend',`<div class="cd"><div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(D.tabName)}</h3><span class="pv-tg">Pivot</span></div><span class="c-tag" style="background:var(--ac);">${F.length} rows</span></div><div class="cb"><div class="pv-w" style="max-height:360px;overflow:auto;"><table class="pv"><thead>${thd}</thead><tbody>${tb}${gt}</tbody></table></div></div></div>`);
+  if(hasG){let gs={},go=[];vc.forEach(x=>{let p=x.split(' | '),g=p[0].trim();if(!gs[g]){gs[g]=[];go.push(g);}gs[g].push(x);});go.forEach((g,i)=>pvChart(g,gs[g],lc,i));}
+  else vc.forEach((c,i)=>pvChart(c,[c],lc,i));
+}
+function pvChart(title,cols,lc,idx){
+  let area=document.getElementById("main"),bId='pB'+idx;
+  let labels=F.map(r=>{let l=r[lc]?r[lc].toString():'(Blank)';return l.length>18?l.substring(0,15)+'…':l;});
+  let full=F.map(r=>r[lc]?r[lc].toString():'(Blank)');
+  let ds=cols.map((c,i)=>{let sn=c.includes(' | ')?c.split(' | ')[1]:c;return{label:sn,data:F.map(r=>typeof r[c]==='number'?r[c]:0),backgroundColor:P[i%P.length],borderRadius:3,borderSkipped:false};});
+  let pL=cols.map(c=>c.includes(' | ')?c.split(' | ')[1]:c);
+  let pV=cols.map(c=>F.reduce((s,r)=>s+(typeof r[c]==='number'?r[c]:0),0));
+  let tot=pV.reduce((a,b)=>a+b,0);let zKey='pv_'+idx;
+  let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  if(isHidden(zKey))card.style.display='none';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${tot.toLocaleString()}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div>`;
+  area.appendChild(card);
+  setTimeout(()=>{
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    CH[bId]=mkChart(bId,'bar',{labels,datasets:JSON.parse(JSON.stringify(ds))},gc,tc,full,cols.length>1);
+    CHART_META[zKey]={title,labels:full,shortLabels:labels,datasets:ds,pieLabels:pL,pieValues:pV,pieColors:P.slice(0,pL.length),total:tot,type:'pivot'};
+  },30);
+}
+
+/* Normal dashboard */
+function renderDash(){
+  let area=document.getElementById("main");
+  if(!F.length){area.innerHTML+=emptyH();return;}
+  let av=getCategoryColumns();
+  av.forEach((col,idx)=>renderCategoryCard(col,idx,F));
+}
+function getCategoryColumns(){
+  let targets=["Circuit Name","Root Cause","Actual Issue","Impact Type","Resolution","Status","Category","Type","Priority","Severity","Team","Assignee","Site","Region"];
+  let av=D.headers.filter(h=>targets.some(t=>h.toLowerCase().includes(t.toLowerCase())));
+  if(!av.length)av=D.headers.filter(h=>h.toLowerCase()!==(dateCol||'').toLowerCase()).slice(0,4);
+  return av;
+}
+function renderCategoryCard(col,idx,rows){
+  let bId='b'+idx,mp={},tot=0;
+  rows.forEach(r=>{let v=r[col];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';mp[k]=(mp[k]||0)+1;tot++;});
+  let sL=Object.keys(mp).sort((a,b)=>mp[b]-mp[a]),sV=sL.map(l=>mp[l]),zKey='nm_'+idx;
+  
+  // Apply Chart Limit Settings!
+  let limit = S.chartLimit || 0;
+  let displayL = limit > 0 ? sL.slice(0, limit) : sL;
+  let displayV = limit > 0 ? sV.slice(0, limit) : sV;
+  
+  let rowsHtml=displayL.map((lb,i)=>{let pc=tot>0?((displayV[i]/tot)*100).toFixed(1):0,fc=P[i%P.length];return `<tr onclick="scheduleOpenDataM('${escapeJs(col)}','${escapeJs(lb)}')"><td class="c-link">${escapeHtml(lb)}</td><td><span class="cnt-p">${displayV[i]}</span></td><td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td></tr>`;}).join('');
+
+  let area=document.getElementById("main");
+  let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  if(isHidden(zKey))card.style.display='none';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(col)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${sL.length}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:50px;">Count</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  area.appendChild(card);
+  setTimeout(()=>{
+    let short=displayL.map(l=>l.length>15?l.substring(0,12)+'…':l),colors=displayL.map((_,i)=>P[i%P.length]);
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    CH[bId]=mkChart(bId,'bar',{labels:short,datasets:[{data:displayV,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,displayL,false);
+    CHART_META[zKey]={title:col,labels:sL,shortLabels:short,datasets:[{data:sV,backgroundColor:colors,borderRadius:4,borderSkipped:false}],pieLabels:sL,pieValues:sV,pieColors:colors,total:tot,type:'normal',columnName:col};
+  },30);
+}
+
+function mkChart(id,type,data,gc,tc,fullLabels,showLeg,clickCol){
+  let labelCount = Array.isArray(fullLabels) ? fullLabels.length : 0;
+  if(type==='bar' && data && Array.isArray(data.datasets)){
+    data.datasets = data.datasets.map(ds => ({
+      ...ds,
+      borderRadius: ds.borderRadius != null ? ds.borderRadius : 8,
+      maxBarThickness: ds.maxBarThickness != null ? ds.maxBarThickness : 34,
+      categoryPercentage: ds.categoryPercentage != null ? ds.categoryPercentage : 0.72,
+      barPercentage: ds.barPercentage != null ? ds.barPercentage : 0.82,
+      borderSkipped: ds.borderSkipped != null ? ds.borderSkipped : false
+    }));
+  }
+  let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},
+    plugins:{
+      legend:{display:type==='doughnut'?false:!!showLeg,labels:{boxWidth:9,font:{size:9,family:'Inter'},color:tc,padding:6}},
+      valueLabels:{display:true,fontSize:8},
+      tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',titleFont:{size:10,family:'Inter',weight:'700'},bodyFont:{size:9,family:'Inter'},cornerRadius:6,padding:8,callbacks:{title:ctx=>fullLabels[ctx[0].dataIndex]||''}}
+    }};
+  if(type==='bar')opts.scales={y:{grid:{color:gc},ticks:{font:{size:9,family:'Inter',weight:'600'},color:tc}},x:{grid:{display:false},ticks:{maxRotation:90,minRotation:90,autoSkip:false,font:{size:6.6,family:'Inter',weight:'600'},color:tc,padding:2}}};
+  if(type==='line')opts.scales={y:{grid:{color:gc},ticks:{font:{size:9,family:'Inter',weight:'600'},color:tc}},x:{grid:{color:gc},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:labelCount>14?7:9,font:{size:7,family:'Inter',weight:'600'},color:tc,padding:4}}};
+  if(type==='doughnut')opts.cutout='52%';
+  if(clickCol)opts.onClick=(e,el)=>{if(el&&el.length)scheduleOpenDataM(clickCol,fullLabels[el[0].index]);};
+  return createSafeChart(document.getElementById(id),{type,data,options:opts});
+}
+
+/* ═══════════ COMPARE (PERIOD vs PERIOD) ═══════════ */
+function toggleCompareMode(){
+  COMPARE_MODE=!COMPARE_MODE;
+  if(COMPARE_MODE){
+    PRE_COMPARE_STATE = { range, subPeriod, trendGran: TREND_GRAN, manualTrendAllowed: range === 'all' };
+    resetAllAnalyticalModes('cmpTab');
+    let b = document.getElementById("cmpTab"); if(b) b.classList.add('on');
+    let s = document.getElementById("cmpStrip"); if(s) s.classList.add('on');
+    updateSubPeriodUI();
+  } else {
+    if (PRE_COMPARE_STATE) {
+      range = PRE_COMPARE_STATE.range;
+      subPeriod = PRE_COMPARE_STATE.subPeriod;
+      TREND_GRAN = PRE_COMPARE_STATE.trendGran || TREND_GRAN;
+      PRE_COMPARE_STATE = null;
+    }
+    let b = document.getElementById("cmpTab"); if(b) b.classList.remove('on');
+    let s = document.getElementById("cmpStrip"); if(s) s.classList.remove('on');
+    let r = document.querySelector('.tp-b[data-r="'+range+'"]'); if(r) r.classList.add('on');
+    if (typeof updateSubPeriodUI === 'function') updateSubPeriodUI();
+  }
+  toggleToolsTray(false);
+  applyFilter();
+}
+
+function getComparePeriodOptions() {
+  if (!allDates || !allDates.length) return [];
+  let opts = [];
+  let asc = S.dateSortOrder === 'asc';
+  
+  if (COMPARE_GRAN === 'year') {
+    let years = new Set();
+    allDates.forEach(d => years.add(d.getFullYear()));
+    [...years].sort((a,b) => asc ? a - b : b - a).forEach(y => opts.push({ v: 'y_' + y, t: y.toString() }));
+  }
+  else if (COMPARE_GRAN === 'month') {
+    let ym = new Set();
+    allDates.forEach(d => ym.add(d.getFullYear() + '_' + d.getMonth()));
+    [...ym].map(x => { let p = x.split('_'); return { y: +p[0], m: +p[1] }; })
+      .sort((a,b) => asc ? (a.y - b.y || a.m - b.m) : (b.y - a.y || b.m - a.m))
+      .forEach(x => opts.push({ v: 'm_' + x.y + '_' + x.m, t: MONTHS[x.m] + ' ' + x.y }));
+  }
+  else if (COMPARE_GRAN === 'week') {
+    let weeks = new Set();
+    allDates.forEach(d => weeks.add(toLocalDateStr(getWeekStart(d))));
+    let sortedWeeks = [...weeks].sort();
+    if (!asc) sortedWeeks.reverse();
+    sortedWeeks.forEach(ws => {
+      let sd = parseLocalDate(ws), ed = new Date(sd);
+      ed.setDate(ed.getDate() + 6);
+      let fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      opts.push({ v: 'w_' + ws, t: 'Week ' + getWeekNumber(sd) + ' (' + fmt(sd) + ' — ' + fmt(ed) + ')' });
+    });
+  }
+  else if (COMPARE_GRAN === 'day') {
+    let days = new Set();
+    allDates.forEach(d => days.add(toLocalDateStr(d)));
+    let sortedDays = [...days].sort();
+    if (!asc) sortedDays.reverse();
+    sortedDays.forEach(ds => {
+      let d = parseLocalDate(ds);
+      opts.push({ v: 'd_' + ds, t: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) });
+    });
+  }
+  return opts;
+}
+
+function buildComparePeriodList() {
+  let list = document.getElementById("cmpPeriodList");
+  if (!list || !allDates || !allDates.length) return;
+  let opts = getComparePeriodOptions();
+  list.innerHTML = opts.map(o => `<button type="button" class="cmp-period-chip ${COMPARE_PICKS.indexOf(o.v) >= 0 ? 'on' : ''}" data-v="${o.v}" onclick="toggleComparePick('${o.v}')">${escapeHtml(o.t)}</button>`).join('');
+  if (typeof refreshComparePicksUI === 'function') refreshComparePicksUI();
+}
+
+function toggleComparePick(v){
+  let i=COMPARE_PICKS.indexOf(v);
+  if(i>=0)COMPARE_PICKS.splice(i,1);else COMPARE_PICKS.push(v);
+  refreshComparePicksUI();
+  if(COMPARE_PICKS.length>=1)applyFilter();
+}
+function clearComparePicks(){COMPARE_PICKS=[];refreshComparePicksUI();applyFilter();}
+function refreshComparePicksUI(){
+  document.querySelectorAll('.cmp-period-chip').forEach(c=>c.classList.toggle('on',COMPARE_PICKS.indexOf(c.dataset.v)>=0));
+  refreshCmpCount();
+  let h=document.getElementById("cmpHelper");
+  if(h){
+    if(COMPARE_PICKS.length===0){
+      h.textContent='Pick 2 or more periods below';
+      h.style.background='var(--ac-bg)'; h.style.color='var(--ac)'; h.style.borderColor='var(--ac)';
+    } else if(COMPARE_PICKS.length===1){
+      h.textContent='1 picked · add at least one more';
+      h.style.background='rgba(245,158,11,0.15)'; h.style.color='#d97706'; h.style.borderColor='rgba(245,158,11,0.35)';
+    } else {
+      h.textContent=COMPARE_PICKS.length+' periods picked';
+      h.style.background='rgba(16,185,129,0.15)'; h.style.color='var(--green)'; h.style.borderColor='rgba(16,185,129,0.35)';
+    }
+  }
+}
+function refreshCmpCount(){let cnt=document.getElementById("cmpCnt");if(cnt)cnt.textContent=COMPARE_PICKS.length;}
+function periodLabel(v){
+  let opts=getComparePeriodOptions();let o=opts.find(x=>x.v===v);return o?o.t:v;
+}
+
+/* ═══════════ DUPLICATE TICKETS ═══════════ */
+function toggleDuplicateMode(){
+  DUPLICATE_MODE=!DUPLICATE_MODE;
+  if(DUPLICATE_MODE){
+    resetAllAnalyticalModes('dupTab');
+    let b = document.getElementById("dupTab"); if(b) b.classList.add('on');
+    updateSubPeriodUI();
+  } else {
+    let b = document.getElementById("dupTab"); if(b) b.classList.remove('on');
+    let r = document.querySelector('.tp-b[data-r="'+range+'"]'); if(r) r.classList.add('on');
+  }
+  applyFilter();
+}
+
+function findCustomerAndTicketCols() {
+  let customerCol = null;
+  let ticketCol = null;
+  if (!D.headers) return { customerCol, ticketCol };
+  
+  // Find Customer Col
+  for (let h of D.headers) {
+    let l = h.toLowerCase();
+    if (l.includes('customer id') || l.includes('customer_id') || l.includes('cust id') || l.includes('client id') || l.includes('customerid')) {
+      customerCol = h;
+      break;
+    }
+  }
+  if (!customerCol) {
+    for (let h of D.headers) {
+      let l = h.toLowerCase();
+      if (l.includes('customer') || l.includes('client') || l.includes('user id') || l.includes('userid') || l.includes('account number')) {
+        customerCol = h;
+        break;
+      }
+    }
+  }
+  
+  // Find Ticket Col
+  for (let h of D.headers) {
+    let l = h.toLowerCase();
+    if (l.includes('ticket number') || l.includes('ticket_number') || l.includes('ticket no') || l.includes('ticket id') || l.includes('ticket_id') || l.includes('ticketid') || l.includes('ticket#')) {
+      ticketCol = h;
+      break;
+    }
+  }
+  if (!ticketCol) {
+    for (let h of D.headers) {
+      let l = h.toLowerCase();
+      if (l.includes('ticket') || l.includes('id') || l.includes('number')) {
+        ticketCol = h;
+        break;
+      }
+    }
+  }
+  return { customerCol, ticketCol };
+}
+
+function getDuplicateTicketsDataForCols(rows, customerCol, ticketCol) {
+  let groups = {};
+  rows.forEach(r => {
+    let cust = r[customerCol];
+    if (cust === null || cust === undefined || cust.toString().trim() === '') return;
+    let custStr = cust.toString().trim();
+    if (!groups[custStr]) groups[custStr] = [];
+    groups[custStr].push(r);
+  });
+  
+  let duplicates = [];
+  let totalDupsCount = 0;
+  for (let cust in groups) {
+    if (groups[cust].length > 1) {
+      duplicates.push({
+        customer: cust,
+        tickets: groups[cust]
+      });
+      totalDupsCount += groups[cust].length;
+    }
+  }
+  
+  duplicates.sort((a, b) => b.tickets.length - a.tickets.length);
+  return { duplicates, totalDupsCount };
+}
+
+function onDupCustColChange(val) {
+  DETECTED_CUST_COL = val;
+  if (!S.dupColsByTab) S.dupColsByTab = {};
+  if (!S.dupColsByTab[D.tabName]) S.dupColsByTab[D.tabName] = {};
+  S.dupColsByTab[D.tabName].cust = val;
+  if (typeof saveSettings === 'function') saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  if (DUPLICATE_MODE) renderDuplicateDashboard(); else if (D.rawData) doRender();
+}
+
+function onDupTktColChange(val) {
+  DETECTED_TKT_COL = val;
+  if (!S.dupColsByTab) S.dupColsByTab = {};
+  if (!S.dupColsByTab[D.tabName]) S.dupColsByTab[D.tabName] = {};
+  S.dupColsByTab[D.tabName].tkt = val;
+  if (typeof saveSettings === 'function') saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  if (DUPLICATE_MODE) renderDuplicateDashboard(); else if (D.rawData) doRender();
+}
+
+function showDuplicateTicketsM(customerName) {
+  let { customerCol } = findCustomerAndTicketCols();
+  let col = DETECTED_CUST_COL || customerCol;
+  let matches = F.filter(r => {
+    let val = r[col];
+    return val && val.toString().trim() === customerName;
+  });
+  showRowsM(matches, "Duplicate Tickets: " + customerName);
+}
+
+function onDupSearchInput(val) {
+  DUP_SEARCH_QUERY = val;
+  renderDuplicateDashboard();
+  let input = document.getElementById("dupSearch");
+  if (input) {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+}
+
+function renderDuplicateDashboard() {
+  setTimeout(() => { if (typeof refreshAllAppSelects === 'function') refreshAllAppSelects(); }, 35);
+  let area = document.getElementById("main");
+  area.innerHTML = '';
+  
+  if (!D.rawData || D.rawData.length === 0) {
+    area.innerHTML = emptyH();
+    return;
+  }
+  
+  let { customerCol, ticketCol } = findCustomerAndTicketCols();
+  let savedDup = (S.dupColsByTab && S.dupColsByTab[D.tabName]) ? S.dupColsByTab[D.tabName] : {};
+  if (!DETECTED_CUST_COL) DETECTED_CUST_COL = savedDup.cust || customerCol || D.headers[0];
+  if (!DETECTED_TKT_COL) DETECTED_TKT_COL = savedDup.tkt || ticketCol || (D.headers[1] || D.headers[0]);
+  
+  let dupResult = getDuplicateTicketsDataForCols(F, DETECTED_CUST_COL, DETECTED_TKT_COL);
+  let duplicates = dupResult.duplicates;
+  let totalDupsCount = dupResult.totalDupsCount;
+  
+  // Apply Search Query Filter
+  if (DUP_SEARCH_QUERY.trim()) {
+    let q = DUP_SEARCH_QUERY.toLowerCase().trim();
+    duplicates = duplicates.filter(d => {
+      if (d.customer.toLowerCase().includes(q)) return true;
+      return d.tickets.some(t => {
+        let tktVal = t[DETECTED_TKT_COL];
+        return tktVal && tktVal.toString().toLowerCase().includes(q);
+      });
+    });
+    totalDupsCount = duplicates.reduce((sum, d) => sum + d.tickets.length, 0);
+  }
+  
+  let selHeader = document.createElement('div');
+  selHeader.className = 'dup-selector-card';
+  selHeader.innerHTML = `
+    <div class="dup-sel-row">
+      <div class="dup-sel-item">
+        <label for="dupCustSel">Customer Field:</label>
+        <select id="dupCustSel" onchange="onDupCustColChange(this.value)">
+          ${D.headers.map(h => `<option value="${escapeHtml(h)}" ${h === DETECTED_CUST_COL ? 'selected' : ''}>${escapeHtml(h)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="dup-sel-item">
+        <label for="dupTktSel">Ticket ID Field:</label>
+        <select id="dupTktSel" onchange="onDupTktColChange(this.value)">
+          ${D.headers.map(h => `<option value="${escapeHtml(h)}" ${h === DETECTED_TKT_COL ? 'selected' : ''}>${escapeHtml(h)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="dup-sel-item" style="flex-grow:1; max-width:280px;">
+        <input type="text" id="dupSearch" class="searchbox" placeholder="Search customer or ticket..." oninput="onDupSearchInput(this.value)" value="${escapeHtml(DUP_SEARCH_QUERY)}" style="height: 32px; width: 100%; min-width:auto; margin:0;">
+      </div>
+      <div class="dup-sel-summary">
+        <span class="badge bg-danger" style="padding: 4px 8px; font-weight:700;">${duplicates.length} Customers</span> with <span class="badge bg-warning text-dark" style="padding: 4px 8px; font-weight:700;">${totalDupsCount} Duplicate Tickets</span>
+      </div>
+    </div>
+  `;
+  area.appendChild(selHeader);
+  
+  if (duplicates.length === 0) {
+    area.innerHTML += `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-info"/></svg></div><div class="e-t">No Matching Duplicates Found</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">No customers with more than 1 ticket found matching your criteria.</p></div>`;
+    return;
+  }
+  
+  if (dateCol) {
+    let dupRowsAll = [];
+    duplicates.forEach(d => { dupRowsAll = dupRowsAll.concat(d.tickets); });
+    renderDuplicateTrendCard(dupRowsAll);
+  }
+  
+  renderTopCustomersCard(duplicates, totalDupsCount);
+}
+
+function renderDuplicateTrendCard(dupRows) {
+  if (!dateCol || !dupRows.length) return;
+  let zKey = 'dup_trend';
+  let baseTitle = 'Duplicate Tickets Over Time';
+  let title = getGraphDisplayTitle(zKey, baseTitle);
+  let mp = {};
+  dupRows.forEach(r => {
+    let d = parseLocalDate(r[dateCol]);
+    if (!d) return;
+    let k = toLocalDateStr(d);
+    mp[k] = (mp[k] || 0) + 1;
+  });
+  let labels = Object.keys(mp).sort();
+  if (labels.length === 0) return;
+  let values = labels.map(k => mp[k]);
+  
+  let area = document.getElementById("main");
+  let card = document.createElement('div');
+  card.className = 'cd';
+  card.id = 'card_' + zKey;
+  if (isHidden(zKey)) card.style.display = 'none';
+  
+  let totalDupsInPeriod = values.reduce((a, b) => a + b, 0);
+  
+  card.innerHTML = `
+    <div class="chd">
+      <div class="chd-l">
+        <div class="cd-dot" style="background:var(--ac);"></div>
+        <h3>${escapeHtml(title)}</h3>
+      </div>
+      <span class="c-tag" style="background:var(--ac);">${totalDupsInPeriod.toLocaleString()} total</span>
+      <div class="cd-actions">
+        <button class="btn-expand-dash" onclick="openZoom('${zKey}','line')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button>
+      </div>
+    </div>
+    <div class="cb">
+      <div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','line')">
+        <canvas id="dupTrendChartCanvas"></canvas>
+        
+      </div>
+    </div>
+  `;
+  area.appendChild(card);
+  bindDuplicateGraphContext(card,zKey,baseTitle);
+  
+  setTimeout(() => {
+    let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
+    let tc = S.dark ? '#94a3b8' : '#6b7280';
+    let col = cssVar('--ac');
+    CH['dupTrendChartCanvas'] = mkChart('dupTrendChartCanvas', 'line', {
+      labels: labels,
+      datasets: [{
+        label: 'Duplicate Tickets',
+        data: values,
+        borderColor: col,
+        backgroundColor: col + '33',
+        fill: true,
+        tension: .3,
+        pointRadius: 2,
+        borderWidth: 2
+      }]
+    }, gc, tc, labels, false);
+    CHART_META[zKey] = {
+      title: title,
+      labels: labels,
+      shortLabels: labels,
+      datasets: [{ data: values, backgroundColor: col }],
+      pieLabels: labels,
+      pieValues: values,
+      pieColors: labels.map((_, i) => P[i % P.length]),
+      total: totalDupsInPeriod,
+      type: 'trend',
+      columnName: dateCol
+    };
+  }, 30);
+}
+
+function renderTopCustomersCard(duplicates, totalDupsCount) {
+  let bId = 'dupTopCustCanvas';
+  let zKey = 'dup_top_cust';
+  let baseTitle='Top Customers with Duplicate Tickets';
+  let title=getGraphDisplayTitle(zKey, baseTitle);
+  
+  let limit = S.chartLimit || 0;
+  let topDuplicates = limit > 0 ? duplicates.slice(0, limit) : duplicates.slice();
+  let chartLabels = topDuplicates.map(d => d.customer);
+  let chartValues = topDuplicates.map(d => d.tickets.length);
+  
+  let rowsHtml = topDuplicates.map((d, i) => {
+    let pc = totalDupsCount > 0 ? ((d.tickets.length / totalDupsCount) * 100).toFixed(1) : 0;
+    let fc = P[i % P.length];
+    return `
+      <tr onclick="showDuplicateTicketsM('${escapeJs(d.customer)}')">
+        <td class="c-link">${escapeHtml(d.customer)}</td>
+        <td><span class="cnt-p">${d.tickets.length}</span></td>
+        <td>
+          <div class="bw">
+            <div class="btt">
+              <div class="bf" style="width:${pc}%;background:${fc};"></div>
+            </div>
+            <span class="bn">${pc}%</span>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  
+  let area = document.getElementById("main");
+  let card = document.createElement('div');
+  card.className = 'cd';
+  card.id = 'card_' + zKey;
+  if (isHidden(zKey)) card.style.display = 'none';
+  
+  card.innerHTML = `
+    <div class="chd">
+      <div class="chd-l">
+        <div class="cd-dot" style="background:${DT[0]};"></div>
+        <h3>${escapeHtml(title)}</h3>
+      </div>
+      <span class="c-tag" style="background:${TG[0]};">${duplicates.length} Customers</span>
+      <div class="cd-actions">
+        <button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button>
+      </div>
+    </div>
+    <div class="cb">
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')">
+            <canvas id="${bId}"></canvas>
+            
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+            <table class="tb">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th style="width:60px;">Tickets</th>
+                  <th>Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  area.appendChild(card);
+  bindDuplicateGraphContext(card,zKey,baseTitle);
+  
+  setTimeout(() => {
+    let short = chartLabels.slice();
+    let colors = chartLabels.map((_, i) => P[i % P.length]);
+    let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
+    let tc = S.dark ? '#94a3b8' : '#6b7280';
+    
+    CH[bId] = mkChart(bId, 'bar', {
+      labels: short,
+      datasets: [{
+        data: chartValues,
+        backgroundColor: colors,
+        borderRadius: 4,
+        borderSkipped: false
+      }]
+    }, gc, tc, chartLabels, false);
+    
+    CHART_META[zKey] = {
+      title: title,
+      labels: chartLabels,
+      shortLabels: short,
+      datasets: [{
+        data: chartValues,
+        backgroundColor: colors,
+        borderRadius: 4,
+        borderSkipped: false
+      }],
+      pieLabels: chartLabels,
+      pieValues: chartValues,
+      pieColors: colors,
+      total: totalDupsCount,
+      type: 'normal',
+      columnName: DETECTED_CUST_COL
+    };
+  }, 30);
+}
+
+/* ═══════════ OVERTIME ANALYTICS ═══════════ */
+function toggleOverTimeMode(){
+  OVERTIME_MODE=!OVERTIME_MODE;
+  if(OVERTIME_MODE){
+    resetAllAnalyticalModes('ovrTab');
+    let b = document.getElementById("ovrTab"); if(b) b.classList.add('on');
+    updateSubPeriodUI();
+  } else {
+    let b = document.getElementById("ovrTab"); if(b) b.classList.remove('on');
+    let r = document.querySelector('.tp-b[data-r="'+range+'"]'); if(r) r.classList.add('on');
+  }
+  applyFilter();
+}
+
+function findCreatedAndResolvedCols() {
+  let createdCol = null;
+  let resolvedCol = null;
+  if (!D.headers) return { createdCol, resolvedCol };
+  for (let h of D.headers) {
+    let l = h.toLowerCase();
+    if (l.includes('create') || l.includes('open') || l.includes('start') || l.includes('submit')) {
+      createdCol = h;
+      break;
+    }
+  }
+  if (!createdCol) createdCol = D.headers[0];
+  for (let h of D.headers) {
+    let l = h.toLowerCase();
+    if (l.includes('resolve') || l.includes('close') || l.includes('finish') || l.includes('end') || l.includes('complete')) {
+      resolvedCol = h;
+      break;
+    }
+  }
+  if (!resolvedCol) resolvedCol = D.headers[1] || D.headers[0];
+  return { createdCol, resolvedCol };
+}
+
+function getOverTimeTicketsData(rows, creCol, resCol, useSearch = true) {
+  let overTimeTickets = [];
+  let counts = { "lt36": 0, "36_50": 0, "50_68": 0, "gt68": 0 };
+  rows.forEach(r => {
+    let creVal = r[creCol];
+    let resVal = r[resCol];
+    if (creVal == null || resVal == null) return;
+    let creDate = parseLocalDate(creVal);
+    let resDate = parseLocalDate(resVal);
+    if (!creDate || !resDate) return;
+    let diffHrs = (resDate - creDate) / 3600000;
+    let tier = "lt36";
+    if (diffHrs > 68.4) tier = "gt68";
+    else if (diffHrs > 50.4) tier = "50_68";
+    else if (diffHrs >= 36) tier = "36_50";
+    counts[tier]++;
+    overTimeTickets.push({
+      row: r,
+      duration: diffHrs,
+      tier: tier
+    });
+  });
+  
+  if (useSearch && OVR_SEARCH_QUERY.trim()) {
+    let q = OVR_SEARCH_QUERY.toLowerCase().trim();
+    overTimeTickets = overTimeTickets.filter(ot => {
+      return D.headers.some(h => {
+        let val = ot.row[h];
+        return val && val.toString().toLowerCase().includes(q);
+      });
+    });
+    counts = { "lt36": 0, "36_50": 0, "50_68": 0, "gt68": 0 };
+    overTimeTickets.forEach(ot => {
+      counts[ot.tier]++;
+    });
+  }
+  
+  return { overTimeTickets, counts };
+}
+
+function onOvrCreColChange(val) {
+  DETECTED_CRE_COL = val;
+  if (!S.ovrColsByTab) S.ovrColsByTab = {};
+  if (!S.ovrColsByTab[D.tabName]) S.ovrColsByTab[D.tabName] = {};
+  S.ovrColsByTab[D.tabName].cre = val;
+  if (typeof saveSettings === 'function') saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  if (OVERTIME_MODE) renderOverTimeDashboard(); else if (D.rawData) doRender();
+}
+
+function onOvrResColChange(val) {
+  DETECTED_RES_COL = val;
+  if (!S.ovrColsByTab) S.ovrColsByTab = {};
+  if (!S.ovrColsByTab[D.tabName]) S.ovrColsByTab[D.tabName] = {};
+  S.ovrColsByTab[D.tabName].res = val;
+  if (typeof saveSettings === 'function') saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  if (OVERTIME_MODE) renderOverTimeDashboard(); else if (D.rawData) doRender();
+}
+
+function onOvrSearchInput(val) {
+  OVR_SEARCH_QUERY = val;
+  renderOverTimeDashboard();
+  let input = document.getElementById("ovrSearch");
+  if (input) {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+}
+
+function getOverTimeTierLabel(tier){
+  return tier==='lt36' ? 'Below 36 Hours' : tier==='36_50' ? '36 to 50.4 Hours' : tier==='50_68' ? '50.4 to 68.4 Hours' : 'Above 68.4 Hours';
+}
+function showOverTimeTicketDetailsM(tierName) {
+  let { createdCol, resolvedCol } = findCreatedAndResolvedCols();
+  let cre = DETECTED_CRE_COL || createdCol;
+  let res = DETECTED_RES_COL || resolvedCol;
+  let data = getOverTimeTicketsData(F, cre, res);
+  let matches = data.overTimeTickets.filter(x => x.tier === tierName).map(x => x.row);
+  showRowsM(matches, 'OverTime Severity: ' + getOverTimeTierLabel(tierName));
+}
+
+
+function renderOverTimeDashboard() {
+  setTimeout(() => { if (typeof refreshAllAppSelects === 'function') refreshAllAppSelects(); }, 35);
+  let area = document.getElementById("main");
+  area.innerHTML = '';
+  if (!D.rawData || D.rawData.length === 0) {
+    area.innerHTML = emptyH();
+    return;
+  }
+  let { createdCol, resolvedCol } = findCreatedAndResolvedCols();
+  let savedOvr = (S.ovrColsByTab && S.ovrColsByTab[D.tabName]) ? S.ovrColsByTab[D.tabName] : {};
+  if (!DETECTED_CRE_COL) DETECTED_CRE_COL = savedOvr.cre || createdCol;
+  if (!DETECTED_RES_COL) DETECTED_RES_COL = savedOvr.res || resolvedCol;
+  let otData = getOverTimeTicketsData(F, DETECTED_CRE_COL, DETECTED_RES_COL);
+  let tickets = otData.overTimeTickets;
+  let counts = otData.counts;
+  let totalOtCount = tickets.length;
+  let selHeader = document.createElement('div');
+  selHeader.className = 'dup-selector-card';
+  selHeader.innerHTML = `
+    <div class="dup-sel-row">
+      <div class="dup-sel-item">
+        <label for="ovrCreSel">Created Time Field:</label>
+        <select id="ovrCreSel" onchange="onOvrCreColChange(this.value)">
+          ${D.headers.map(h => `<option value="${escapeHtml(h)}" ${h === DETECTED_CRE_COL ? 'selected' : ''}>${escapeHtml(h)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="dup-sel-item">
+        <label for="ovrResSel">Resolved Time Field:</label>
+        <select id="ovrResSel" onchange="onOvrResColChange(this.value)">
+          ${D.headers.map(h => `<option value="${escapeHtml(h)}" ${h === DETECTED_RES_COL ? 'selected' : ''}>${escapeHtml(h)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="dup-sel-item" style="flex-grow:1; max-width:280px;">
+        <input type="text" id="ovrSearch" class="searchbox" placeholder="Search overtime tickets..." oninput="onOvrSearchInput(this.value)" value="${escapeHtml(OVR_SEARCH_QUERY)}" style="height: 32px; width: 100%; min-width:auto; margin:0;">
+      </div>
+      <div class="dup-sel-summary">
+        <span class="badge bg-danger" style="padding: 4px 8px; font-weight:700;">${totalOtCount} OverTime Tickets (>36 hrs)</span>
+      </div>
+    </div>
+  `;
+  area.appendChild(selHeader);
+  if (totalOtCount === 0) {
+    area.innerHTML += `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-info"/></svg></div><div class="e-t">No OverTime Tickets Found</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">No tickets with duration over 36 hours were found in the filtered period.</p></div>`;
+    return;
+  }
+  let sumRow = document.createElement('div');
+  sumRow.className = 'sum-r';
+  sumRow.style.display = 'grid';
+  sumRow.style.gridTemplateColumns = 'repeat(auto-fit, minmax(180px, 1fr))';
+  sumRow.style.gap = '16px';
+  sumRow.style.padding = '0 0 16px 0';
+  sumRow.style.width = '100%';
+  sumRow.style.flex = '1 1 100%';
+  sumRow.innerHTML = `
+    <div class="sc" onclick="showOverTimeTicketDetailsM('lt36')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
+      <div class="si" style="background:rgba(16,185,129,.12);color:var(--green);"><svg class="ic"><use href="#i-clock"/></svg></div>
+      <div><div class="sv">${counts["lt36"]}</div><div class="sl">Below 36 Hours</div></div>
+    </div>
+    <div class="sc" onclick="showOverTimeTicketDetailsM('36_50')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
+      <div class="si" style="background:var(--ac-bg);color:var(--ac);"><svg class="ic"><use href="#i-clock"/></svg></div>
+      <div><div class="sv">${counts["36_50"]}</div><div class="sl">36–50.4 Hours</div></div>
+    </div>
+    <div class="sc" onclick="showOverTimeTicketDetailsM('50_68')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
+      <div class="si" style="background:rgba(245, 158, 11, 0.15);color:var(--orange);"><svg class="ic"><use href="#i-clock"/></svg></div>
+      <div><div class="sv">${counts["50_68"]}</div><div class="sl">50.4–68.4 Hours</div></div>
+    </div>
+    <div class="sc" onclick="showOverTimeTicketDetailsM('gt68')" style="cursor:pointer; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow);">
+      <div class="si" style="background:rgba(239, 68, 68, 0.15);color:var(--red);"><svg class="ic"><use href="#i-clock"/></svg></div>
+      <div><div class="sv">${counts["gt68"]}</div><div class="sl">Above 68.4 Hours</div></div>
+    </div>
+  `;
+  area.appendChild(sumRow);
+  if (dateCol) {
+    let otRowsAll = tickets.map(x => x.row);
+    renderOverTimeTrendCard(otRowsAll);
+  }
+  renderOverTimeSeverityCard(counts, totalOtCount);
+}
+
+function renderOverTimeTrendCard(otRowsAll) {
+  if (!dateCol || !otRowsAll.length) return;
+  let zKey = 'ot_trend';
+  let baseTitle = 'OverTime Tickets Over Time';
+  let title = getGraphDisplayTitle(zKey, baseTitle);
+  let mp = {};
+  otRowsAll.forEach(r => {
+    let d = parseLocalDate(r[dateCol]);
+    if (!d) return;
+    let k = toLocalDateStr(d);
+    mp[k] = (mp[k] || 0) + 1;
+  });
+  let labels = Object.keys(mp).sort();
+  if (labels.length === 0) return;
+  let values = labels.map(k => mp[k]);
+  let area = document.getElementById("main");
+  let card = document.createElement('div');
+  card.className = 'cd';
+  card.id = 'card_' + zKey;
+  if (isHidden(zKey)) card.style.display = 'none';
+  let totalOtInPeriod = values.reduce((a, b) => a + b, 0);
+  card.innerHTML = `
+    <div class="chd">
+      <div class="chd-l">
+        <div class="cd-dot" style="background:var(--ac);"></div>
+        <h3>${escapeHtml(title)}</h3>
+      </div>
+      <span class="c-tag" style="background:var(--ac);">${totalOtInPeriod.toLocaleString()} total</span>
+      <div class="cd-actions">
+        <button class="btn-expand-dash" onclick="openZoom('${zKey}','line')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button>
+      </div>
+    </div>
+    <div class="cb">
+      <div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','line')">
+        <canvas id="otTrendChartCanvas"></canvas>
+        
+      </div>
+    </div>
+  `;
+  area.appendChild(card);
+  bindOverTimeGraphContext(card,zKey,baseTitle);
+  setTimeout(() => {
+    let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
+    let tc = S.dark ? '#94a3b8' : '#6b7280';
+    let col = cssVar('--ac');
+    CH['otTrendChartCanvas'] = mkChart('otTrendChartCanvas', 'line', {
+      labels: labels,
+      datasets: [{
+        label: 'OverTime Tickets',
+        data: values,
+        borderColor: col,
+        backgroundColor: col + '33',
+        fill: true,
+        tension: .3,
+        pointRadius: 2,
+        borderWidth: 2
+      }]
+    }, gc, tc, labels, false);
+    CHART_META[zKey] = {
+      title: title,
+      labels: labels,
+      shortLabels: labels,
+      datasets: [{ data: values, backgroundColor: col }],
+      pieLabels: labels,
+      pieValues: values,
+      pieColors: labels.map((_, i) => P[i % P.length]),
+      total: totalOtInPeriod,
+      type: 'trend',
+      columnName: dateCol
+    };
+  }, 30);
+}
+
+function renderOverTimeSeverityCard(counts, totalOtCount) {
+  let bId = 'otSeverityCanvas';
+  let zKey = 'ot_severity';
+  let baseTitle = 'OverTime Severity Distribution';
+  let title = getGraphDisplayTitle(zKey, baseTitle);
+  let tiers = ['lt36','36_50','50_68','gt68'];
+  let chartLabels = ['Below 36h', '36–50.4h', '50.4–68.4h', '>68.4h'];
+  let chartValues = [counts['lt36'], counts['36_50'], counts['50_68'], counts['gt68']];
+  let colors = [cssVar('--green') || '#10b981', cssVar('--ac') || '#6366f1', cssVar('--orange') || '#f59e0b', cssVar('--red') || '#ef4444'];
+  let rowsHtml = tiers.map((tier, i) => {
+    let pc = totalOtCount > 0 ? ((counts[tier] / totalOtCount) * 100).toFixed(1) : 0;
+    let fc = colors[i];
+    return `
+      <tr onclick="showOverTimeTicketDetailsM('${tier}')">
+        <td class="c-link">${escapeHtml(getOverTimeTierLabel(tier))}</td>
+        <td><span class="cnt-p">${counts[tier]}</span></td>
+        <td>
+          <div class="bw">
+            <div class="btt">
+              <div class="bf" style="width:${pc}%;background:${fc};"></div>
+            </div>
+            <span class="bn">${pc}%</span>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  let area = document.getElementById("main");
+  let card = document.createElement('div');
+  card.className = 'cd';
+  card.id = 'card_' + zKey;
+  if (isHidden(zKey)) card.style.display = 'none';
+  card.innerHTML = `
+    <div class="chd">
+      <div class="chd-l">
+        <div class="cd-dot" style="background:${colors[0]};"></div>
+        <h3>${escapeHtml(title)}</h3>
+      </div>
+      <span class="c-tag" style="background:${colors[0]};">${totalOtCount} Total OverTime</span>
+      <div class="cd-actions">
+        <button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button>
+      </div>
+    </div>
+    <div class="cb">
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')">
+            <canvas id="${bId}"></canvas>
+            
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);">
+            <table class="tb">
+              <thead>
+                <tr>
+                  <th>Tier</th>
+                  <th style="width:60px;">Tickets</th>
+                  <th>Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  area.appendChild(card);
+  bindOverTimeGraphContext(card,zKey,baseTitle);
+  setTimeout(() => {
+    let gc = S.dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)';
+    let tc = S.dark ? '#94a3b8' : '#6b7280';
+    CH[bId] = mkChart(bId, 'bar', {
+      labels: chartLabels,
+      datasets: [{
+        data: chartValues,
+        backgroundColor: colors,
+        borderRadius: 4,
+        borderSkipped: false
+      }]
+    }, gc, tc, chartLabels, false);
+    CHART_META[zKey] = {
+      title: title,
+      labels: chartLabels,
+      shortLabels: chartLabels,
+      datasets: [{
+        data: chartValues,
+        backgroundColor: colors,
+        borderRadius: 4,
+        borderSkipped: false
+      }],
+      pieLabels: chartLabels,
+      pieValues: chartValues,
+      pieColors: colors,
+      total: totalOtCount,
+      type: 'normal',
+      columnName: '_overtime'
+    };
+  }, 30);
+}
+function periodFilter(rows,picks){
+  if(!picks||!picks.length||!dateCol)return [];
+  let out=[];
+  rows.forEach(r=>{let d=parseLocalDate(r[dateCol]);if(!d)return;if(picks.some(p=>matchPeriod(d,p)))out.push(r);});
+  return out;
+}
+function matchPeriod(d,p){
+  if(p.startsWith('y_'))return d.getFullYear()===+p.split('_')[1];
+  if(p.startsWith('m_')){let parts=p.split('_');return d.getFullYear()===+parts[1]&&d.getMonth()===+parts[2];}
+  if(p.startsWith('w_')){let ws=parseLocalDate(p.substring(2));let we=new Date(ws);we.setDate(we.getDate()+7);return d>=ws&&d<we;}
+  if(p.startsWith('d_'))return toLocalDateStr(d)===p.substring(2);
+  return false;
+}
+function rowsForPeriod(p){return D.rawData.filter(r=>{let d=parseLocalDate(r[dateCol]);return d&&matchPeriod(d,p);});}
+
+function renderCompareDashboard(){
+  let area=document.getElementById("main");
+  area.innerHTML = '';
+  if(!COMPARE_PICKS.length){
+    area.innerHTML = `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-compare"/></svg></div><div class="e-t">Pick periods to compare</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Choose 2 or more ${COMPARE_GRAN}s from the strip above. Each chart will then show one series per period side-by-side.</p></div>`;
+    return;
+  }
+  if(COMPARE_PICKS.length===1){
+    area.innerHTML = `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-info"/></svg></div><div class="e-t">Pick at least one more period</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">You picked <strong>${escapeHtml(periodLabel(COMPARE_PICKS[0]))}</strong>. Add another to see the comparison.</p></div>`;
+    return;
+  }
+  if(D.isPivot){area.innerHTML = '<div class="empty-s"><div class="e-t">Compare is not available for pivot tabs.</div></div>';return;}
+
+  // Per-period totals card (summary chart)
+  renderPeriodTotalsCard();
+
+  // For each category column, render one combined card
+  let cols=getCategoryColumns();
+  cols.forEach((col,idx)=>renderCompareCategoryCard(col,idx));
+}
+
+function renderPeriodTotalsCard(){
+  let zKey='cmp_totals';
+  let baseTitle='Tickets per period';
+  let title=getGraphDisplayTitle(zKey, baseTitle);
+  let area=document.getElementById("main");
+  let labels=COMPARE_PICKS.map(periodLabel);
+  let values=COMPARE_PICKS.map(p=>rowsForPeriod(p).length);
+  let colors=COMPARE_PICKS.map((_,i)=>P[i%P.length]);
+  let total=values.reduce((a,b)=>a+b,0);
+  let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  if(isHidden(zKey))card.style.display='none';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:var(--ac);">${total.toLocaleString()} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:340px;min-height:340px;"><canvas id="cmpTotB"></canvas></div><div class="mini-data-grid">${labels.map((lb,i)=>`<div class="mini-data-item"><span>${escapeHtml(lb)}</span><span>${values[i].toLocaleString()}</span></div>`).join('')}</div></div>`;
+  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
+  area.appendChild(card);
+  setTimeout(()=>{
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    CH['cmpTotB']=mkPeriodChart('cmpTotB','bar',labels,values,colors,gc,tc);
+    CHART_META[zKey]={title,labels,shortLabels:labels,datasets:[{data:values,backgroundColor:colors}],pieLabels:labels,pieValues:values,pieColors:colors,total,type:'cmpTotals',columnName:null,periods:COMPARE_PICKS.slice()};
+  },30);
+}
+function mkPeriodChart(id,type,labels,values,colors,gc,tc){
+  let data;
+  if(type==='doughnut'||type==='polarArea')data={labels,datasets:[{data:values,backgroundColor:colors,borderWidth:2,borderColor:S.dark?'#1a1d2e':'#fff'}]};
+  else data={labels:wrapAxisLabels(labels,12),datasets:[{label:'Tickets',data:values,backgroundColor:colors,borderRadius:4}]};
+  let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},plugins:{legend:{display:type==='doughnut'||type==='polarArea'},valueLabels:{display:true,fontSize:10},tooltip:{callbacks:{title:ctx=>labels[ctx[0].dataIndex]||''}}},
+    onClick:(e,el)=>{if(el&&el.length){let i=el[0].index;let p=COMPARE_PICKS[i];scheduleOpenPeriodM(p);}}
+  };
+  if(type==='bar'||type==='line')opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:10}}},x:{grid:{display:false},ticks:{color:tc,font:{size:10},maxRotation:30}}};
+  return createSafeChart(document.getElementById(id),{type,data,options:opts});
+}
+
+function renderCompareCategoryCard(col,idx){
+  let zKey='cmp_cat_'+idx;
+  let baseTitle=col;
+  let title=getGraphDisplayTitle(zKey, baseTitle);
+  let area=document.getElementById("main");
+  // Build map: per period -> per category count
+  let perPeriod=COMPARE_PICKS.map(p=>{let mp={};rowsForPeriod(p).forEach(r=>{let v=r[col];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';mp[k]=(mp[k]||0)+1;});return mp;});
+  // union of categories, sorted by combined total
+  let union={};perPeriod.forEach(mp=>{Object.keys(mp).forEach(k=>{union[k]=(union[k]||0)+mp[k];});});
+  let cats=Object.keys(union).sort((a,b)=>union[b]-union[a]);
+  if(cats.length>20)cats=cats.slice(0,20);
+  let labels=wrapAxisLabels(cats,12);
+  let datasets=COMPARE_PICKS.map((p,i)=>({label:periodLabel(p),data:cats.map(c=>perPeriod[i][c]||0),backgroundColor:P[i%P.length],borderRadius:3,borderSkipped:false}));
+  let total=cats.reduce((s,c)=>s+union[c],0);
+
+  let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  if(isHidden(zKey))card.style.display='none';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${cats.length} categories</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;"><canvas id="ccB${idx}"></canvas></div><div class="mini-data-grid">${cats.slice(0,8).map((c,i)=>`<div class="mini-data-item"><span>${escapeHtml(c)}</span><span>${union[c].toLocaleString()}</span></div>`).join('')}</div></div>`;
+  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
+  area.appendChild(card);
+  setTimeout(()=>{
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},
+      plugins:{legend:{display:true,position:'top',labels:{boxWidth:10,font:{size:10,family:'Inter'},color:tc,padding:6}},
+        valueLabels:{display:true,fontSize:9},
+        tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',callbacks:{title:ctx=>cats[ctx[0].dataIndex]}}},
+      onClick:(e,el)=>{if(el&&el.length){let i=el[0].index,dsIdx=el[0].datasetIndex;let cat=cats[i];let p=COMPARE_PICKS[dsIdx];scheduleOpenDataM(col,cat,p);}}
+    };
+    opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:9}}},x:{grid:{display:false},ticks:{color:tc,font:{size:9},maxRotation:0}}};
+    CH['ccB'+idx]=createSafeChart(document.getElementById('ccB'+idx),{type:'bar',data:{labels,datasets},options:opts});
+    CHART_META[zKey]={title,labels:cats,shortLabels:labels,datasets,pieLabels:cats,pieValues:cats.map(c=>union[c]),pieColors:cats.map((_,i)=>P[i%P.length]),total,type:'cmpCategory',columnName:col,periods:COMPARE_PICKS.slice()};
+  },30);
+}
+
+function categoryTableHtmlInZoom(zd) {
+  let labels = zd.labels || [];
+  let values = zd.pieValues || [];
+  let tot = zd.total || 0;
+  let rowsHtml = labels.map((lb, i) => {
+    let pc = tot > 0 ? ((values[i] / tot) * 100).toFixed(1) : 0;
+    let fc = P[i % P.length];
+    return `
+      <tr onclick="scheduleOpenDataM('${escapeJs(zd.columnName)}', '${escapeJs(lb)}')">
+        <td class="c-link">${escapeHtml(lb)}</td>
+        <td><span class="cnt-p">${values[i]}</span></td>
+        <td>
+          <div class="bw">
+            <div class="btt">
+              <div class="bf" style="width:${pc}%;background:${fc};"></div>
+            </div>
+            <span class="bn">${pc}%</span>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  return `
+    <div style="margin-top:16px; border:1px solid var(--border); border-radius:8px; max-height:220px; overflow-y:auto; background:var(--bg2);">
+      <table class="tb">
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th style="width:60px;">Tickets</th>
+            <th>Share</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+
+/* ═══════════ UNIVERSAL MODERN DROPDOWN UPGRADE ENGINE (PHOTOS 1 TO 4 FIX) ═══════════ */
+function upgradeSelectToModern(sel) {
+  if (!sel || sel.getAttribute('data-modern-upgraded') === 'true') return;
+  sel.setAttribute('data-modern-upgraded', 'true');
+  sel.style.display = 'none'; // Hide native browser select box
+  
+  let wrapper = document.createElement('div');
+  wrapper.className = 'mod-sel-wrapper inline-header-sel';
+  wrapper.style.position = 'relative';
+  wrapper.style.display = 'inline-flex';
+  wrapper.style.alignItems = 'center';
+  
+  let btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mod-sel-btn header-mod-btn';
+  btn.id = 'mod_btn_' + sel.id;
+  btn.setAttribute('data-target-sel', sel.id);
+  
+  sel.parentNode.insertBefore(wrapper, sel);
+  wrapper.appendChild(sel);
+  wrapper.appendChild(btn);
+  
+  syncModernSelectFromNative(sel);
+  sel.addEventListener('change', () => syncModernSelectFromNative(sel));
+}
+
+function syncModernSelectFromNative(sel) {
+  if (typeof sel === 'string') sel = document.getElementById(sel);
+  if (!sel) return;
+  
+  let btn = document.getElementById('mod_btn_' + sel.id);
+  if (!btn) return;
+  
+  let opt = sel.options[sel.selectedIndex] || sel.options[0];
+  let text = opt ? opt.text : 'Select...';
+  
+  btn.innerHTML = `
+    <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;font-weight:700;">${escapeHtml(text)}</span>
+    <span class="mod-sel-arrow" style="font-size:10px;color:var(--t3);transition:transform .2s ease;margin-left:6px;">▼</span>
+  `;
+  
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    closeModernSelectMenu();
+    btn.classList.add('open');
+    
+    let rect = btn.getBoundingClientRect();
+    let opts = [];
+    for (let i = 0; i < sel.options.length; i++) {
+      opts.push({ value: sel.options[i].value, text: sel.options[i].text });
+    }
+    
+    let mDiv = document.createElement('div');
+    mDiv.id = 'modSelectMenu';
+    mDiv.className = 'mod-sel-menu';
+    mDiv.style.position = 'absolute';
+    mDiv.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+    mDiv.style.left = (rect.left + window.scrollX) + 'px';
+    mDiv.style.minWidth = Math.max(rect.width, 160) + 'px';
+    mDiv.style.zIndex = '10000';
+    
+    mDiv.innerHTML = opts.map(o => `
+      <div class="mod-sel-item ${String(o.value) === String(sel.value) ? 'selected' : ''}" onclick="selectNativeOption('${sel.id}', '${escapeJs(String(o.value))}')">
+        <span>${escapeHtml(o.text)}</span>
+        ${String(o.value) === String(sel.value) ? '<span style="color:var(--ac);font-weight:800;">✓</span>' : ''}
+      </div>
+    `).join('');
+    
+    document.body.appendChild(mDiv);
+    
+    let closeOnOutside = (ev) => {
+      if (!mDiv.contains(ev.target) && !btn.contains(ev.target)) {
+        closeModernSelectMenu();
+        document.removeEventListener('click', closeOnOutside);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeOnOutside), 20);
+  };
+}
+
+function selectNativeOption(selId, val) {
+  closeModernSelectMenu();
+  let sel = document.getElementById(selId);
+  if (!sel) return;
+  sel.value = val;
+  syncModernSelectFromNative(sel);
+  
+  let event = new Event('change', { bubbles: true });
+  sel.dispatchEvent(event);
+  
+  if (sel.onchange) {
+    try { sel.onchange(event); } catch(e) {}
+  }
+}
+
+function refreshAllAppSelects() {
+  ['spSel', 'tabDD', 'defTabSel', 'defRangeSel', 'defDateSortSel', 'dupCustSel', 'dupTktSel', 'ovrCreSel', 'ovrResSel'].forEach(id => {
+    let sel = document.getElementById(id);
+    if (sel) {
+      if (sel.getAttribute('data-modern-upgraded') !== 'true') upgradeSelectToModern(sel);
+      else syncModernSelectFromNative(sel);
+    }
+  });
+  
+  document.querySelectorAll('select:not([data-modern-upgraded="true"]):not(.pvt-fld-sel):not(.pvt-sel)').forEach(sel => {
+    upgradeSelectToModern(sel);
+  });
+}
+
+function refreshAllHeaderSelects() {
+  refreshAllAppSelects();
+}
+
+
+/* ═══════════ EXCEL / GOOGLE SHEETS STYLE PIVOT TABLE BUILDER ═══════════ */
+const MONTH_NAMES_MAP = {
+  'january': 1, 'jan': 1, 'february': 2, 'feb': 2, 'march': 3, 'mar': 3,
+  'april': 4, 'apr': 4, 'may': 5, 'june': 6, 'jun': 6, 'july': 7, 'jul': 7,
+  'august': 8, 'aug': 8, 'september': 9, 'sep': 9, 'sept': 9,
+  'october': 10, 'oct': 10, 'november': 11, 'nov': 11, 'december': 12, 'dec': 12
+};
+
+function getChronologicalIndex(val) {
+  if (val == null) return -999999;
+  let str = String(val).trim();
+  if (str === '' || str === '(Blank)') return -999999;
+  if (str === 'Total' || str === 'Grand Total') return 9999999;
+  
+  let lower = str.toLowerCase();
+  if (MONTH_NAMES_MAP[lower] !== undefined) return MONTH_NAMES_MAP[lower];
+  
+  let ymMatch = str.match(/^(\d{2,4})[-/._](\d{1,2})$/);
+  if (ymMatch) {
+    let y = Number(ymMatch[1]), m = Number(ymMatch[2]);
+    if (y < 100) y += 2000;
+    if (m >= 1 && m <= 12) return y * 100 + m;
+  }
+  let myMatch = str.match(/^(\d{1,2})[-/._](\d{2,4})$/);
+  if (myMatch) {
+    let m = Number(myMatch[1]), y = Number(myMatch[2]);
+    if (y < 100) y += 2000;
+    if (m >= 1 && m <= 12) return y * 100 + m;
+  }
+  
+  for (let mName of Object.keys(MONTH_NAMES_MAP)) {
+    if (lower.startsWith(mName) || lower.endsWith(mName)) {
+      let yMatch = lower.match(/\d{4}|\d{2}/);
+      let y = yMatch ? Number(yMatch[0]) : 2026;
+      if (y < 100) y += 2000;
+      return y * 100 + MONTH_NAMES_MAP[mName];
+    }
+  }
+
+  let d = parseLocalDate ? parseLocalDate(str) : new Date(str);
+  if (d && !isNaN(d.getTime())) return d.getTime();
+  
+  let num = Number(str);
+  if (!isNaN(num)) return num;
+  return null;
+}
+
+function compareChronological(a, b, order = 'Ascending') {
+  let idxA = getChronologicalIndex(a), idxB = getChronologicalIndex(b);
+  let mul = (order && (order.toLowerCase() === 'descending' || order.toLowerCase() === 'desc')) ? -1 : 1;
+  
+  if (idxA !== null && idxB !== null) {
+    return (idxA - idxB) * mul;
+  }
+  let strA = String(a || '').trim(), strB = String(b || '').trim();
+  return strA.localeCompare(strB, undefined, { numeric: true, sensitivity: 'base' }) * mul;
+}
+let PIVOT_VIEW_MODE = 'list'; // 'list' (Rendered Tables) | 'builder' (Four-Quadrant Builder)
+let SAVED_PIVOT_TABLES = [];
+let LATEST_TOAST_MSG = "";
+
+function loadSavedPivotTables() {
+  SAVED_PIVOT_TABLES = Array.isArray(SAVED_PIVOT_TABLES) ? SAVED_PIVOT_TABLES : [];
+}
+function saveSavedPivotTables() {
+  try {
+    persistUniversalStateLocalNow();
+    if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'pivot tables');
+  } catch(e) {}
+}
+
+async function togglePivotBuilderMode() {
+  PIVOT_BUILDER_MODE = !PIVOT_BUILDER_MODE;
+  let pvtBtn = document.getElementById("pvtTab");
+  if (PIVOT_BUILDER_MODE) {
+    if (!D || !D.rawData || D.rawData.length === 0) {
+      alert('Please select a tab with data first before using Pivot Builder.');
+      PIVOT_BUILDER_MODE = false;
+      if (pvtBtn) pvtBtn.classList.remove('on');
+      return;
+    }
+    resetAllAnalyticalModes('pvtTab');
+    if (pvtBtn) pvtBtn.classList.add('on');
+    updateSubPeriodUI();
+    if (typeof showL === 'function') showL('Syncing pivot tables…');
+    try { if (typeof loadUniversalAppStateFromCloud === 'function') await loadUniversalAppStateFromCloud(); } catch(e) {}
+    loadSavedPivotTables();
+    PIVOT_VIEW_MODE = 'list';
+    toggleToolsTray(false);
+    renderPivotBuilderDashboard();
+    if (typeof hideL === 'function') hideL();
+    return;
+  } else {
+    if (pvtBtn) pvtBtn.classList.remove('on');
+    let b = document.querySelector('.tp-b[data-r="'+range+'"]'); if(b) b.classList.add('on');
+  }
+  toggleToolsTray(false);
+  applyFilter();
+}
+
+let PROP_NAME_CACHE = {};
+function getRowVal(r, colName) {
+  if (!r || !colName) return null;
+  if (r[colName] !== undefined && r[colName] !== null) return r[colName];
+  
+  if (typeof r === 'object' && !Array.isArray(r)) {
+    if (PROP_NAME_CACHE[colName] !== undefined) {
+      let cachedProp = PROP_NAME_CACHE[colName];
+      return cachedProp ? (r[cachedProp] !== undefined && r[cachedProp] !== null ? r[cachedProp] : null) : null;
+    }
+    let target = String(colName).trim().toLowerCase();
+    for (let k of Object.keys(r)) {
+      if (String(k).trim().toLowerCase() === target) {
+        PROP_NAME_CACHE[colName] = k;
+        return r[k] !== undefined && r[k] !== null ? r[k] : null;
+      }
+    }
+    PROP_NAME_CACHE[colName] = null;
+    return null;
+  }
+  if (Array.isArray(r)) {
+    if (typeof colName === 'number' && r[colName] !== undefined) return r[colName];
+    if (PROP_NAME_CACHE[colName] !== undefined) {
+      let cachedIdx = PROP_NAME_CACHE[colName];
+      return cachedIdx !== null ? (r[cachedIdx] !== undefined && r[cachedIdx] !== null ? r[cachedIdx] : null) : null;
+    }
+    let idx = D && D.headers ? D.headers.indexOf(colName) : -1;
+    if (idx === -1 && D && D.headers) {
+      let target = String(colName).trim().toLowerCase();
+      for (let i = 0; i < D.headers.length; i++) {
+        if (String(D.headers[i]).trim().toLowerCase() === target) { idx = i; break; }
+      }
+    }
+    PROP_NAME_CACHE[colName] = idx !== -1 ? idx : null;
+    return idx !== -1 && r[idx] !== undefined && r[idx] !== null ? r[idx] : null;
+  }
+  return null;
+}
+
+function getUniqueFieldValues(colName) {
+  if (!colName) return ['All'];
+  if (D && D.rawData && D.rawData.length) {
+    let set = new Set();
+    D.rawData.forEach(r => {
+      let v = getRowVal(r, colName);
+      if (v != null && String(v).trim() !== '') {
+        set.add(String(v).trim());
+      }
+    });
+    let arr = Array.from(set).sort();
+    return arr.length ? arr : ['(Blank)'];
+  }
+  return ['Active', 'Closed', 'Pending', 'In Progress', 'Resolved', 'Escalated'];
+}
+
+const PivotStateEngine = {
+  state: { rows: [], columns: [], values: [], filters: [] },
+  editingIndex: null,
+
+  init: function() {
+    if (this.editingIndex === null && !this.state.rows.length && !this.state.columns.length && !this.state.values.length && !this.state.filters.length) {
+      let cols = D && D.headers && D.headers.length ? D.headers : ['Category', 'Month', 'Region', 'Status', 'Ticket ID', 'Duration'];
+      let getCol = (name, fb) => cols.find(c => c.toLowerCase().includes(name.toLowerCase())) || cols[fb % cols.length] || 'Field';
+      
+      this.state.rows = [{ fieldName: getCol('category', 1), order: 'Ascending', sortBy: getCol('category', 1), showTotals: true }];
+      this.state.columns = [{ fieldName: getCol('month', 5), order: 'Ascending', sortBy: getCol('month', 5), showTotals: true }];
+      this.state.values = [{ fieldName: getCol('ticket', 0), summarizeBy: 'COUNTA', showAs: 'Default' }];
+      
+      let flt1 = getCol('status', 2), flt2 = getCol('region', 4);
+      let vals1 = getUniqueFieldValues(flt1), vals2 = getUniqueFieldValues(flt2);
+      this.state.filters = [
+        { fieldName: flt1, filterType: 'VALUE', itemCount: vals1.length, selectedItems: vals1.slice() },
+        { fieldName: flt2, filterType: 'VALUE', itemCount: vals2.length, selectedItems: vals2.slice() }
+      ];
+    }
+    this.render();
+  },
+
+  addItem: function(category) {
+    let cols = D && D.headers && D.headers.length ? D.headers : ['Category', 'Month', 'Region', 'Status', 'Ticket ID', 'Duration'];
+    let used = new Set(this.state[category].map(item => item.fieldName));
+    let nextCol = cols.find(c => !used.has(c)) || cols[0] || 'Field';
+
+    if (category === 'rows' || category === 'columns') {
+      this.state[category].push({ fieldName: nextCol, order: 'Ascending', sortBy: nextCol, showTotals: true });
+    } else if (category === 'values') {
+      let isNum = nextCol.toLowerCase().includes('duration') || nextCol.toLowerCase().includes('count') || nextCol.toLowerCase().includes('time');
+      this.state[category].push({ fieldName: nextCol, summarizeBy: isNum ? 'SUM' : 'COUNTA', showAs: 'Default' });
+    } else if (category === 'filters') {
+      let vals = getUniqueFieldValues(nextCol);
+      this.state[category].push({ fieldName: nextCol, filterType: 'VALUE', itemCount: vals.length, selectedItems: vals.slice() });
+    }
+    this.render();
+  },
+
+  removeItem: function(category, index) {
+    if (this.state[category] && this.state[category][index]) {
+      this.state[category].splice(index, 1);
+      this.render();
+    }
+  },
+
+  updateItem: function(category, index, key, value) {
+    if (this.state[category] && this.state[category][index]) {
+      let item = this.state[category][index];
+      item[key] = value;
+      if (key === 'fieldName' && (category === 'rows' || category === 'columns')) {
+        item.sortBy = value;
+      }
+      if (key === 'fieldName' && category === 'filters') {
+        let vals = getUniqueFieldValues(value);
+        item.itemCount = vals.length;
+        item.selectedItems = vals.slice();
+      }
+      this.render();
+    }
+  },
+
+  getPayload: function() {
+    return {
+      rows: this.state.rows.map(r => ({ fieldName: r.fieldName, order: r.order, sortBy: r.sortBy, showTotals: Boolean(r.showTotals) })),
+      columns: this.state.columns.map(c => ({ fieldName: c.fieldName, order: c.order, sortBy: c.sortBy, showTotals: Boolean(c.showTotals) })),
+      values: this.state.values.map(v => ({ fieldName: v.fieldName, summarizeBy: v.summarizeBy, showAs: v.showAs })),
+      filters: this.state.filters.map(f => ({ fieldName: f.fieldName, filterType: f.filterType || 'VALUE', itemCount: Number(f.itemCount), selectedItems: f.selectedItems || [] }))
+    };
+  },
+
+  reset: function() {
+    this.editingIndex = null;
+    this.state = { rows: [], columns: [], values: [], filters: [] };
+    this.init();
+  },
+
+  render: function() {
+    renderPivotBuilderCards();
+    setTimeout(() => renderPivotLivePreview(), 25);
+  }
+};
+
+function renderPivotBuilderDashboard() {
+  let area = document.getElementById("main");
+  if (!area) return;
+  area.innerHTML = '';
+  killCH(); CHART_META = {};
+
+  if (!D || !D.rawData || D.rawData.length === 0) {
+    area.innerHTML = renderDashboardBackToolbar() + '<div class="empty-s"><div class="e-t">No data available</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Please select a tab with data first.</p></div>';
+    hideL();
+    return;
+  }
+
+  loadSavedPivotTables();
+
+  if (PIVOT_VIEW_MODE === 'list') {
+    renderPivotLibraryView(area);
+  } else {
+    renderPivotBuilderView(area);
+  }
+}
+
+/* ═══ VIEW 1: RENDERED PIVOT TABLES (TIGHT SHEET STYLE WITH WRAPPING HEIGHT & NO SHEET TABS) ═══ */
+/* ═══ VIEW 1: RENDERED PIVOT TABLES (TIGHT SHEET STYLE WITH WRAPPING HEIGHT & NO SHEET TABS) ═══ */
+/* ═══ VIEW 1: RENDERED PIVOT TABLES (TIGHT SHEET STYLE WITH WRAPPING HEIGHT & NO SHEET TABS) ═══ */
+function renderPivotLibraryView(area) {
+  let libHtml = `
+    ${renderDashboardBackToolbar()}
+    <div class="pvt-builder-container">
+      ${LATEST_TOAST_MSG ? `
+      <div id="pvt-success-notif" style="background:rgba(16,185,129,0.15);color:var(--green);border:1px solid rgba(16,185,129,0.35);padding:10px 16px;border-radius:8px;font-size:13.5px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow-sm);">
+        <span>✅ ${escapeHtml(LATEST_TOAST_MSG)}</span>
+        <button type="button" style="background:transparent;border:none;color:var(--green);font-size:16px;cursor:pointer;font-weight:800;padding:0 4px;" onclick="this.parentElement.remove(); LATEST_TOAST_MSG='';">✕</button>
+      </div>` : ''}
+
+      <div class="pvt-builder-header" style="background:linear-gradient(to right, var(--bg2), var(--bg3));border:1px solid var(--border);border-radius:14px;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;box-shadow:var(--shadow);margin-bottom:24px;">
+        <div class="pvt-hdr-left" style="display:flex;align-items:center;gap:16px;">
+          <div class="pvt-hdr-icon" style="width:50px;height:50px;border-radius:12px;background:linear-gradient(135deg, var(--ac), var(--ac2));display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 8px 20px rgba(0,0,0,0.25);font-size:24px;flex-shrink:0;">
+            ⚡
+          </div>
+          <div>
+            <h3 style="font-size:18px;font-weight:800;color:var(--t1);margin:0;display:flex;align-items:center;gap:8px;">
+              <span> Pivot Tables </span>
+              <span style="font-size:12px;font-weight:700;background:var(--ac-bg);color:var(--ac);padding:2px 8px;border-radius:12px;border:1px solid var(--ac);">${SAVED_PIVOT_TABLES.length}</span>
+            </h3>
+          </div>
+        </div>
+        <div class="pvt-hdr-actions">
+          <button class="btn-pvt-action primary" style="font-size:13.5px;padding:10px 20px;background:linear-gradient(135deg, var(--ac), var(--ac2));color:#fff;border:none;border-radius:10px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.2);cursor:pointer;transition:all .2s ease;display:flex;align-items:center;gap:8px;" onclick="openNewPivotBuilder()" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 8px 20px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='none';this.style.boxShadow='0 4px 12px rgba(0,0,0,0.2)';">
+            <span>+ Create New Pivot Table</span>
+          </button>
+        </div>
+      </div>
+  `;
+
+  if (!SAVED_PIVOT_TABLES || !SAVED_PIVOT_TABLES.length) {
+    libHtml += `
+      <div class="pvt-library-empty" style="text-align:center;padding:60px 20px;background:var(--bg2);border:1px dashed var(--border);border-radius:12px;margin-top:10px;box-shadow:var(--shadow-sm);">
+        <div style="width:64px;height:64px;border-radius:16px;background:var(--ac-bg);color:var(--ac);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:30px;">📊</div>
+        <h4 style="font-size:18px;font-weight:800;color:var(--t1);margin-bottom:6px;">No Custom Pivot Tables Yet</h4>
+        <p style="font-size:12.5px;color:var(--t2);max-width:480px;margin:0 auto 20px;line-height:1.4;">You haven't generated any custom pivot tables yet. Click below to launch the Four-Quadrant Builder and generate your first table!</p>
+        <button class="btn-pvt-action primary" style="font-size:13.5px;padding:10px 22px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.2);cursor:pointer;transition:var(--transition);display:inline-flex;align-items:center;gap:8px;" onclick="openNewPivotBuilder()">
+          <svg class="ic"><use href="#i-bolt"/></svg> ⚡ + Create New Pivot Table
+        </button>
+      </div>
+    </div>`;
+    area.innerHTML = libHtml;
+    return;
+  }
+
+  let tablesHtml = SAVED_PIVOT_TABLES.map((pvt, idx) => `
+    <div class="pvt-rendered-section" oncontextmenu="onPivotCardRightClick(event, ${idx})" title="Right-click card for options (Rename, Edit, Delete)" style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:24px;box-shadow:var(--shadow);transition:all .2s ease;">
+      <div class="pvt-rs-hdr" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="font-size:16px;font-weight:800;color:var(--t1);display:flex;align-items:center;gap:8px;">
+            <span style="width:28px;height:28px;border-radius:6px;background:var(--ac-bg);color:var(--ac);display:inline-flex;align-items:center;justify-content:center;font-size:15px;">📊</span>
+            <span>${escapeHtml(pvt.name || 'Pivot Table ' + (idx+1))}</span>
+          </span>
+          <span style="font-size:11px;color:var(--t2);background:var(--bg3);padding:3px 10px;border-radius:6px;border:1px solid var(--border);font-weight:600;">
+            ${pvt.config.rows.map(r=>escapeHtml(r.fieldName)).join(' | ')} × ${pvt.config.columns.map(c=>escapeHtml(c.fieldName)).join(' | ')}
+          </span>
+          <span style="font-size:11px;color:var(--ac);font-weight:600;"></span>
+        </div>
+      </div>
+
+      <div class="pvt-table-container" style="width:100%;overflow-x:auto;overflow-y:visible;height:auto;max-height:none;border:1px solid var(--border);border-radius:8px;background:var(--bg);box-shadow:inset 0 2px 4px rgba(0,0,0,0.02);">
+        <table class="pvt-preview-table" id="pvt-lib-table-${idx}" style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left;line-height:1.3;"></table>
+      </div>
+    </div>
+  `).join('');
+
+  libHtml += `
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+      ${tablesHtml}
+    </div>
+  </div>`;
+  
+  area.innerHTML = libHtml;
+
+  setTimeout(() => {
+    SAVED_PIVOT_TABLES.forEach((pvt, idx) => {
+      let tblEl = document.getElementById(`pvt-lib-table-${idx}`);
+      if (tblEl) {
+        renderPivotTableGridToElement(tblEl, pvt.config, idx);
+      }
+    });
+  }, 20);
+}
+
+function openNewPivotBuilder() {
+  PIVOT_VIEW_MODE = 'builder';
+  PivotStateEngine.editingIndex = null;
+  PivotStateEngine.state = { rows: [], columns: [], values: [], filters: [] };
+  PivotStateEngine.init();
+  renderPivotBuilderDashboard();
+}
+
+function editSavedPivotTable(idx) {
+  if (!SAVED_PIVOT_TABLES[idx]) return;
+  PIVOT_VIEW_MODE = 'builder';
+  let saved = SAVED_PIVOT_TABLES[idx];
+  PivotStateEngine.editingIndex = idx;
+  PivotStateEngine.state = JSON.parse(JSON.stringify(saved.config));
+  renderPivotBuilderDashboard();
+}
+
+function backToPivotLibrary() {
+  PIVOT_VIEW_MODE = 'list';
+  renderPivotBuilderDashboard();
+}
+
+function deleteSavedPivotTable(idx) {
+  if (!SAVED_PIVOT_TABLES[idx]) return;
+  let name = SAVED_PIVOT_TABLES[idx].name;
+  if (!confirm(`Are you sure you want to delete the pivot table "${name}"?`)) return;
+  
+  if (PivotStateEngine.editingIndex === idx) {
+    PivotStateEngine.editingIndex = null;
+  } else if (PivotStateEngine.editingIndex !== null && PivotStateEngine.editingIndex > idx) {
+    PivotStateEngine.editingIndex--;
+  }
+  
+  SAVED_PIVOT_TABLES.splice(idx, 1);
+  saveSavedPivotTables();
+  if (PIVOT_VIEW_MODE === 'list') {
+    renderPivotBuilderDashboard();
+  }
+}
+
+/* ═══ VIEW 2: FOUR-QUADRANT PIVOT BUILDER ═══ */
+function renderPivotBuilderView(area) {
+  let isEdit = PivotStateEngine.editingIndex !== null && PivotStateEngine.editingIndex >= 0 && SAVED_PIVOT_TABLES[PivotStateEngine.editingIndex];
+  let html = `
+    ${renderDashboardBackToolbar()}
+    <div class="pvt-builder-container">
+      <div class="pvt-builder-header" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:var(--shadow-sm);margin-bottom:18px;">
+        <div class="pvt-hdr-left" style="display:flex;align-items:center;gap:14px;">
+          <div class="pvt-hdr-icon" style="width:42px;height:42px;border-radius:10px;background:var(--ac);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.2);"><svg class="ic ic-lg" style="width:22px;height:22px;stroke:#fff;"><use href="#i-pivot"/></svg></div>
+          <div>
+            <h3 style="font-size:17px;font-weight:800;color:var(--t1);margin:0;">${isEdit ? '✏️ Editing: ' + escapeHtml(SAVED_PIVOT_TABLES[PivotStateEngine.editingIndex].name) : ' Create New Pivot Table '}</h3>
+          </div>
+        </div>
+        <div class="pvt-hdr-actions" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <button class="btn-pvt-nav" onclick="backToPivotLibrary()" title="Back to saved pivot tables list">
+            <span> Back to Pivot Tables List</span>
+          </button>
+          <button class="btn-pvt-reset" onclick="PivotStateEngine.reset()" title="Reset cards to default">
+            <span> Reset Filter </span>
+          </button>
+          <button class="btn-pvt-submit" onclick="openGeneratePivotModal()">
+            <span>${isEdit ? 'Edit Pivot Table' : 'Create Pivot Table'}</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="pvt-quadrant-grid">
+        <div class="pvt-quadrant-section" id="pvt-section-rows">
+          <div class="pvt-sec-hdr">
+            <span class="pvt-sec-title"><svg class="ic"><use href="#i-grid"/></svg> Rows</span>
+            <button class="btn-pvt-add" onclick="PivotStateEngine.addItem('rows')">Add</button>
+          </div>
+          <div class="pvt-cards-container" id="pvt-cards-rows"></div>
+        </div>
+
+        <div class="pvt-quadrant-section" id="pvt-section-columns">
+          <div class="pvt-sec-hdr">
+            <span class="pvt-sec-title"><svg class="ic"><use href="#i-grid"/></svg> Columns</span>
+            <button class="btn-pvt-add" onclick="PivotStateEngine.addItem('columns')">Add</button>
+          </div>
+          <div class="pvt-cards-container" id="pvt-cards-columns"></div>
+        </div>
+
+        <div class="pvt-quadrant-section" id="pvt-section-values">
+          <div class="pvt-sec-hdr">
+            <span class="pvt-sec-title"><svg class="ic"><use href="#i-bolt"/></svg> Values</span>
+            <button class="btn-pvt-add" onclick="PivotStateEngine.addItem('values')">Add</button>
+          </div>
+          <div class="pvt-cards-container" id="pvt-cards-values"></div>
+        </div>
+
+        <div class="pvt-quadrant-section" id="pvt-section-filters">
+          <div class="pvt-sec-hdr">
+            <span class="pvt-sec-title"><svg class="ic"><use href="#i-filter"/></svg> Filters</span>
+            <button class="btn-pvt-add" onclick="PivotStateEngine.addItem('filters')">Add</button>
+          </div>
+          <div class="pvt-cards-container" id="pvt-cards-filters"></div>
+        </div>
+      </div>
+
+      <div class="pvt-preview-section" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;box-shadow:var(--shadow-sm);">
+        <div class="pvt-sec-hdr" style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px dashed var(--border);display:flex;justify-content:space-between;align-items:center;">
+          <span class="pvt-sec-title" style="font-size:15px;font-weight:700;color:var(--t1);"><svg class="ic"><use href="#i-table"/></svg> Live Pivot Preview <span style="font-size:11px;color:var(--ac);font-weight:600;"></span></span>
+        </div>
+        
+        <div id="pvt-backend-status" class="pvt-status" style="display:none;padding:10px 14px;border-radius:6px;font-size:12.5px;font-weight:600;margin-bottom:12px;align-items:center;gap:8px;"></div>
+
+        <div class="pvt-table-container" style="width:100%;overflow-x:auto;overflow-y:visible;height:auto;max-height:none;border:1px solid var(--border);border-radius:6px;background:var(--bg);">
+          <table class="pvt-preview-table" id="pvt-live-table" style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left;line-height:1.3;"></table>
+        </div>
+      </div>
+    </div>
+  `;
+
+  area.innerHTML = html;
+  PivotStateEngine.render();
+  hideL();
+}
+
+function openGeneratePivotModal() {
+  let payload = PivotStateEngine.getPayload();
+  if (!payload.rows.length || !payload.values.length) {
+    alert("Please add at least one Row field and one Value field before generating the table.");
+    return;
+  }
+
+  let isEdit = PivotStateEngine.editingIndex !== null && PivotStateEngine.editingIndex >= 0 && SAVED_PIVOT_TABLES[PivotStateEngine.editingIndex];
+  let defaultName = "Pivot Table " + (SAVED_PIVOT_TABLES.length + (isEdit ? 0 : 1));
+  if (isEdit) {
+    defaultName = SAVED_PIVOT_TABLES[PivotStateEngine.editingIndex].name || defaultName;
+  }
+
+  let old = document.getElementById("pvtNameModal");
+  if (old) old.remove();
+
+  let mDiv = document.createElement("div");
+  mDiv.id = "pvtNameModal";
+  mDiv.className = "modal fade show";
+  mDiv.style.display = "block";
+  mDiv.style.backgroundColor = "rgba(0,0,0,0.55)";
+  mDiv.style.zIndex = "1055";
+  mDiv.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered" style="max-width:480px;">
+      <div class="modal-content" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;color:var(--t1);box-shadow:0 25px 35px -5px rgba(0,0,0,0.35);overflow:hidden;">
+        <div class="modal-header" style="border-bottom:1px solid var(--border);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;background:var(--bg3);">
+          <h5 class="modal-title" style="font-size:15.5px;font-weight:800;margin:0;color:var(--t1);">${isEdit ? '✏️ Edit Pivot Table' : '⚡Create Pivot Table'}</h5>
+          <button type="button" class="btn-close" style="filter:${S.dark ? 'invert(1)' : 'none'};" onclick="closeGeneratePivotModal()"></button>
+        </div>
+        <div class="modal-body" style="padding:20px;">
+          <label style="font-size:12.5px;font-weight:700;color:var(--t1);margin-bottom:8px;display:block;">Please enter a name for this Pivot Table</label>
+          <input type="text" id="pvt-custom-name-inp" class="pvt-sel" style="padding:9px 12px;font-size:13.5px;width:100%;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--t1);outline:none;" value="${escapeHtml(defaultName)}" placeholder="e.g. Monthly Regional Breakdown">
+        
+        </div>
+        <div class="modal-footer" style="border-top:1px solid var(--border);padding:12px 18px;display:flex;justify-content:space-between;align-items:center;background:var(--bg3);">
+          <button type="button" class="btn-pvt-action secondary" style="padding:7px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;font-weight:600;cursor:pointer;font-size:12px;" onclick="closeGeneratePivotModal()">Cancel</button>
+          <button type="button" class="btn-pvt-action primary" style="padding:8px 18px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.2);cursor:pointer;font-size:12.5px;display:inline-flex;align-items:center;justify-content:center;line-height:1;" onclick="confirmGeneratePivotTable()">
+          <span>${isEdit ? 'Edit Pivot Table' : 'Generate Pivot Table'}</span>
+        </button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(mDiv);
+  setTimeout(() => {
+    let inp = document.getElementById("pvt-custom-name-inp");
+    if (inp) {
+      inp.focus(); inp.select();
+    }
+  }, 50);
+}
+
+function closeGeneratePivotModal() {
+  let m = document.getElementById("pvtNameModal");
+  if (m) m.remove();
+}
+
+function confirmGeneratePivotTable() {
+  let inp = document.getElementById("pvt-custom-name-inp");
+  let customName = (inp && inp.value ? inp.value.trim() : "") || ("Pivot Table " + (SAVED_PIVOT_TABLES.length + 1));
+  closeGeneratePivotModal();
+
+  let payload = PivotStateEngine.getPayload();
+  payload.customTableName = customName;
+  payload.sourceTabName = D && D.tabName ? D.tabName : "";
+
+  let isEdit = PivotStateEngine.editingIndex !== null && PivotStateEngine.editingIndex >= 0 && SAVED_PIVOT_TABLES[PivotStateEngine.editingIndex];
+  if (isEdit) {
+    SAVED_PIVOT_TABLES[PivotStateEngine.editingIndex].name = customName;
+    SAVED_PIVOT_TABLES[PivotStateEngine.editingIndex].config = JSON.parse(JSON.stringify(payload));
+    SAVED_PIVOT_TABLES[PivotStateEngine.editingIndex].updatedAt = new Date().toISOString();
+    LATEST_TOAST_MSG = "Edited Successfully";
+  } else {
+    SAVED_PIVOT_TABLES.push({
+      id: 'pvt_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+      name: customName,
+      config: JSON.parse(JSON.stringify(payload)),
+      createdAt: new Date().toISOString()
+    });
+    PivotStateEngine.editingIndex = SAVED_PIVOT_TABLES.length - 1;
+    LATEST_TOAST_MSG = "Created Successfully";
+  }
+  saveSavedPivotTables();
+
+  setTimeout(() => {
+    PIVOT_VIEW_MODE = 'list';
+    renderPivotBuilderDashboard();
+  }, 50);
+}
+
+/* ═══ MODERN CUSTOM DROPDOWN COMPONENT HELPERS ═══ */
+function renderModernDropdown(label, options, selectedValue, onChangeAction, width = '100%') {
+  let opts = options.map(o => typeof o === 'string' ? { value: o, text: o } : o);
+  let curr = opts.find(o => String(o.value) === String(selectedValue)) || opts[0] || { value: '', text: 'Select...' };
+  
+  window.MOD_SEL_CACHE = window.MOD_SEL_CACHE || {};
+  window.MOD_SEL_CACHE[onChangeAction] = opts;
+  
+  return `
+    <div class="mod-sel-wrapper" style="position:relative;width:${width};">
+      <button type="button" class="mod-sel-btn" style="width:100%;" onclick="openModernSelectMenu(event, '${escapeJs(onChangeAction)}', '${escapeJs(String(selectedValue))}')">
+        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;text-align:left;">${escapeHtml(curr.text)}</span>
+        <span class="mod-sel-arrow" style="font-size:10px;color:var(--t3);transition:transform .2s ease;flex-shrink:0;">▼</span>
+      </button>
+    </div>
+  `;
+}
+
+function openModernSelectMenu(event, actionStr, currValue) {
+  if (event) event.stopPropagation();
+  closeModernSelectMenu();
+  
+  let btn = event.currentTarget;
+  if (btn) btn.classList.add('open');
+  
+  let rect = btn ? btn.getBoundingClientRect() : { bottom: 200, left: 200, width: 180 };
+  let opts = window.MOD_SEL_CACHE && window.MOD_SEL_CACHE[actionStr] ? window.MOD_SEL_CACHE[actionStr] : [];
+  if (!opts.length) return;
+  
+  let mDiv = document.createElement('div');
+  mDiv.id = 'modSelectMenu';
+  mDiv.className = 'mod-sel-menu';
+  mDiv.style.position = 'absolute';
+  mDiv.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+  mDiv.style.left = (rect.left + window.scrollX) + 'px';
+  mDiv.style.width = Math.max(rect.width, 180) + 'px';
+  mDiv.style.zIndex = '10000';
+  
+  let itemsHtml = opts.map(opt => `
+    <div class="mod-sel-item ${String(opt.value) === String(currValue) ? 'selected' : ''}" onclick="selectModernOption('${escapeJs(actionStr)}', '${escapeJs(String(opt.value))}')">
+      <span style="word-break:break-word;">${escapeHtml(opt.text)}</span>
+      ${String(opt.value) === String(currValue) ? '<span style="color:var(--ac);font-weight:800;">✓</span>' : ''}
+    </div>
+  `).join('');
+  
+  mDiv.innerHTML = itemsHtml;
+  document.body.appendChild(mDiv);
+  
+  let closeOnOutside = (e) => {
+    if (!mDiv.contains(e.target) && (!btn || !btn.contains(e.target))) {
+      closeModernSelectMenu();
+      document.removeEventListener('click', closeOnOutside);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeOnOutside), 20);
+}
+
+function closeModernSelectMenu() {
+  let m = document.getElementById('modSelectMenu');
+  if (m) m.remove();
+  document.querySelectorAll('.mod-sel-btn.open').forEach(b => b.classList.remove('open'));
+}
+
+function selectModernOption(actionStr, val) {
+  closeModernSelectMenu();
+  let parts = actionStr.split(':');
+  if (parts[0] === 'updateItem') {
+    let cat = parts[1];
+    let idx = Number(parts[2]);
+    let key = parts[3];
+    PivotStateEngine.updateItem(cat, idx, key, val);
+  } else if (parts[0] === 'setRange') {
+    if (typeof setRange === 'function') setRange(val);
+  } else if (parts[0] === 'fetchTab') {
+    if (typeof fetchTab === 'function') fetchTab(val);
+  }
+}
+
+function renderPivotBuilderCards() {
+  let cols = D && D.headers && D.headers.length ? D.headers : ['Category', 'Month', 'Region', 'Status', 'Ticket ID', 'Duration'];
+  let fldOpts = cols.map(c => ({ value: c, text: c }));
+  let orderOpts = [{ value: 'Ascending', text: 'Ascending' }, { value: 'Descending', text: 'Descending' }];
+  
+  // 1. ROWS
+  let rowsEl = document.getElementById('pvt-cards-rows');
+  if (rowsEl) {
+    if (!PivotStateEngine.state.rows.length) {
+      rowsEl.innerHTML = `<div class="pvt-empty-sec">No row fields added. Click Add above.</div>`;
+    } else {
+      rowsEl.innerHTML = PivotStateEngine.state.rows.map((item, idx) => {
+        let sortOpts = [item.fieldName, ...PivotStateEngine.state.values.map(v => `${v.summarizeBy} of ${v.fieldName}`)].map(o => ({ value: o, text: o }));
+        return `
+        <div class="pvt-card">
+          <div class="pvt-card-hdr">
+            ${renderModernDropdown('fieldName', fldOpts, item.fieldName, `updateItem:rows:${idx}:fieldName`, 'calc(100% - 28px)')}
+            <button class="pvt-card-close" onclick="PivotStateEngine.removeItem('rows', ${idx})" title="Remove field">✕</button>
+          </div>
+          <div class="pvt-card-body">
+            <div class="pvt-row-grid">
+              <div class="pvt-grp">
+                <label>Order</label>
+                ${renderModernDropdown('order', orderOpts, item.order, `updateItem:rows:${idx}:order`, '100%')}
+              </div>
+              <div class="pvt-grp">
+                <label>Sort by</label>
+                ${renderModernDropdown('sortBy', sortOpts, item.sortBy, `updateItem:rows:${idx}:sortBy`, '100%')}
+              </div>
+            </div>
+            <div class="pvt-chk-row">
+              <label class="pvt-chk">
+                <input type="checkbox" ${item.showTotals?'checked':''} onchange="PivotStateEngine.updateItem('rows', ${idx}, 'showTotals', this.checked)">
+                <span>Show totals</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      `;}).join('');
+    }
+  }
+
+  // 2. COLUMNS
+  let colsEl = document.getElementById('pvt-cards-columns');
+  if (colsEl) {
+    if (!PivotStateEngine.state.columns.length) {
+      colsEl.innerHTML = `<div class="pvt-empty-sec">No column fields added. Click Add above.</div>`;
+    } else {
+      colsEl.innerHTML = PivotStateEngine.state.columns.map((item, idx) => {
+        let sortOpts = [item.fieldName, ...PivotStateEngine.state.values.map(v => `${v.summarizeBy} of ${v.fieldName}`)].map(o => ({ value: o, text: o }));
+        return `
+        <div class="pvt-card">
+          <div class="pvt-card-hdr">
+            ${renderModernDropdown('fieldName', fldOpts, item.fieldName, `updateItem:columns:${idx}:fieldName`, 'calc(100% - 28px)')}
+            <button class="pvt-card-close" onclick="PivotStateEngine.removeItem('columns', ${idx})" title="Remove field">✕</button>
+          </div>
+          <div class="pvt-card-body">
+            <div class="pvt-row-grid">
+              <div class="pvt-grp">
+                <label>Order</label>
+                ${renderModernDropdown('order', orderOpts, item.order, `updateItem:columns:${idx}:order`, '100%')}
+              </div>
+              <div class="pvt-grp">
+                <label>Sort by</label>
+                ${renderModernDropdown('sortBy', sortOpts, item.sortBy, `updateItem:columns:${idx}:sortBy`, '100%')}
+              </div>
+            </div>
+            <div class="pvt-chk-row">
+              <label class="pvt-chk">
+                <input type="checkbox" ${item.showTotals?'checked':''} onchange="PivotStateEngine.updateItem('columns', ${idx}, 'showTotals', this.checked)">
+                <span>Show totals</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      `;}).join('');
+    }
+  }
+
+  // 3. VALUES
+  let valsEl = document.getElementById('pvt-cards-values');
+  if (valsEl) {
+    if (!PivotStateEngine.state.values.length) {
+      valsEl.innerHTML = `<div class="pvt-empty-sec">No calculation fields added. Click Add above.</div>`;
+    } else {
+      let sumOpts = ['COUNTA', 'SUM', 'COUNT', 'AVERAGE', 'MAX', 'MIN'].map(o => ({ value: o, text: o }));
+      let showOpts = ['Default', '% of grand total', '% of column total', '% of row total'].map(o => ({ value: o, text: o }));
+      valsEl.innerHTML = PivotStateEngine.state.values.map((item, idx) => `
+        <div class="pvt-card">
+          <div class="pvt-card-hdr">
+            ${renderModernDropdown('fieldName', fldOpts, item.fieldName, `updateItem:values:${idx}:fieldName`, 'calc(100% - 28px)')}
+            <button class="pvt-card-close" onclick="PivotStateEngine.removeItem('values', ${idx})" title="Remove calculation">✕</button>
+          </div>
+          <div class="pvt-card-body">
+            <div class="pvt-row-grid">
+              <div class="pvt-grp">
+                <label>Summarize by</label>
+                ${renderModernDropdown('summarizeBy', sumOpts, item.summarizeBy, `updateItem:values:${idx}:summarizeBy`, '100%')}
+              </div>
+              <div class="pvt-grp">
+                <label>Show as</label>
+                ${renderModernDropdown('showAs', showOpts, item.showAs, `updateItem:values:${idx}:showAs`, '100%')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+  }
+
+  // 4. FILTERS
+  let fltsEl = document.getElementById('pvt-cards-filters');
+  if (fltsEl) {
+    if (!PivotStateEngine.state.filters.length) {
+      fltsEl.innerHTML = `<div class="pvt-empty-sec">No filter fields added. Click Add above.</div>`;
+    } else {
+      fltsEl.innerHTML = PivotStateEngine.state.filters.map((item, idx) => `
+        <div class="pvt-card" id="pvt-flt-card-${idx}">
+          <div class="pvt-card-hdr">
+            ${renderModernDropdown('fieldName', fldOpts, item.fieldName, `updateItem:filters:${idx}:fieldName`, 'calc(100% - 28px)')}
+            <button class="pvt-card-close" onclick="PivotStateEngine.removeItem('filters', ${idx})" title="Remove filter">✕</button>
+          </div>
+          <div class="pvt-card-body">
+            <div class="pvt-grp">
+              <label>Status</label>
+              <button class="pvt-sel pvt-filter-status-btn" style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:7px 10px;border-radius:8px;background:var(--bg2);border:1px solid var(--border);color:var(--t1);cursor:pointer;font-weight:600;box-shadow:var(--shadow-sm);transition:all .2s ease;" onclick="openPivotFilterDropdown(event, ${idx})">
+                <span>Showing ${item.itemCount} items</span>
+                <span style="font-size:10px;color:var(--t3);">▼</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+  }
+}
+
+function openPivotFilterDropdown(event, idx) {
+  if (event) event.stopPropagation();
+  let old = document.getElementById('pvtFilterModal');
+  if (old) old.remove();
+  
+  loadSavedPivotTables();
+  let item = PivotStateEngine.state.filters[idx];
+  if (!item) return;
+  
+  let btn = event.currentTarget || document.querySelector(`#pvt-flt-card-${idx} .pvt-filter-status-btn`);
+  let rect = btn ? btn.getBoundingClientRect() : { bottom: 200, left: 200, width: 340 };
+  
+  let uniqueVals = getUniqueFieldValues(item.fieldName);
+  let selectedSet = new Set(Array.isArray(item.selectedItems) ? item.selectedItems : uniqueVals);
+  
+  let mDiv = document.createElement('div');
+  mDiv.id = 'pvtFilterModal';
+  mDiv.style.position = 'absolute';
+  mDiv.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+  mDiv.style.left = (rect.left + window.scrollX) + 'px';
+  mDiv.style.width = Math.max(rect.width, 360) + 'px';
+  mDiv.style.zIndex = '9999';
+  mDiv.style.background = 'var(--bg2)';
+  mDiv.style.border = '1px solid var(--border)';
+  mDiv.style.borderRadius = '10px';
+  mDiv.style.boxShadow = '0 15px 35px rgba(0,0,0,0.25)';
+  mDiv.style.display = 'flex';
+  mDiv.style.flexDirection = 'column';
+  mDiv.style.maxHeight = '420px';
+  mDiv.style.overflow = 'hidden';
+  
+  let listHtml = uniqueVals.map((val, i) => `
+    <label class="pvt-fm-item" data-val-lower="${escapeHtml(val).toLowerCase()}" style="display:flex;align-items:center;gap:10px;padding:7px 12px;font-size:12.5px;cursor:pointer;border-radius:6px;user-select:none;border-bottom:1px solid rgba(0,0,0,0.03);margin:0;transition:var(--transition);" onclick="event.stopPropagation()">
+      <input type="checkbox" class="pvt-flt-modal-chk" data-val="${escapeHtml(val)}" style="accent-color:var(--ac);width:15px;height:15px;cursor:pointer;" ${selectedSet.has(val) ? 'checked' : ''} onchange="onPivotFilterModalChkChange(${idx})">
+      <span style="color:var(--t1);font-weight:500;word-break:break-word;">${escapeHtml(val)}</span>
+    </label>
+  `).join('');
+
+  mDiv.innerHTML = `
+    <!-- Header -->
+    <div style="border-bottom:1px solid var(--border);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;background:var(--bg3);flex-shrink:0;">
+      <div>
+        <strong style="font-size:13.5px;color:var(--t1);">🔍 ${escapeHtml(item.fieldName)}</strong>
+        <div style="font-size:11px;color:var(--t2);margin-top:1px;" id="pvt-modal-flt-cnt">Showing ${selectedSet.size} of ${uniqueVals.length} selected</div>
+      </div>
+      <button type="button" style="background:transparent;border:none;color:var(--t3);font-size:16px;cursor:pointer;font-weight:700;" onclick="closePivotFilterModal()">✕</button>
+    </div>
+    
+    <!-- Search Box -->
+    <div style="padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0;">
+      <div style="position:relative;display:flex;align-items:center;">
+        <span style="position:absolute;left:10px;color:var(--t3);font-size:13px;pointer-events:none;">🔍</span>
+        <input type="text" id="pvt-modal-search-inp" style="padding:7px 28px 7px 30px;font-size:12px;width:100%;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--t1);outline:none;" placeholder="Search items..." oninput="filterPivotModalList(${idx})">
+        <button type="button" id="pvt-modal-search-clear" style="position:absolute;right:8px;background:transparent;border:none;color:var(--t3);font-size:13px;cursor:pointer;display:none;padding:2px 6px;font-weight:700;" onclick="clearPivotModalSearch(${idx})" title="Clear search">✕</button>
+      </div>
+    </div>
+
+    <!-- Select All / Clear All -->
+    <div style="padding:6px 12px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <a href="javascript:void(0)" onclick="toggleAllPivotFilterModal(${idx}, true)" style="font-size:11px;color:var(--ac);text-decoration:none;font-weight:700;padding:3px 8px;border-radius:4px;background:var(--ac-bg);">✓ Select All <span id="pvt-modal-sel-label"></span></a>
+        <a href="javascript:void(0)" onclick="toggleAllPivotFilterModal(${idx}, false)" style="font-size:11px;color:var(--t2);text-decoration:none;font-weight:600;padding:3px 8px;border-radius:4px;background:var(--bg2);border:1px solid var(--border);">✕ Clear <span id="pvt-modal-clr-label"></span></a>
+      </div>
+      <span style="font-size:10.5px;color:var(--ac);font-weight:600;" id="pvt-modal-visible-cnt"></span>
+    </div>
+
+    <!-- Checkbox List -->
+    <div class="pvt-flt-modal-list" id="pvt-modal-list-container" style="padding:6px 10px;overflow-y:auto;flex:1;max-height:240px;display:flex;flex-direction:column;gap:2px;">
+      ${listHtml}
+    </div>
+
+    <!-- Footer -->
+    <div style="border-top:1px solid var(--border);padding:10px 14px;display:flex;justify-content:flex-end;gap:8px;background:var(--bg3);flex-shrink:0;">
+      <button type="button" class="btn-pvt-action secondary" style="padding:6px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;font-weight:600;cursor:pointer;font-size:11.5px;" onclick="closePivotFilterModal()">Cancel</button>
+      <button type="button" class="btn-pvt-action primary" style="padding:6px 16px;background:var(--ac);color:#fff;border:none;border-radius:6px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.15);cursor:pointer;font-size:12px;" onclick="applyPivotFilterModal(${idx})">✅ Apply Filter</button>
+    </div>
+  `;
+  document.body.appendChild(mDiv);
+  
+  let closeOnOutside = (e) => {
+    if (!mDiv.contains(e.target) && (!btn || !btn.contains(e.target))) {
+      closePivotFilterModal();
+      document.removeEventListener('click', closeOnOutside);
+    }
+  };
+  setTimeout(() => {
+    document.addEventListener('click', closeOnOutside);
+    let inp = document.getElementById('pvt-modal-search-inp');
+    if (inp) inp.focus();
+  }, 50);
+}
+
+function filterPivotModalList(idx) {
+  let inp = document.getElementById('pvt-modal-search-inp');
+  let clrBtn = document.getElementById('pvt-modal-search-clear');
+  let query = inp ? inp.value.trim().toLowerCase() : "";
+  if (clrBtn) clrBtn.style.display = query ? 'block' : 'none';
+  
+  let container = document.getElementById('pvt-modal-list-container');
+  if (!container) return;
+  
+  let items = container.querySelectorAll('.pvt-fm-item');
+  let visCount = 0;
+  items.forEach(item => {
+    let val = item.getAttribute('data-val-lower') || "";
+    if (!query || val.includes(query)) {
+      item.style.display = 'flex';
+      visCount++;
+    } else {
+      item.style.display = 'none';
+    }
+  });
+  
+  let selLabel = document.getElementById('pvt-modal-sel-label');
+  let clrLabel = document.getElementById('pvt-modal-clr-label');
+  let visCntEl = document.getElementById('pvt-modal-visible-cnt');
+  
+  if (query) {
+    if (selLabel) selLabel.textContent = `(${visCount})`;
+    if (clrLabel) clrLabel.textContent = `(${visCount})`;
+    if (visCntEl) visCntEl.textContent = `${visCount} matches`;
+  } else {
+    if (selLabel) selLabel.textContent = "";
+    if (clrLabel) clrLabel.textContent = "";
+    if (visCntEl) visCntEl.textContent = "";
+  }
+}
+
+function clearPivotModalSearch(idx) {
+  let inp = document.getElementById('pvt-modal-search-inp');
+  if (inp) { inp.value = ""; inp.focus(); }
+  filterPivotModalList(idx);
+}
+
+function closePivotFilterModal() {
+  let m = document.getElementById('pvtFilterModal');
+  if (m) m.remove();
+}
+
+function onPivotFilterModalChkChange(idx) {
+  let m = document.getElementById('pvtFilterModal');
+  if (!m) return;
+  let chks = m.querySelectorAll('.pvt-flt-modal-chk');
+  let cnt = 0;
+  chks.forEach(c => { if (c.checked) cnt++; });
+  let cntEl = document.getElementById('pvt-modal-flt-cnt');
+  if (cntEl) cntEl.textContent = `Showing ${cnt} of ${chks.length} items selected`;
+}
+
+function toggleAllPivotFilterModal(idx, selectAll) {
+  let container = document.getElementById('pvt-modal-list-container');
+  if (!container) return;
+  
+  let items = container.querySelectorAll('.pvt-fm-item');
+  items.forEach(item => {
+    if (item.style.display !== 'none') {
+      let chk = item.querySelector('.pvt-flt-modal-chk');
+      if (chk) chk.checked = selectAll;
+    }
+  });
+  
+  onPivotFilterModalChkChange(idx);
+}
+
+function applyPivotFilterModal(idx) {
+  let m = document.getElementById('pvtFilterModal');
+  if (!m) return;
+  let chks = m.querySelectorAll('.pvt-flt-modal-chk:checked');
+  let selected = [];
+  chks.forEach(c => {
+    let val = c.getAttribute('data-val');
+    if (val != null) selected.push(val);
+  });
+  
+  closePivotFilterModal();
+  
+  let item = PivotStateEngine.state.filters[idx];
+  if (item) {
+    item.selectedItems = selected;
+    item.itemCount = selected.length;
+  }
+  
+  let btn = document.querySelector(`#pvt-flt-card-${idx} .pvt-filter-status-btn span:first-child`);
+  if (btn) btn.textContent = `Showing ${selected.length} items`;
+  
+  renderPivotLivePreview();
+}
+
+/* ═══ LIVE PREVIEW & TABLE GRID RENDERER ═══ */
+function renderPivotLivePreview() {
+  let tableEl = document.getElementById('pvt-live-table');
+  if (!tableEl) return;
+  renderPivotTableGridToElement(tableEl, PivotStateEngine.getPayload(), -1);
+}
+
+/* ═══ DRILL-DOWN RECORD MATCHER & MODAL POPUP VIEWER ═══ */
+function getCachedDrillDownRecords(idx, targetRowKey, targetColKey) {
+  let cache = window.PIVOT_MATRIX_CACHE && window.PIVOT_MATRIX_CACHE[idx];
+  if (!cache) {
+    let config = idx === -1 ? PivotStateEngine.getPayload() : (SAVED_PIVOT_TABLES[idx] ? SAVED_PIVOT_TABLES[idx].config : null);
+    return getPivotDrillDownRecords(config, targetRowKey, targetColKey);
+  }
+  
+  let results = [];
+  let added = new Set();
+  
+  let matchKey = (k, target) => {
+    if (!target || target === 'Grand Total' || target === 'Total' || target === '') return true;
+    if (k === target) return true;
+    return String(k).trim().toLowerCase() === String(target).trim().toLowerCase();
+  };
+  
+  for (let rK of Object.keys(cache)) {
+    if (!matchKey(rK, targetRowKey)) continue;
+    for (let cK of Object.keys(cache[rK] || {})) {
+      if (!matchKey(cK, targetColKey)) continue;
+      let cellObj = cache[rK][cK];
+      if (!cellObj || !cellObj.records) continue;
+      for (let rec of cellObj.records) {
+        if (!added.has(rec)) {
+          added.add(rec);
+          results.push(rec);
+        }
+      }
+    }
+  }
+  
+  if (!results.length) {
+    let config = idx === -1 ? PivotStateEngine.getPayload() : (SAVED_PIVOT_TABLES[idx] ? SAVED_PIVOT_TABLES[idx].config : null);
+    return getPivotDrillDownRecords(config, targetRowKey, targetColKey);
+  }
+  return results;
+}
+
+function getPivotDrillDownRecords(config, targetRowKey, targetColKey) {
+  let pools = [];
+  if (F && F.length) pools.push(F);
+  if (D && D.rawData && D.rawData.length) pools.push(D.rawData);
+  if (window.RAW_DATA && window.RAW_DATA.length) pools.push(window.RAW_DATA);
+  
+  if (!pools.length || !config) return [];
+  
+  let matchFunc = (records) => {
+    let rowsCfg = config.rows || [];
+    let colsCfg = config.columns || [];
+    let activeFilters = config.filters || [];
+    
+    let filtered = records.filter(r => {
+      for (let flt of activeFilters) {
+        if (flt.selectedItems && Array.isArray(flt.selectedItems) && flt.selectedItems.length > 0) {
+          let cellVal = getRowVal(r, flt.fieldName);
+          let strVal = (cellVal != null && String(cellVal).trim() !== '') ? String(cellVal).trim() : '(Blank)';
+          let included = false;
+          for (let s of flt.selectedItems) {
+            if (String(s).trim().toLowerCase() === strVal.toLowerCase()) { included = true; break; }
+          }
+          if (!included) return false;
+        }
+      }
+      return true;
+    });
+    
+    return filtered.filter(r => {
+      if (targetRowKey && targetRowKey !== 'Grand Total' && targetRowKey !== 'Total' && targetRowKey !== '') {
+        let rKey = rowsCfg.map(cfg => {
+          let val = getRowVal(r, cfg.fieldName);
+          return (val != null && String(val).trim() !== '') ? String(val).trim() : '(Blank)';
+        }).join(' | ');
+        if (rKey.trim().toLowerCase() !== targetRowKey.trim().toLowerCase()) return false;
+      }
+      if (targetColKey && targetColKey !== 'Grand Total' && targetColKey !== 'Total' && targetColKey !== '') {
+        let cKey = colsCfg.length ? colsCfg.map(cfg => {
+          let val = getRowVal(r, cfg.fieldName);
+          return (val != null && String(val).trim() !== '') ? String(val).trim() : '(Blank)';
+        }).join(' | ') : 'Total';
+        if (cKey.trim().toLowerCase() !== targetColKey.trim().toLowerCase()) return false;
+      }
+      return true;
+    });
+  };
+  
+  for (let pool of pools) {
+    let res = matchFunc(pool);
+    if (res.length > 0) return res;
+  }
+  return [];
+}
+
+function openPivotDrillDownModal(idx, rKey, cKey) {
+  if (!SAVED_PIVOT_TABLES || !SAVED_PIVOT_TABLES.length) {
+    loadSavedPivotTables();
+  }
+  let index = Number(idx);
+  let records = getCachedDrillDownRecords(index, rKey, cKey);
+  let titleStr = [rKey, cKey].filter(x => x && x !== 'Total' && x !== 'Grand Total' && x !== '').join(' — ') || 'All Records / Grand Total';
+  
+  let old = document.getElementById('pvtDrillDownModal');
+  if (old) old.remove();
+  
+  let cols = D && D.headers && D.headers.length ? D.headers : (records[0] ? Object.keys(records[0]) : ['Col 1', 'Col 2']);
+  
+  let theadHtml = cols.map(col => `<th style="padding:10px 14px;background:var(--bg3);font-weight:700;color:var(--t1);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;">${escapeHtml(col)}</th>`).join('');
+  
+  let tbodyHtml = records.slice(0, 500).map(r => `
+    <tr style="transition:background-color .15s;">
+      ${cols.map(col => {
+        let val = getRowVal(r, col);
+        let str = val != null ? String(val).trim() : '';
+        return `<td style="padding:8px 14px;color:var(--t1);border:1px solid var(--border);white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(str)}</td>`;
+      }).join('')}
+    </tr>
+  `).join('');
+  
+  if (records.length > 500) {
+    tbodyHtml += `<tr><td colspan="${cols.length}" style="padding:12px;text-align:center;color:var(--t3);font-weight:600;background:var(--bg3);">Showing first 500 of ${records.length.toLocaleString()} records. Export CSV to view all records.</td></tr>`;
+  } else if (!records.length) {
+    tbodyHtml = `<tr><td colspan="${cols.length}" style="padding:24px;text-align:center;color:var(--t3);font-weight:600;">No underlying records found for this intersection.</td></tr>`;
+  }
+
+  let mDiv = document.createElement('div');
+  mDiv.id = 'pvtDrillDownModal';
+  mDiv.className = 'modal fade show';
+  mDiv.style.display = 'block';
+  mDiv.style.backgroundColor = 'rgba(0,0,0,0.6)';
+  mDiv.style.zIndex = '1070';
+  
+  mDiv.innerHTML = `
+    <div class="modal-dialog modal-xl modal-dialog-centered" style="max-width:96%;width:1300px;">
+      <div class="modal-content" style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;color:var(--t1);box-shadow:0 25px 45px -10px rgba(0,0,0,0.4);max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+        <!-- Header -->
+        <div class="modal-header" style="border-bottom:1px solid var(--border);padding:16px 22px;display:flex;justify-content:space-between;align-items:center;background:var(--bg3);flex-shrink:0;">
+          <div style="display:flex;align-items:center;gap:14px;">
+            <div style="width:40px;height:40px;border-radius:10px;background:var(--ac);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 10px rgba(0,0,0,0.2);">🔍</div>
+            <div>
+              <h5 class="modal-title" style="font-size:16.5px;font-weight:800;margin:0;color:var(--t1);">Drill-Down Data: <span style="color:var(--ac);">${escapeHtml(titleStr)}</span></h5>
+              <p style="font-size:12px;color:var(--t2);margin:2px 0 0 0;">Underlying records matching this exact pivot intersection (<strong style="color:var(--t1);">${records.length.toLocaleString()} tickets</strong>)</p>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button type="button" class="btn-pvt-action small primary" style="padding:7px 16px;font-size:12px;background:var(--ac);color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,0.15);" onclick="exportPivotDrillDownCSV(${idx}, '${escapeJs(rKey)}', '${escapeJs(cKey)}')">
+              📥 Export CSV (${records.length})
+            </button>
+            <button type="button" class="btn-close" style="filter:${S.dark ? 'invert(1)' : 'none'};margin-left:4px;" onclick="closePivotDrillDownModal()"></button>
+          </div>
+        </div>
+        
+        <!-- Table Container -->
+        <div class="modal-body" style="padding:0;overflow:auto;flex:1;max-height:calc(90vh - 140px);">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;text-align:left;line-height:1.4;font-family:'Inter',sans-serif;">
+            <thead><tr>${theadHtml}</tr></thead>
+            <tbody>${tbodyHtml}</tbody>
+          </table>
+        </div>
+
+        <!-- Footer -->
+        <div class="modal-footer" style="border-top:1px solid var(--border);padding:12px 22px;display:flex;justify-content:space-between;align-items:center;background:var(--bg3);flex-shrink:0;">
+          <span style="font-size:12px;color:var(--t2);font-weight:600;">Showing ${Math.min(500, records.length).toLocaleString()} of ${records.length.toLocaleString()} matching records</span>
+          <button type="button" class="btn-pvt-action secondary" style="padding:7px 18px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-weight:600;cursor:pointer;font-size:12.5px;" onclick="closePivotDrillDownModal()">Close</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(mDiv);
+}
+
+function closePivotDrillDownModal() {
+  let m = document.getElementById('pvtDrillDownModal');
+  if (m) m.remove();
+}
+
+function exportPivotDrillDownCSV(idx, rKey, cKey) {
+  let index = Number(idx);
+  let records = getCachedDrillDownRecords(index, rKey, cKey);
+  if (!records.length) { alert("No records to export."); return; }
+  
+  let cols = D && D.headers && D.headers.length ? D.headers : Object.keys(records[0] || {});
+  let csv = [cols.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')];
+  
+  records.forEach(r => {
+    csv.push(cols.map(c => {
+      let v = getRowVal(r, c);
+      let s = v != null ? String(v).replace(/"/g, '""') : '';
+      return `"${s}"`;
+    }).join(','));
+  });
+  
+  let blob = new Blob([csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  let cleanName = [rKey, cKey].filter(x => x && x !== 'Total' && x !== 'Grand Total' && x !== '').join('_') || 'All_Records';
+  a.download = `DrillDown_${cleanName.replace(/[^a-zA-Z0-9]/g, '_')}_${records.length}_records.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/* ═══ LIVE PREVIEW & TABLE GRID RENDERER ═══ */
+function renderPivotLivePreview() {
+  let tableEl = document.getElementById('pvt-live-table');
+  if (!tableEl) return;
+  renderPivotTableGridToElement(tableEl, PivotStateEngine.getPayload(), -1);
+}
+
+function renderPivotTableGridToElement(tableEl, payload, tableIndex = -1) {
+  if (!tableEl || !payload) return;
+  let rowsCfg = payload.rows || [];
+  let colsCfg = payload.columns || [];
+  let valsCfg = payload.values || [];
+  
+  if (!rowsCfg.length || !valsCfg.length) {
+    tableEl.innerHTML = `<tr><td style="padding:24px;text-align:center;color:var(--t3);font-weight:600;">Add at least one Row field and one Value field to view this pivot table.</td></tr>`;
+    return;
+  }
+  
+  let pool = F && F.length ? F : (D && D.rawData ? D.rawData : []);
+  if (!pool.length) {
+    tableEl.innerHTML = `<tr><td style="padding:24px;text-align:center;color:var(--t3);font-weight:600;">No records available to aggregate.</td></tr>`;
+    return;
+  }
+  
+  let getColIdx = (name) => {
+    if (!D || !D.headers || !name) return -1;
+    let exact = D.headers.indexOf(name);
+    if (exact !== -1) return exact;
+    let nLower = String(name).trim().toLowerCase();
+    for (let i = 0; i < D.headers.length; i++) {
+      if (String(D.headers[i]).trim().toLowerCase() === nLower) return i;
+    }
+    return -1;
+  };
+  
+  let activeFilters = payload.filters || [];
+  let filteredPool = pool.filter(r => {
+    for (let flt of activeFilters) {
+      if (flt.selectedItems && Array.isArray(flt.selectedItems)) {
+        let cellVal = getRowVal(r, flt.fieldName);
+        let strVal = (cellVal != null && String(cellVal).trim() !== '') ? String(cellVal).trim() : '(Blank)';
+        if (!flt.selectedItems.includes(strVal)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  });
+
+  if (!filteredPool.length) {
+    tableEl.innerHTML = `<tr><td style="padding:24px;text-align:center;color:var(--t3);font-weight:600;">No matching records found for the active filter selections. Click 'Status' in Filters above to select items.</td></tr>`;
+    return;
+  }
+  
+  let rowKeys = new Set();
+  let colKeys = new Set();
+  let matrix = {};
+  
+  filteredPool.forEach(r => {
+    let rKey = rowsCfg.map(cfg => {
+      let val = getRowVal(r, cfg.fieldName);
+      return (val != null && String(val).trim() !== '') ? String(val).trim() : '(Blank)';
+    }).join(' | ');
+    
+    let cKey = colsCfg.length ? colsCfg.map(cfg => {
+      let val = getRowVal(r, cfg.fieldName);
+      return (val != null && String(val).trim() !== '') ? String(val).trim() : '(Blank)';
+    }).join(' | ') : 'Total';
+    
+    rowKeys.add(rKey);
+    colKeys.add(cKey);
+    
+    if (!matrix[rKey]) matrix[rKey] = {};
+    if (!matrix[rKey][cKey]) matrix[rKey][cKey] = { records: [], vals: valsCfg.map(() => []) };
+    
+    matrix[rKey][cKey].records.push(r);
+    valsCfg.forEach((cfg, i) => {
+      let val = getRowVal(r, cfg.fieldName);
+      matrix[rKey][cKey].vals[i].push(val != null && val !== '' ? val : 1);
+    });
+  });
+  
+  // Save matrix to global cache for 100% instant drilldown
+  window.PIVOT_MATRIX_CACHE = window.PIVOT_MATRIX_CACHE || {};
+  window.PIVOT_MATRIX_CACHE[tableIndex] = matrix;
+  
+  let sortedRows = Array.from(rowKeys).sort((a, b) => compareChronological(a, b, rowsCfg[0] ? rowsCfg[0].order : 'Ascending'));
+  let sortedCols = Array.from(colKeys).sort((a, b) => compareChronological(a, b, colsCfg[0] ? colsCfg[0].order : 'Ascending'));
+  
+  // Cap dimensions to keep browser UI fast and responsive without hanging
+  let maxRows = tableIndex === -1 ? 80 : 300;
+  let maxCols = tableIndex === -1 ? 25 : 60;
+  let displayRows = sortedRows.slice(0, maxRows);
+  let displayCols = sortedCols.slice(0, maxCols);
+  let isCapped = sortedRows.length > maxRows || sortedCols.length > maxCols;
+  
+  let calcAgg = (arr, summarizeBy) => {
+    if (!arr || !arr.length) return 0;
+    let sBy = (summarizeBy || 'COUNTA').toUpperCase();
+    if (sBy === 'COUNTA' || sBy === 'COUNT' || sBy.indexOf('COUN') === 0) return arr.length;
+    let nums = arr.map(v => Number(v)).filter(n => !isNaN(n));
+    if (!nums.length) return 0;
+    if (sBy === 'SUM') return nums.reduce((a, b) => a + b, 0);
+    if (sBy === 'AVERAGE' || sBy === 'AVG') return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 10) / 10;
+    if (sBy === 'MAX') return Math.max(...nums);
+    if (sBy === 'MIN') return Math.min(...nums);
+    return arr.length;
+  };
+  
+  let thead = `<thead><tr>`;
+  thead += `<th style="padding:6px 10px;background:var(--bg3);font-weight:700;color:var(--t1);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;min-width:180px;text-align:left;">${rowsCfg.map(r => escapeHtml(r.fieldName)).join(' | ')}</th>`;
+  displayCols.forEach(cKey => {
+    if (valsCfg.length === 1) {
+      thead += `<th class="pvt-cell-clickable" onclick="openPivotDrillDownModal(${tableIndex}, '', '${escapeJs(cKey)}')" title="Click to view underlying records for ${escapeHtml(cKey)}" style="padding:6px 10px;background:var(--bg3);font-weight:700;color:var(--t1);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;min-width:85px;width:95px;text-align:right;">${escapeHtml(cKey)}</th>`;
+    } else {
+      valsCfg.forEach(v => {
+        thead += `<th class="pvt-cell-clickable" onclick="openPivotDrillDownModal(${tableIndex}, '', '${escapeJs(cKey)}')" title="Click to view underlying records for ${escapeHtml(cKey)}" style="padding:6px 10px;background:var(--bg3);font-weight:700;color:var(--t1);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;min-width:85px;width:95px;text-align:right;">${escapeHtml(cKey)} - ${escapeHtml(v.fieldName)}</th>`;
+      });
+    }
+  });
+  if (sortedCols.length > 1 || colsCfg.length > 0) {
+    if (valsCfg.length === 1) {
+      thead += `<th class="pvt-cell-clickable" onclick="openPivotDrillDownModal(${tableIndex}, '', 'Grand Total')" title="Click to view all records" style="padding:6px 10px;font-weight:700;background:var(--ac-bg);color:var(--ac);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;min-width:85px;width:95px;text-align:right;">Grand Total</th>`;
+    } else {
+      valsCfg.forEach(v => {
+        thead += `<th class="pvt-cell-clickable" onclick="openPivotDrillDownModal(${tableIndex}, '', 'Grand Total')" title="Click to view all records" style="padding:6px 10px;font-weight:700;background:var(--ac-bg);color:var(--ac);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;min-width:85px;width:95px;text-align:right;">Grand Total - ${escapeHtml(v.fieldName)}</th>`;
+      });
+    }
+  }
+  thead += `</tr></thead>`;
+  
+  let tbody = `<tbody>`;
+  let colTotals = sortedCols.map(() => valsCfg.map(() => []));
+  let grandTotals = valsCfg.map(() => []);
+  
+  displayRows.forEach(rKey => {
+    tbody += `<tr><td class="pvt-cell-clickable" onclick="openPivotDrillDownModal(${tableIndex}, '${escapeJs(rKey)}', '')" title="Click to view underlying records for ${escapeHtml(rKey)}" style="padding:5px 10px;font-weight:600;color:var(--t1);border:1px solid var(--border);background:var(--bg);white-space:nowrap;min-width:180px;max-width:340px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(rKey)}</td>`;
+    let rowTotals = valsCfg.map(() => []);
+    
+    displayCols.forEach((cKey, cIdx) => {
+      valsCfg.forEach((v, vIdx) => {
+        let obj = (matrix[rKey] && matrix[rKey][cKey]) ? matrix[rKey][cKey] : { records: [], vals: [[]] };
+        let arr = obj.vals && obj.vals[vIdx] ? obj.vals[vIdx] : [];
+        let val = calcAgg(arr, v.summarizeBy);
+        tbody += `<td class="pvt-cell-clickable" onclick="openPivotDrillDownModal(${tableIndex}, '${escapeJs(rKey)}', '${escapeJs(cKey)}')" title="Click to view underlying tickets (${val})" style="padding:5px 10px;color:var(--t1);border:1px solid var(--border);min-width:85px;width:95px;text-align:right;font-variant-numeric:tabular-nums;">${val.toLocaleString()}</td>`;
+        if (arr && arr.length) {
+          colTotals[cIdx][vIdx].push(...arr);
+          rowTotals[vIdx].push(...arr);
+          grandTotals[vIdx].push(...arr);
+        }
+      });
+    });
+    
+    if (sortedCols.length > 1 || colsCfg.length > 0) {
+      valsCfg.forEach((v, vIdx) => {
+        let rTot = calcAgg(rowTotals[vIdx], v.summarizeBy);
+        tbody += `<td class="pvt-cell-clickable" onclick="openPivotDrillDownModal(${tableIndex}, '${escapeJs(rKey)}', 'Grand Total')" title="Click to view row total tickets (${rTot})" style="padding:5px 10px;font-weight:700;background:var(--ac-bg);color:var(--ac);border:1px solid var(--border);min-width:85px;width:95px;text-align:right;font-variant-numeric:tabular-nums;">${rTot.toLocaleString()}</td>`;
+      });
+    }
+    tbody += `</tr>`;
+  });
+  
+  if (rowsCfg.some(r => r.showTotals !== false)) {
+    tbody += `<tr class="gt-row" style="background:var(--bg3);font-weight:800;"><td class="pvt-cell-clickable" onclick="openPivotDrillDownModal(${tableIndex}, 'Grand Total', '')" title="Click to view column total tickets" style="padding:6px 10px;color:var(--t1);border:1px solid var(--border);white-space:nowrap;min-width:180px;">Grand Total</td>`;
+    displayCols.forEach((cKey, cIdx) => {
+      valsCfg.forEach((v, vIdx) => {
+        let cTot = calcAgg(colTotals[cIdx][vIdx], v.summarizeBy);
+        tbody += `<td class="pvt-cell-clickable" onclick="openPivotDrillDownModal(${tableIndex}, 'Grand Total', '${escapeJs(cKey)}')" title="Click to view column total tickets (${cTot})" style="padding:6px 10px;color:var(--t1);border:1px solid var(--border);min-width:85px;width:95px;text-align:right;font-variant-numeric:tabular-nums;">${cTot.toLocaleString()}</td>`;
+      });
+    });
+    if (sortedCols.length > 1 || colsCfg.length > 0) {
+      valsCfg.forEach((v, vIdx) => {
+        let gTot = calcAgg(grandTotals[vIdx], v.summarizeBy);
+        tbody += `<td class="pvt-cell-clickable" onclick="openPivotDrillDownModal(${tableIndex}, 'Grand Total', 'Grand Total')" title="Click to view all ${gTot} tickets" style="padding:6px 10px;background:var(--ac-bg);color:var(--ac);border:1px solid var(--border);min-width:85px;width:95px;text-align:right;font-variant-numeric:tabular-nums;">${gTot.toLocaleString()}</td>`;
+      });
+    }
+    tbody += `</tr>`;
+  }
+  if (isCapped) {
+    let colSpan = (displayCols.length * valsCfg.length) + 2;
+    tbody += `<tr><td colspan="${colSpan}" style="padding:10px;text-align:center;color:var(--t3);font-size:11.5px;background:var(--bg3);font-weight:600;">⚠️ Showing fast preview of first ${displayRows.length} rows × ${displayCols.length} columns. Save table or export CSV to view all ${sortedRows.length} rows.</td></tr>`;
+  }
+  tbody += `</tbody>`;
+  tableEl.innerHTML = thead + tbody;
+}
+
+function toggleJsonPayloadView() {
+  let wrap = document.getElementById('pvt-json-payload-wrap');
+  if (!wrap) return;
+  let isHidden = wrap.style.display === 'none';
+  wrap.style.display = isHidden ? 'block' : 'none';
+  if (isHidden) {
+    document.getElementById('pvt-json-code').textContent = JSON.stringify(PivotStateEngine.getPayload(), null, 2);
+  }
+}
+
+function copyJsonPayload() {
+  let text = JSON.stringify(PivotStateEngine.getPayload(), null, 2);
+  navigator.clipboard.writeText(text).then(() => {
+    let btn = document.querySelector('#pvt-json-payload-wrap button');
+    if (btn) {
+      let old = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = old, 1500);
+    }
+  });
+}
+/* ═══════════ END EXCEL / GOOGLE SHEETS STYLE PIVOT TABLE BUILDER ═══════════ */
+
+/* ═══════════ FILTER MODE (Sheet-like) ═══════════ */
+function toggleFilterMode(){
+  FILTER_MODE=!FILTER_MODE;
+  if(FILTER_MODE){
+    if (!D || !D.rawData || D.rawData.length === 0) {
+      alert('Please select a tab with data first before using Create Graph.');
+      FILTER_MODE = false;
+      let b = document.getElementById("fltTab"); if(b) b.classList.remove('on');
+      return;
+    }
+    resetAllAnalyticalModes('fltTab');
+    let b = document.getElementById("fltTab"); if(b) b.classList.add('on');
+    FILTER_SELECTIONS={};
+  } else {
+    let b = document.getElementById("fltTab"); if(b) b.classList.remove('on');
+    let r = document.querySelector('.tp-b[data-r="'+range+'"]'); if(r) r.classList.add('on');
+  }
+  toggleToolsTray(false);
+  applyFilter();
+}
+
+function getFilterableColumns(){
+  if(!D.headers)return [];
+  let skip=new Set();
+  if(dateCol)skip.add(dateCol);
+  D.headers.forEach(h=>{
+    let l=h.toLowerCase();
+    if(l.includes('id')||l.includes('description')||l.includes('note')||l.includes('comment')||l.includes('duration')||l.includes('time')||l.includes('date')||l.includes('created')||l.includes('resolved')||l.includes('timestamp'))skip.add(h);
+  });
+  return D.headers.filter(h=>!skip.has(h));
+}
+
+function getColumnUniqueValues(col){
+  let mp={};
+  let pool=getActiveTicketPool();
+  pool.forEach(r=>{
+    let v=r[col];
+    let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';
+    mp[k]=(mp[k]||0)+1;
+  });
+  return Object.keys(mp).sort((a,b)=>mp[b]-mp[a]).map(k=>({val:k,count:mp[k]}));
+}
+
+function renderFilterDashboard(){
+  let area=document.getElementById("main");
+  area.innerHTML=renderDashboardBackToolbar();
+  killCH();CHART_META={};
+  
+  // Check if data is loaded
+  if (!D || !D.rawData || D.rawData.length===0) {
+    area.innerHTML+= '<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-inbox"/></svg></div><div class="e-t">No data available</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Please select a tab with data first.</p></div>';
+    hideL();
+    return;
+  }
+  
+  console.log('Rendering filter dashboard with', D.rawData.length, 'rows');
+
+  let cols=getFilterableColumns();
+  if(!cols.length){area.innerHTML += '<div class="empty-s"><div class="e-t">No filterable columns found.</div></div>';return;}
+
+  // Build filter bar (stays stable — not re-rendered on checkbox change)
+  let barDiv=document.createElement('div');
+  barDiv.className='filter-bar';
+  barDiv.id='filterBar';
+
+  let titleHtml='<div class="filter-bar-title"><svg class="ic"><use href="#i-grid"/></svg> Filter View — Select values to create graph <span style="font-size:10px;font-weight:500;color:var(--t3);margin-left:auto;">Range: '+cap(range)+'</span></div>';
+
+  let colsHtml=cols.map(col=>{
+    let selCount=(FILTER_SELECTIONS[col]||[]).length;
+    let hasSel=selCount>0;
+    return `<div class="filter-col-wrap" id="fcw_${hashKey(col)}">
+      <button class="filter-col-btn ${hasSel?'has-sel':''}" onclick="toggleFilterDropdown('${escapeJs(col)}')">
+        <span>${escapeHtml(col.length>22?col.substring(0,20)+'…':col)}</span>
+        ${hasSel?'<span class="sel-count">'+selCount+'</span>':'<svg class="ic ic-sm" style="opacity:.5;"><use href="#i-search"/></svg>'}
+      </button>
+      <div class="filter-dropdown" id="fdd_${hashKey(col)}"></div>
+    </div>`;
+  }).join('');
+
+  let summaryHtml=buildFilterActiveSummaryHtml();
+  
+  // Add Run Filter button and editing UI
+  let isEditing = !!editingChartId;
+  let btnHtml = '<div style="width:100%;display:flex;justify-content:center;gap:12px;margin-top:14px;flex-wrap:wrap;">';
+  btnHtml += '<button onclick="runFilterNow()" class="btn-create-preview">';
+  btnHtml += '<svg class="ic" style="width:16px;height:16px;"><use href="#i-check"/></svg>';
+  btnHtml += isEditing ? 'Create & Preview' : 'Create & Preview';
+  btnHtml += '</button>';
+  if (isEditing) {
+    btnHtml += '<button onclick="cancelEditing()" class="btn-cancel-edit">';
+    btnHtml += '<svg style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Cancel Edit</button>';
+  } else {
+    btnHtml += '<button onclick="returnToHomePageFromGraph()" class="btn-cancel-edit">';
+    btnHtml += '<svg style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg> Back to Dashboard </button>';
+  }
+  btnHtml += '</div>';
+  
+  // Editing banner
+  let editBannerHtml = '';
+  if (isEditing) {
+    let editChart = SAVED_CHARTS.find(c=>c.id===editingChartId);
+    editBannerHtml = '<div style="width:100%;padding:10px 16px;background:rgba(0,0,0,0.08);border:1px solid var(--ac);border-radius:8px;font-size:12px;color:var(--t1);display:flex;align-items:center;gap:8px;margin-bottom:8px;">';
+    editBannerHtml += '<svg style="width:16px;height:16px;fill:none;stroke:var(--accent);stroke-width:2;flex-shrink:0;" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    editBannerHtml += '<span style="font-weight:600;">Editing:</span> <span style="color:var(--accent);font-weight:700;">' + escapeHtml(editChart ? editChart.title : 'Chart') + '</span>';
+    editBannerHtml += '<span style="color:var(--t3);font-size:11px;">— Modify filters below, then click "Run &amp; Preview" to see changes. Use "Add to Dashboard" to save.</span>';
+    editBannerHtml += '</div>';
+  }
+  
+  barDiv.innerHTML=editBannerHtml+titleHtml+colsHtml+summaryHtml+btnHtml;
+  area.appendChild(barDiv);
+
+  // Charts container — only rendered when Run Filter is clicked
+  let chartsArea=document.createElement('div');
+  chartsArea.id='filterChartsArea';
+  chartsArea.className='filter-preview-grid';
+  chartsArea.style.cssText='display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px;row-gap:20px;width:100%;align-items:stretch;';
+  area.appendChild(chartsArea);
+  // Don't auto-render — wait for Run Filter button
+}
+
+function buildFilterActiveSummaryHtml(){
+  // Group filters by column name
+  let groupedFilters = {};
+  Object.keys(FILTER_SELECTIONS).forEach(col => {
+    let vals = FILTER_SELECTIONS[col];
+    if(vals && vals.length > 0) {
+      groupedFilters[col] = vals;
+    }
+  });
+  
+  if(Object.keys(groupedFilters).length === 0) return '';
+  
+  let html = '<div class="filter-active-summary" id="filterActiveSummary" style="display:block;width:100%;">';
+  
+  // Create one line per column with comma-separated values
+  Object.keys(groupedFilters).forEach(col => {
+    let vals = groupedFilters[col];
+    let displayVals = vals.join(', ');
+    
+    html += `<div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
+    html += `<strong style="color:var(--t1);font-size:12px;white-space:nowrap;">${escapeHtml(col)}:</strong>`;
+    html += `<span style="color:var(--accent);font-size:12px;font-weight:600;">${escapeHtml(displayVals)}</span>`;
+    html += `<span class="chip-x" onclick="clearColumnFilter('${escapeJs(col)}')" style="cursor:pointer;font-size:16px;font-weight:800;color:var(--red);opacity:0.7;margin-left:4px;">&times;</span>`;
+    html += `</div>`;
+  });
+  
+  html += `<div style="margin-top:12px;"><span class="filter-clear-all" onclick="clearAllFilters()" style="padding:6px 12px;border-radius:6px;background:var(--red);color:white;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">&times; Clear All</span></div>`;
+  html += '</div>';
+  
+  return html;
+}
+
+function clearColumnFilter(col) {
+  delete FILTER_SELECTIONS[col];
+  updateFilterActiveChips();
+}
+
+/* Lightweight: only re-renders charts below the filter bar — dropdown stays open */
+let FILTER_RENDER_TIMER = null;
+function renderFilterChartsOnly(){
+  // Debounce: wait 150ms after last change before re-rendering
+  if (FILTER_RENDER_TIMER) clearTimeout(FILTER_RENDER_TIMER);
+  FILTER_RENDER_TIMER = setTimeout(() => {
+    doRenderFilterChartsOnly();
+    FILTER_RENDER_TIMER = null;
+  }, 150);
+}
+
+
+function runFilterNow() {
+  doRenderFilterChartsOnly();
+}
+
+function cancelEditing() {
+  FILTER_SELECTIONS = {};
+  returnToHomePageFromGraph();
+}
+
+function doRenderFilterChartsOnly(){
+  let chartsArea=document.getElementById('filterChartsArea');
+  if(!chartsArea)return;
+  chartsArea.innerHTML='';
+  chartsArea.style.gridTemplateColumns = '1fr';
+  // Destroy old charts
+  chartsArea.querySelectorAll('canvas').forEach(c=>{let inst=Chart.getChart(c);if(inst)inst.destroy();});
+  Object.keys(CHART_META).forEach(k=>{if(k.startsWith('flt_'))delete CHART_META[k];});
+  Object.keys(CH).forEach(k=>{if(k.startsWith('fb')){try{CH[k].destroy();}catch(e){}delete CH[k];}});
+  chartsArea.innerHTML='';
+
+  let cols=getFilterableColumns();
+  let filteredRows=getFilterAppliedRows();
+  let activeFilters=Object.keys(FILTER_SELECTIONS).filter(c=>FILTER_SELECTIONS[c]&&FILTER_SELECTIONS[c].length>0);
+
+  if(activeFilters.length===0){
+    chartsArea.innerHTML=`<div class="empty-s" style="flex:1 1 100%;"><div class="e-i"><svg class="ic"><use href="#i-info"/></svg></div><div class="e-t">Use the filter dropdowns above to select values</div><p style="font-size:11.5px;color:var(--t3);margin-top:6px;">Click any column filter button, check the values you want, and charts will appear.</p></div>`;
+    return;
+  }
+  if(filteredRows.length===0){
+    chartsArea.innerHTML=`<div class="empty-s" style="flex:1 1 100%;"><div class="e-i"><svg class="ic"><use href="#i-inbox"/></svg></div><div class="e-t">No records match the selected filters</div></div>`;
+    return;
+  }
+
+  // Summary line
+  let sumEl=document.createElement('div');
+  sumEl.className='dr-i';sumEl.style.cssText='grid-column:1 / -1;padding:0;';
+  sumEl.innerHTML=`<span class="dr-b"><svg class="ic ic-sm"><use href="#i-grid"/></svg> Filtered: ${filteredRows.length.toLocaleString()} of ${(F.length||(D.rawData||[]).length).toLocaleString()} records (Range: ${cap(range)})</span>`;
+  chartsArea.appendChild(sumEl);
+
+  let colsToChart=getFilterChartColumns(cols);
+  chartsArea.style.gridTemplateColumns = colsToChart.length > 1 ? 'repeat(2, minmax(0, 1fr))' : '1fr';
+  colsToChart.forEach((col,idx)=>renderFilterCategoryCardInto(chartsArea,col,idx,filteredRows));
+  let cards=chartsArea.querySelectorAll('.cd');
+  cards.forEach(card=>{
+    card.style.width='100%';
+    card.style.maxWidth='100%';
+    card.style.minWidth='0';
+    card.style.gridColumn='auto';
+  });
+  if(cards.length===1){
+    cards[0].style.gridColumn='1 / -1';
+  }else if(cards.length>1 && (cards.length % 2)===1){
+    cards[cards.length-1].style.gridColumn='1 / -1';
+  }
+}
+
+/* Update active chips + button badges without touching dropdowns */
+function updateFilterActiveChips(){
+  let bar=document.getElementById('filterBar');
+  if(!bar)return;
+  let old=bar.querySelector('.filter-active-summary');
+  if(old)old.remove();
+  let html=buildFilterActiveSummaryHtml();
+  if(html)bar.insertAdjacentHTML('beforeend',html);
+  // Update column button badges
+  let cols=getFilterableColumns();
+  cols.forEach(col=>{
+    let selCount=(FILTER_SELECTIONS[col]||[]).length;
+    let btn=bar.querySelector('#fcw_'+hashKey(col)+' .filter-col-btn');
+    if(!btn)return;
+    btn.classList.toggle('has-sel',selCount>0);
+    let rightEl=btn.querySelector('.sel-count, .ic-sm');
+    if(selCount>0){
+      if(rightEl&&rightEl.classList.contains('sel-count')){rightEl.textContent=selCount;}
+      else{let sp=document.createElement('span');sp.className='sel-count';sp.textContent=selCount;if(rightEl)rightEl.replaceWith(sp);else btn.appendChild(sp);}
+    }else{
+      if(rightEl&&rightEl.classList.contains('sel-count')){
+        let svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+        svg.setAttribute('class','ic ic-sm');svg.style.opacity='.5';
+        svg.innerHTML='<use href="#i-search"/>';rightEl.replaceWith(svg);
+      }
+    }
+  });
+}
+
+function getFilterChartColumns(allCols){
+  // Prioritize columns that have active filter selections, then others
+  let withSel=Object.keys(FILTER_SELECTIONS).filter(c=>FILTER_SELECTIONS[c]&&FILTER_SELECTIONS[c].length>0);
+  let withoutSel=allCols.filter(c=>!withSel.includes(c));
+  // Show selected columns first, then up to 6 more
+  let result=[...withSel];
+  withoutSel.slice(0,6).forEach(c=>{if(result.indexOf(c)<0)result.push(c);});
+  return result;
+}
+
+function getFilterAppliedRows(){
+  let pool=getActiveTicketPool();
+  let activeFilters=Object.keys(FILTER_SELECTIONS).filter(c=>FILTER_SELECTIONS[c]&&FILTER_SELECTIONS[c].length>0);
+  if(!activeFilters.length)return pool.slice();
+  return pool.filter(r=>{
+    // For each column with filters, check if row matches ANY selected value (OR logic within column)
+    // But across columns, use AND logic (row must match all column filters)
+    return activeFilters.every(col=>{
+      let selVals=FILTER_SELECTIONS[col];
+      let v=r[col];
+      let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';
+      // OR logic: row matches if its value is in the selected values for this column
+      return selVals.includes(k);
+    });
+  });
+}
+
+function toggleFilterDropdown(col){
+  let ddId='fdd_'+hashKey(col);
+  let dd=document.getElementById(ddId);
+  if(!dd)return;
+
+  // Close other dropdowns
+  document.querySelectorAll('.filter-dropdown.open').forEach(el=>{
+    if(el.id!==ddId)el.classList.remove('open');
+  });
+
+  if(dd.classList.contains('open')){
+    dd.classList.remove('open');
+    FILTER_OPEN_DROPDOWN=null;
+    return;
+  }
+
+  // Build dropdown content - store all values globally for this column
+  let vals=getColumnUniqueValues(col);
+  let selected=FILTER_SELECTIONS[col]||[];
+  
+  // Store all values globally so Select All/Clear work on ALL items, not just visible
+  if(!window.FILTER_ALL_VALUES) window.FILTER_ALL_VALUES = {};
+  window.FILTER_ALL_VALUES[col] = vals;
+
+  let searchHtml=`<input type="text" class="filter-dd-search" placeholder="Search..." oninput="filterDDSearch('${escapeJs(col)}',this.value)">`;
+  let actionsHtml=`<div class="filter-dd-actions">
+    <button onclick="filterDDSelectAll('${escapeJs(col)}')">Select All</button>
+    <button onclick="filterDDClearAll('${escapeJs(col)}')">Clear</button>
+  </div>`;
+  let itemsHtml=vals.map(v=>{
+    let checked=selected.includes(v.val)?'checked':'';
+    return `<label class="filter-dd-item" style="cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none;margin:0;padding:6px 10px;border-radius:6px;transition:var(--transition);" data-val="${escapeHtml(v.val.toLowerCase())}" data-original-val="${escapeHtml(v.val)}" onclick="event.stopPropagation()">
+      <input type="checkbox" style="accent-color:var(--ac);cursor:pointer;width:15px;height:15px;" ${checked} onchange="onFilterDDCheck('${escapeJs(col)}','${escapeJs(v.val)}',this.checked)">
+      <span style="flex:1;color:var(--t1);font-weight:500;">${escapeHtml(v.val.length>30?v.val.substring(0,28)+'…':v.val)}</span>
+      <span class="dd-cnt" style="background:var(--bg3);color:var(--t2);padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;">${v.count}</span>
+    </label>`;
+  }).join('');
+
+  dd.innerHTML=searchHtml+actionsHtml+`<div class="filter-dd-items" id="fddi_${hashKey(col)}">${itemsHtml}</div>`;
+  dd.classList.add('open');
+  FILTER_OPEN_DROPDOWN=col;
+
+  // Close on outside click
+  setTimeout(()=>{
+    document.addEventListener('click',function closeDD(e){
+      let wrap=document.getElementById('fcw_'+hashKey(col));
+      if(wrap&&!wrap.contains(e.target)){
+        dd.classList.remove('open');
+        FILTER_OPEN_DROPDOWN=null;
+        document.removeEventListener('click',closeDD);
+      }
+    });
+  },100);
+}
+
+function filterDDSearch(col,query){
+  let q=query.toLowerCase().trim();
+  let container=document.getElementById('fddi_'+hashKey(col));
+  if(!container)return;
+  container.querySelectorAll('.filter-dd-item').forEach(item=>{
+    let val=item.getAttribute('data-val')||'';
+    item.style.display=val.includes(q)?'':'none';
+  });
+}
+
+function filterDDSelectAll(col){
+  // Select only VISIBLE (filtered) items, not all items
+  let container=document.getElementById('fddi_'+hashKey(col));
+  if(!container) return;
+  
+  let visibleVals = [];
+  container.querySelectorAll('.filter-dd-item').forEach(item=>{
+    // Only select items that are currently visible (not hidden by search)
+    if(item.style.display !== 'none') {
+      let val = item.getAttribute('data-original-val');
+      if(val) visibleVals.push(val);
+      // Check the checkbox
+      let cb = item.querySelector('input[type="checkbox"]');
+      if(cb) cb.checked = true;
+    }
+  });
+  
+  // Update FILTER_SELECTIONS with only visible items
+  FILTER_SELECTIONS[col] = visibleVals;
+  
+  updateFilterActiveChips();
+  // Don't auto-render - wait for Run Filter button
+}
+
+function filterDDClearAll(col){
+  // Clear only VISIBLE (filtered) items, not all items
+  let container=document.getElementById('fddi_'+hashKey(col));
+  if(!container) {
+    delete FILTER_SELECTIONS[col];
+    updateFilterActiveChips();
+    return;
+  }
+  
+  let visibleVals = [];
+  container.querySelectorAll('.filter-dd-item').forEach(item=>{
+    // Only clear items that are currently visible (not hidden by search)
+    if(item.style.display !== 'none') {
+      let val = item.getAttribute('data-original-val');
+      if(val) visibleVals.push(val);
+      // Uncheck the checkbox
+      let cb = item.querySelector('input[type="checkbox"]');
+      if(cb) cb.checked = false;
+    }
+  });
+  
+  // Remove only visible items from FILTER_SELECTIONS
+  if(FILTER_SELECTIONS[col]) {
+    FILTER_SELECTIONS[col] = FILTER_SELECTIONS[col].filter(v => !visibleVals.includes(v));
+    if(FILTER_SELECTIONS[col].length === 0) {
+      delete FILTER_SELECTIONS[col];
+    }
+  }
+  
+  updateFilterActiveChips();
+  // Don't auto-render - wait for Run Filter button
+}
+
+function onFilterDDCheck(col,val,checked){
+  if(!FILTER_SELECTIONS[col])FILTER_SELECTIONS[col]=[];
+  if(checked){
+    if(!FILTER_SELECTIONS[col].includes(val))FILTER_SELECTIONS[col].push(val);
+  }else{
+    FILTER_SELECTIONS[col]=FILTER_SELECTIONS[col].filter(v=>v!==val);
+    if(!FILTER_SELECTIONS[col].length)delete FILTER_SELECTIONS[col];
+  }
+  // Only update chips, don't render charts - wait for Run Filter button
+  updateFilterActiveChips();
+}
+
+function removeFilterVal(col,val){
+  if(FILTER_SELECTIONS[col]){
+    FILTER_SELECTIONS[col]=FILTER_SELECTIONS[col].filter(v=>v!==val);
+    if(!FILTER_SELECTIONS[col].length)delete FILTER_SELECTIONS[col];
+  }
+  updateFilterActiveChips();
+  // Don't auto-render - wait for Run Filter button
+}
+
+function clearAllFilters(){
+  FILTER_SELECTIONS={};
+  updateFilterActiveChips();
+  // Don't auto-render - wait for Run Filter button
+}
+
+function renderFilterCategoryCardInto(container,col,idx,filteredRows){
+  let bId='fb'+idx,mp={},tot=0;
+  filteredRows.forEach(r=>{let v=r[col];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';mp[k]=(mp[k]||0)+1;tot++;});
+  let sL=Object.keys(mp).sort((a,b)=>mp[b]-mp[a]),sV=sL.map(l=>mp[l]),zKey='flt_'+idx;
+
+  let limit=S.chartLimit||0;
+  let displayL=limit>0?sL.slice(0,limit):sL;
+  let displayV=limit>0?sV.slice(0,limit):sV;
+
+  let hasActiveFilter=(FILTER_SELECTIONS[col]&&FILTER_SELECTIONS[col].length>0);
+  let filterVals=hasActiveFilter?FILTER_SELECTIONS[col].slice():[];
+
+  let rowsHtml=displayL.map((lb,i)=>{let pc=tot>0?((displayV[i]/tot)*100).toFixed(1):0,fc=P[i%P.length];return `<tr onclick="openFilterDataM('${escapeJs(col)}','${escapeJs(lb)}')"><td class="c-link">${escapeHtml(lb)}</td><td><span class="cnt-p">${displayV[i]}</span></td><td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td></tr>`;}).join('');
+
+  let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  if(isHidden(zKey))card.style.display='none';
+  let btnText = editingChartId ? 'Update Chart' : 'Add to Dashboard';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${hasActiveFilter?'var(--teal)':DT[idx%DT.length]};"></div><h3>${escapeHtml(col)}</h3>${hasActiveFilter?'<span class="pv-tg" style="background:rgba(20,184,166,.12);color:var(--teal);">Filtered</span>':''}</div><span class="c-tag" style="background:${hasActiveFilter?'var(--teal)':TG[idx%TG.length]};">${sL.length}</span><div class="cd-actions"><button class="btn-add-dash" onclick="event.stopPropagation();addFilterChartToDash('${escapeJs(col)}',${JSON.stringify(filterVals).replace(/"/g,'&quot;')})"><svg class="ic ic-sm"><use href="#i-check"/></svg> ${btnText}</button><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:50px;">Count</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  container.appendChild(card);
+  setTimeout(()=>{
+    let short=displayL.map(l=>l.length>15?l.substring(0,12)+'…':l),colors=displayL.map((_,i)=>P[i%P.length]);
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    CH[bId]=mkChart(bId,'bar',{labels:short,datasets:[{data:displayV,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,displayL,false);
+    CHART_META[zKey]={title:col+' (Filtered)',labels:sL,shortLabels:short,datasets:[{data:sV,backgroundColor:colors,borderRadius:4,borderSkipped:false}],pieLabels:sL,pieValues:sV,pieColors:colors,total:tot,type:'filter',columnName:col};
+  },30);
+}
+
+function addFilterChartToDash(col,filterVals){
+  // Build title from ALL active filters
+  let activeFilters = Object.keys(FILTER_SELECTIONS).filter(c => FILTER_SELECTIONS[c] && FILTER_SELECTIONS[c].length > 0);
+  let filterSummary = activeFilters.map(c => `${c}: ${FILTER_SELECTIONS[c].join(', ')}`).join(' | ');
+  let defaultTitle = col + (filterSummary ? ' (' + filterSummary + ')' : '');
+  
+  // If editing an existing chart, pre-fill with current title
+  if (editingChartId) {
+    let existing = SAVED_CHARTS.find(c=>c.id===editingChartId);
+    if (existing) defaultTitle = existing.title;
+  }
+  
+  showNamingModal(defaultTitle, function(customTitle) {
+    // Save ALL active filters, not just one column
+    let allFilters = {};
+    activeFilters.forEach(c => {
+      allFilters[c] = FILTER_SELECTIONS[c].slice();
+    });
+    
+    let isEdit = !!editingChartId;
+    if (isEdit) {
+      // Update existing chart
+      let existing = SAVED_CHARTS.find(c=>c.id===editingChartId);
+      if (existing) {
+        existing.title = customTitle;
+        existing.config = {
+          columnName: col,
+          allFilters: allFilters,
+          rangeAtSave: range
+        };
+        saveSavedCharts();
+      }
+    } else {
+      // Create new chart
+      let entry={
+        id:'sc_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
+        title: customTitle,
+        type:'filter',
+        config:{
+          columnName: col,
+          allFilters: allFilters,
+          rangeAtSave: range
+        },
+        tabName:D.tabName||''
+      };
+      SAVED_CHARTS.push(entry);
+      saveSavedCharts();
+    }
+    showAppToast(isEdit ? "Updated Chart Successfully & Added to Dashboard!" : "Added to Dashboard Successfully!", "success");
+    returnToHomePageFromGraph();
+  });
+}
+
+function openFilterDataM(col,cat){
+  let filteredRows=getFilterAppliedRows();
+  let matches=filteredRows.filter(r=>{let v=r[col];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';return k===cat;});
+  let title=cat;
+  showRowsM(matches,title);
+}
+
+/* ═══ RENDER SAVED CHARTS IN NORMAL DASHBOARD ═══ */
+function renderSavedDashboardCharts(){
+  if(!SAVED_CHARTS.length)return;
+  let area=document.getElementById("main");
+  let tabCharts=SAVED_CHARTS.filter(sc=>sc.tabName===(D.tabName||''));
+  if(!tabCharts.length)return;
+
+  let hidden=HIDDEN_CHARTS[D.tabName||'']||[];
+  
+  // Count visible charts that actually have data in the currently selected date range
+  let visibleCharts = tabCharts.filter(sc => {
+    let sKey='saved_'+sc.id;
+    return hidden.indexOf(sKey)<0 && savedChartHasData(sc);
+  });
+  
+  // Show Created Graphs section only when at least one created graph is currently visible
+  if(visibleCharts.length > 0) {
+    let heading=document.createElement('div');
+    heading.className='enterprise-card';
+    heading.id='createdGraphsHeading';
+    heading.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;padding:0;overflow:hidden;';
+    heading.innerHTML=`<div class="enterprise-head" style="background:linear-gradient(135deg, var(--ac-bg), rgba(0,0,0,0));"><div class="enterprise-title"><div class="badge-ico" style="background:var(--ac-bg);color:var(--ac);"><svg class="ic"><use href="#i-chart"/></svg></div><div><h2>Created Graphs</h2><p>${visibleCharts.length} saved chart${visibleCharts.length>1?'s':''}</p></div></div></div>`;
+    area.appendChild(heading);
+    let grid=document.createElement('div');
+    grid.id='createdGraphsGrid';
+    grid.className='created-graphs-grid';
+    area.appendChild(grid);
+  }
+  
+  let createdGrid=document.getElementById('createdGraphsGrid');
+  if(createdGrid){
+    createdGrid.style.gridTemplateColumns = visibleCharts.length > 1 ? 'repeat(2, minmax(0, 1fr))' : '1fr';
+  }
+  // Render only visible charts with matching records
+  visibleCharts.forEach((sc,idx)=>{
+    if(sc.type==='filter')renderSavedFilterChart(sc,idx);
+  });
+}
+
+function renderSavedFilterChart(sc,idx){
+  let area=document.getElementById('createdGraphsGrid') || document.getElementById("main");
+  let col=sc.config.columnName;
+  let totalVisible = SAVED_CHARTS.filter(x=>x.tabName===(D.tabName||'')).filter(x=>{
+    let sKey='saved_'+x.id;
+    return (HIDDEN_CHARTS[D.tabName||'']||[]).indexOf(sKey)<0 && savedChartHasData(x);
+  }).length;
+  let allFilters=sc.config.allFilters||{};
+  let bId='sfb_'+sc.id;
+  let zKey='saved_'+sc.id;
+
+  // Get data: apply ALL saved filters to current data pool
+  let pool=getActiveTicketPool();
+  let filteredRows=pool;
+  
+  // Apply all filters (AND logic across columns, OR logic within columns)
+  let filterColumns = Object.keys(allFilters).filter(c => allFilters[c] && allFilters[c].length > 0);
+  if(filterColumns.length > 0){
+    filteredRows = pool.filter(r => {
+      return filterColumns.every(filterCol => {
+        let selVals = allFilters[filterCol];
+        let v = r[filterCol];
+        let k = (v != null && v.toString().trim() !== '') ? v.toString().trim() : '(Blank)';
+        return selVals.includes(k);
+      });
+    });
+  }
+  if(!filteredRows.length)return;
+
+  let mp={},tot=0;
+  filteredRows.forEach(r=>{let v=r[col];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';mp[k]=(mp[k]||0)+1;tot++;});
+  let sL=Object.keys(mp).sort((a,b)=>mp[b]-mp[a]),sV=sL.map(l=>mp[l]);
+
+  let limit=S.chartLimit||0;
+  let displayL=limit>0?sL.slice(0,limit):sL;
+  let displayV=limit>0?sV.slice(0,limit):sV;
+
+  let rowsHtml=displayL.map((lb,i)=>{let pc=tot>0?((displayV[i]/tot)*100).toFixed(1):0,fc=P[i%P.length];return `<tr onclick="openFilterDataM('${escapeJs(col)}','${escapeJs(lb)}')"><td class="c-link">${escapeHtml(lb)}</td><td><span class="cnt-p">${displayV[i]}</span></td><td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td></tr>`;}).join('');
+
+  let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  if(totalVisible>1) card.style.cssText='width:100%;max-width:100%;min-width:0;';
+  card.oncontextmenu = function(e) { onGraphCardRightClick(e, sc.id); };
+  card.title = "Right-click card for options (Rename, Edit, Delete)";
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(sc.title)}</h3></div><span class="c-tag" style="background:var(--ac);">${sL.length}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:50px;">Count</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  area.appendChild(card);
+  setTimeout(()=>{
+    let short=displayL.map(l=>l.length>15?l.substring(0,12)+'…':l),colors=displayL.map((_,i)=>P[i%P.length]);
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    CH[bId]=mkChart(bId,'bar',{labels:short,datasets:[{data:displayV,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,displayL,false);
+    CHART_META[zKey]={title:sc.title,labels:sL,shortLabels:short,datasets:[{data:sV,backgroundColor:colors,borderRadius:4,borderSkipped:false}],pieLabels:sL,pieValues:sV,pieColors:colors,total:tot,type:'filter',columnName:col};
+  },30);
+}
+
+function showNamingModal(defaultName, callback) {
+  document.getElementById('chartNameInput').value = defaultName;
+  document.getElementById('namingModal').style.display = 'flex';
+  setTimeout(() => {
+    document.getElementById('chartNameInput').focus();
+    document.getElementById('chartNameInput').select();
+  }, 50);
+  namingModalCallback = callback;
+  
+  // Keyboard shortcuts
+  function handleKey(e) {
+    if (e.key === 'Enter') { e.preventDefault(); confirmNamingModal(); document.removeEventListener('keydown', handleKey); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelNamingModal(); document.removeEventListener('keydown', handleKey); }
+  }
+  document.addEventListener('keydown', handleKey);
+}
+
+function cancelNamingModal() {
+  document.getElementById('namingModal').style.display = 'none';
+  namingModalCallback = null;
+  editingChartId = null;
+}
+
+function confirmNamingModal() {
+  const name = document.getElementById('chartNameInput').value.trim();
+  if (!name) {
+    alert('Please enter a name for your chart');
+    return;
+  }
+  if (namingModalCallback) {
+    namingModalCallback(name);
+  }
+  document.getElementById('namingModal').style.display = 'none';
+  namingModalCallback = null;
+  editingChartId = null;
+}
+
+// Delete confirmation modal functions
+let deleteChartId = null;
+
+function showDeleteConfirmModal(id, chartName) {
+  deleteChartId = id;
+  document.getElementById('deleteChartName').textContent = chartName;
+  document.getElementById('deleteConfirmModal').style.display = 'flex';
+}
+
+function cancelDeleteChart() {
+  deleteChartId = null;
+  document.getElementById('deleteConfirmModal').style.display = 'none';
+}
+
+function confirmDeleteChart() {
+  if (deleteChartId) {
+    SAVED_CHARTS = SAVED_CHARTS.filter(c => c.id !== deleteChartId);
+    saveSavedCharts();
+    deleteChartId = null;
+    document.getElementById('deleteConfirmModal').style.display = 'none';
+    doRender();
+  }
+}
+
+function editSavedChartTitle(id){
+  let chart=SAVED_CHARTS.find(c=>c.id===id);
+  if(!chart)return;
+  
+  editingChartId = id;
+  
+  if(chart.type==='filter'){
+    // Enter filter mode with saved selections
+    FILTER_MODE = true;
+    PIVOT_FILTER_MODE = false;
+    COMPARE_MODE=false;DUPLICATE_MODE=false;OVERTIME_MODE=false;
+    let _cmp=document.getElementById("cmpTab"); if(_cmp) _cmp.classList.remove('on');
+    let _dup=document.getElementById("dupTab"); if(_dup) _dup.classList.remove('on');
+    let _ovr=document.getElementById("ovrTab"); if(_ovr) _ovr.classList.remove('on');
+    let _flt=document.getElementById("fltTab"); if(_flt) _flt.classList.add('on');
+    
+    // Restore ALL saved filter selections
+    FILTER_SELECTIONS = {};
+    if (chart.config.allFilters) {
+      Object.keys(chart.config.allFilters).forEach(col => {
+        FILTER_SELECTIONS[col] = chart.config.allFilters[col].slice();
+      });
+    }
+    
+    // Restore the date range if saved
+    if (chart.config.rangeAtSave) {
+      range = chart.config.rangeAtSave;
+    }
+    
+    applyFilter();
+  } else if(chart.type==='pivot'){
+    // Enter pivot mode with saved config
+    PIVOT_FILTER_MODE = true;
+    FILTER_MODE = false;
+    COMPARE_MODE=false;DUPLICATE_MODE=false;OVERTIME_MODE=false;
+    let _cmp2=document.getElementById("cmpTab"); if(_cmp2) _cmp2.classList.remove('on');
+    let _dup2=document.getElementById("dupTab"); if(_dup2) _dup2.classList.remove('on');
+    let _ovr2=document.getElementById("ovrTab"); if(_ovr2) _ovr2.classList.remove('on');
+    let _flt2=document.getElementById("fltTab"); if(_flt2) _flt2.classList.remove('on');
+    
+    // Restore saved pivot config
+    PF_ROW_FIELD = chart.config.rowField || '';
+    PF_COL_FIELDS = chart.config.colField ? [chart.config.colField] : [];
+    PF_ROW_VALS_SELECTED = chart.config.rowValsSelected ? chart.config.rowValsSelected.slice() : [];
+    
+    applyFilter();
+  }
+}
+
+
+
+function closeGraphFieldSettingsModal(){
+  let el=document.getElementById('graphFieldSettingsModal');
+  if(el) el.remove();
+}
+function openDuplicateGraphSettingsModal(){
+  if(!D || !D.headers || !D.headers.length) return;
+  let cols = loadDuplicateColumnsForCurrentTab();
+  closeGraphFieldSettingsModal();
+  let m=document.createElement('div');
+  m.id='graphFieldSettingsModal';
+  m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
+  m.innerHTML=`<div style="width:min(560px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--orange) 10%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="width:42px;height:42px;border-radius:14px;background:rgba(245,158,11,.14);color:var(--orange);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-ticket"/></svg></div>
+        <div>
+          <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">Duplicate Ticket Graph Settings</div>
+          <div style="font-size:11.5px;color:var(--t2);margin-top:4px;">Choose which columns from this sheet identify duplicate customers and ticket numbers.</div>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="padding:18px;display:grid;gap:14px;">
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);">
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Customer Field</label>
+        <select id="dupFieldSettingCust" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.customerCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+      </div>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);">
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Ticket ID Field</label>
+        <select id="dupFieldSettingTkt" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.ticketCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+      </div>
+      <div style="font-size:11.5px;color:var(--t3);padding:10px 12px;border-radius:14px;background:var(--ac-bg);border:1px solid color-mix(in srgb,var(--ac) 14%,var(--border));">Tip: Right-click duplicate graphs anytime to quickly update these source fields for the current tab.</div>
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:color-mix(in srgb,var(--bg3) 80%,var(--bg2));">
+      <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
+      <button class="btn-mc" onclick="applyDuplicateGraphSettingsFromModal()">Apply Settings</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function applyDuplicateGraphSettingsFromModal(){
+  let cust=document.getElementById('dupFieldSettingCust');
+  let tkt=document.getElementById('dupFieldSettingTkt');
+  if(cust) DETECTED_CUST_COL = cust.value;
+  if(tkt) DETECTED_TKT_COL = tkt.value;
+  if (!S.dupColsByTab) S.dupColsByTab = {};
+  if (!S.dupColsByTab[D.tabName]) S.dupColsByTab[D.tabName] = {};
+  S.dupColsByTab[D.tabName].cust = DETECTED_CUST_COL;
+  S.dupColsByTab[D.tabName].tkt = DETECTED_TKT_COL;
+  saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  closeGraphFieldSettingsModal();
+  if (D.rawData) doRender();
+}
+function openSiteGraphSettingsModal(){
+  openSiteTicketGraphSettingsModal();
+}
+function openSiteTicketGraphSettingsModal(){
+  if(!D || !D.headers || !D.headers.length) return;
+  let cols = loadSiteColumnsForCurrentTab();
+  closeGraphFieldSettingsModal();
+  let m=document.createElement('div');
+  m.id='graphFieldSettingsModal';
+  m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
+  m.innerHTML=`<div style="width:min(520px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 10%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="width:42px;height:42px;border-radius:14px;background:rgba(59,130,246,.14);color:var(--blue);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-grid"/></svg></div>
+        <div>
+          <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">Site Ticket Graph Settings</div>
+          <div style="font-size:10px;color:var(--t2);margin-top:4px;">Choose site identity fields for Site Ticket Counts.</div>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="padding:18px;display:grid;gap:14px;">
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Site Code Field</label><select id="siteFieldSettingCode" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.siteCodeCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Full Name Field</label><select id="siteFieldSettingFull" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.fullNameCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Short Code Field</label><select id="siteFieldSettingShort" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.shortCodeCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:color-mix(in srgb,var(--bg3) 80%,var(--bg2));">
+      <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
+      <button class="btn-mc" onclick="applySiteTicketGraphSettingsFromModal()">Apply Settings</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function applySiteTicketGraphSettingsFromModal(){
+  let code=document.getElementById('siteFieldSettingCode');
+  let full=document.getElementById('siteFieldSettingFull');
+  let short=document.getElementById('siteFieldSettingShort');
+  if (!S.siteColsByTab) S.siteColsByTab = {};
+  if (!S.siteColsByTab[D.tabName]) S.siteColsByTab[D.tabName] = {};
+  if(code) S.siteColsByTab[D.tabName].siteCode = code.value;
+  if(full) S.siteColsByTab[D.tabName].fullName = full.value;
+  if(short) S.siteColsByTab[D.tabName].shortCode = short.value;
+  saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  closeGraphFieldSettingsModal();
+  if (D.rawData) doRender();
+}
+function openSiteComplaintPercentGraphSettingsModal(){
+  if(!D || !D.headers || !D.headers.length) return;
+  let cols = loadSiteColumnsForCurrentTab();
+  closeGraphFieldSettingsModal();
+  let m=document.createElement('div');
+  m.id='graphFieldSettingsModal';
+  m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
+  m.innerHTML=`<div style="width:min(500px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 10%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="width:42px;height:42px;border-radius:14px;background:rgba(59,130,246,.14);color:var(--blue);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-grid"/></svg></div>
+        <div>
+          <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">Site Complaint Percent Settings</div>
+          <div style="font-size:10px;color:var(--t2);margin-top:4px;">Choose active lookup fields for Site Complaint Percent.</div>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="padding:18px;display:grid;gap:14px;">
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Active Site Field</label><select id="siteFieldSettingActiveSite" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.activeSiteCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);"><label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Active Count Field</label><select id="siteFieldSettingActiveCount" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.activeCountCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select></div>
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:color-mix(in srgb,var(--bg3) 80%,var(--bg2));">
+      <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
+      <button class="btn-mc" onclick="applySiteComplaintPercentGraphSettingsFromModal()">Apply Settings</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function applySiteComplaintPercentGraphSettingsFromModal(){
+  let activeSite=document.getElementById('siteFieldSettingActiveSite');
+  let activeCount=document.getElementById('siteFieldSettingActiveCount');
+  if (!S.siteColsByTab) S.siteColsByTab = {};
+  if (!S.siteColsByTab[D.tabName]) S.siteColsByTab[D.tabName] = {};
+  if(activeSite) S.siteColsByTab[D.tabName].activeSite = activeSite.value;
+  if(activeCount) S.siteColsByTab[D.tabName].activeCount = activeCount.value;
+  saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  closeGraphFieldSettingsModal();
+  if (D.rawData) doRender();
+}
+function openOverTimeGraphSettingsModal(){
+  if(!D || !D.headers || !D.headers.length) return;
+  let cols = loadOverTimeColumnsForCurrentTab();
+  closeGraphFieldSettingsModal();
+  let m=document.createElement('div');
+  m.id='graphFieldSettingsModal';
+  m.style.cssText='position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,23,42,.36),rgba(15,23,42,.58));backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:12000;padding:18px;';
+  m.innerHTML=`<div style="width:min(560px,96vw);background:linear-gradient(180deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 92%,var(--bg3)) 100%);border:1px solid color-mix(in srgb,var(--ac) 10%,var(--border));border-radius:22px;box-shadow:0 28px 60px rgba(0,0,0,.28);overflow:hidden;">
+    <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--red) 8%,var(--bg2)) 0%,color-mix(in srgb,var(--ac) 5%,var(--bg2)) 100%);">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="width:42px;height:42px;border-radius:14px;background:rgba(239,68,68,.12);color:var(--red);display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic"><use href="#i-clock"/></svg></div>
+        <div>
+          <div style="font-weight:800;color:var(--t1);font-size:16px;line-height:1.2;">OverTime Graph Settings</div>
+          <div style="font-size:11.5px;color:var(--t2);margin-top:4px;">Choose which columns from this sheet define created time and resolved time for overtime calculation.</div>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" onclick="closeGraphFieldSettingsModal()"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="padding:18px;display:grid;gap:14px;">
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);">
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Created Time Field</label>
+        <select id="ovrFieldSettingCre" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.createdCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+      </div>
+      <div style="padding:12px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--bg) 75%, #fff);">
+        <label style="display:block;font-size:11px;font-weight:800;color:var(--t2);text-transform:uppercase;letter-spacing:.45px;margin-bottom:8px;">Resolved Time Field</label>
+        <select id="ovrFieldSettingRes" class="sel-w" style="width:100%;min-width:0;height:40px;border-radius:12px;">${D.headers.map(h=>`<option value="${escapeHtml(h)}" ${h===cols.resolvedCol?'selected':''}>${escapeHtml(h)}</option>`).join('')}</select>
+      </div>
+      <div style="font-size:11.5px;color:var(--t3);padding:10px 12px;border-radius:14px;background:var(--ac-bg);border:1px solid color-mix(in srgb,var(--ac) 14%,var(--border));">Tip: Right-click overtime graphs anytime to quickly update these source fields for the current tab.</div>
+    </div>
+    <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:color-mix(in srgb,var(--bg3) 80%,var(--bg2));">
+      <button class="btn-mc sec" onclick="closeGraphFieldSettingsModal()">Cancel</button>
+      <button class="btn-mc" onclick="applyOverTimeGraphSettingsFromModal()">Apply Settings</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function applyOverTimeGraphSettingsFromModal(){
+  let cre=document.getElementById('ovrFieldSettingCre');
+  let res=document.getElementById('ovrFieldSettingRes');
+  if(cre) DETECTED_CRE_COL = cre.value;
+  if(res) DETECTED_RES_COL = res.value;
+  if (!S.ovrColsByTab) S.ovrColsByTab = {};
+  if (!S.ovrColsByTab[D.tabName]) S.ovrColsByTab[D.tabName] = {};
+  S.ovrColsByTab[D.tabName].cre = DETECTED_CRE_COL;
+  S.ovrColsByTab[D.tabName].res = DETECTED_RES_COL;
+  saveSettings();
+  if (typeof saveUniversalAppStateToCloud === 'function') saveUniversalAppStateToCloud();
+  closeGraphFieldSettingsModal();
+  if (D.rawData) doRender();
+}
+
+/* ═══════════ ZOOM / EXPAND PAGE ═══════════ */
+let expandedChartInstance=null;
+let EXPANDED_PAGE_STATE={ zKey:'', chartType:'bar', rows:[], search:'', sortBy:'value', sortDir:'desc', range:'all', subPeriod:'all', runtimeMeta:null };
+function closeExpandedChartPage(immediate){
+  if(expandedChartInstance){ try{ expandedChartInstance.destroy(); }catch(e){} expandedChartInstance=null; }
+  let old=document.getElementById('expandChartPage');
+  if(!old){ document.body.style.overflow=''; return; }
+  if(immediate){ old.remove(); document.body.style.overflow=''; return; }
+  old.classList.remove('show');
+  old.classList.add('closing');
+  setTimeout(()=>{ let el=document.getElementById('expandChartPage'); if(el) el.remove(); document.body.style.overflow=''; }, 180);
+}
+document.addEventListener('click', function(ev){
+  let tray=document.getElementById('expandCalendarTray');
+  let wrap=document.querySelector('.expand-calendar-wrap');
+  if(tray && wrap && tray.classList.contains('open') && !wrap.contains(ev.target)){
+    toggleExpandCalendar(false);
+  }
+}, true);
+function rowsForTrendPeriodFromRows(gran,key,rows){
+  rows=rows||[];
+  if(!dateCol||!key)return [];
+  return rows.filter(r=>{
+    let d=parseLocalDate(r[dateCol]);if(!d)return false;
+    if(gran==='daily')return toLocalDateStr(d)===key;
+    if(gran==='weekly'){
+      let ws=parseLocalDate(key),we=new Date(ws);we.setDate(we.getDate()+7);
+      return d>=ws&&d<we;
+    }
+    if(gran==='monthly'){
+      let p=key.split('-');return d.getFullYear()===+p[0]&&(d.getMonth()+1)===+p[1];
+    }
+    return false;
+  });
+}
+function computeExpandedChartRowsByZKey(zKey, zd){
+  let baseRows=getExpandedDateFilteredRows();
+  if(zKey==='trend_total'){
+    let gran=getExpandedTotalTrendGran();
+    let agg=aggregateTickets(gran, baseRows);
+    let total=(agg.values||[]).reduce((s,v)=>s+Number(v||0),0);
+    return {
+      gran,
+      rows:(agg.labels||[]).map((label,i)=>({ label, key:agg.keys[i], value:Number(agg.values[i]||0), color:P[i%P.length], pct: total>0?((Number(agg.values[i]||0)/total)*100).toFixed(1):'0.0', records:rowsForTrendPeriodFromRows(gran, agg.keys[i], baseRows) })),
+      displayLabels: agg.displayLabels || [],
+      keys: agg.keys || []
+    };
+  }
+  if(zKey==='cpe_complaints' || (zd && zd.type==='cpe_complaints')){
+    const CPE_MODELS = ['BFFA', 'BFFG', 'LCF', 'LCC', 'SCP', 'FFG', 'FFA', 'CW', 'CC', 'CR', 'CG', 'CJ', 'CK', 'CP', 'CM', 'CF'];
+    let candidateCols=[];
+    if (D && D.headers) {
+      let kw = ['cpe', 'model', 'device', 'serial', 'asset', 'equipment', 'circuit', 'description', 'issue', 'summary', 'ticket', 'note'];
+      candidateCols = D.headers.filter(h => kw.some(k => h.toLowerCase().includes(k)));
+      if (!candidateCols.length) candidateCols = D.headers.slice();
+    }
+    let seen=new Set(), counts={}, tickets={};
+    CPE_MODELS.forEach(m=>{counts[m]=0;tickets[m]=[];});
+    const cpeRegex = new RegExp('(?:^|[^a-z0-9])(' + CPE_MODELS.join('|') + ')([0-9a-z_-]*)', 'i');
+    baseRows.forEach(r=>{
+      let foundCpe=null, foundModel=null;
+      for (let col of candidateCols) {
+        let val=r[col]; if(val==null) continue; let str=String(val).trim(); if(!str) continue;
+        let m=str.match(cpeRegex); if(m){ foundModel=m[1].toUpperCase(); let serial=m[2]?m[2].toUpperCase():''; foundCpe=foundModel+serial; break; }
+      }
+      if(!foundCpe && D && D.headers){
+        for(let col of D.headers){
+          if(candidateCols.includes(col)) continue;
+          let val=r[col]; if(val==null) continue; let str=String(val).trim(); if(!str) continue;
+          let m=str.match(cpeRegex); if(m){ foundModel=m[1].toUpperCase(); let serial=m[2]?m[2].toUpperCase():''; foundCpe=foundModel+serial; break; }
+        }
+      }
+      if(foundCpe && foundModel){ if(seen.has(foundCpe)) return; seen.add(foundCpe); counts[foundModel]++; tickets[foundModel].push(r); }
+    });
+    let active=CPE_MODELS.filter(m=>counts[m]>0).sort((a,b)=>counts[b]-counts[a]);
+    let limit=S.chartLimit||0; if(limit>0) active=active.slice(0,limit);
+    let total=active.reduce((s,m)=>s+counts[m],0);
+    return { rows:active.map((m,i)=>({label:m,key:m,value:counts[m],color:P[i%P.length],pct: total>0?((counts[m]/total)*100).toFixed(1):'0.0',records:tickets[m]})) };
+  }
+  if(zKey==='site_summary'){
+    let cols=loadSiteColumnsForCurrentTab();
+    let sites=getSiteTicketCounts(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, (D&&D.rawData)||baseRows);
+    let limit=S.chartLimit||0; if(limit>0) sites=sites.slice(0,limit);
+    let total=sites.reduce((s,x)=>s+(Number(x.count)||0),0);
+    return { rows:sites.map((s,i)=>({label:s.site,key:s.site,fullName:s.fullName||'',value:Number(s.count||0),color:P[i%P.length],pct: total>0?((Number(s.count||0)/total)*100).toFixed(1):'0.0',records:s.rows||[]})) };
+  }
+  if(zKey==='site_complaint_percent'){
+    let cols=loadSiteColumnsForCurrentTab();
+    let sites=getSiteComplaintPercentData(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, cols.activeSiteCol, cols.activeCountCol, (D&&D.rawData)||baseRows);
+    let limit=S.chartLimit||0; if(limit>0) sites=sites.slice(0,limit);
+    return { rows:sites.map((s,i)=>({label:s.site,key:s.site,fullName:s.fullName||'',ratioText:s.ratioText||'0/0',percentText:s.percentText||'0.0%',complaintCount:Number(s.complaintCount||0),activeCount:Number(s.activeCount||0),value:Number(s.percentValue||0),color:P[i%P.length],pct:s.percentText||'0.0%',records:s.rows||[]})) };
+  }
+  if(zKey==='dup_top_cust'){
+    let cols=loadDuplicateColumnsForCurrentTab();
+    let dup=getDuplicateTicketsDataForCols(baseRows, cols.customerCol, cols.ticketCol);
+    let list=dup.duplicates.slice(); let limit=S.chartLimit||0; if(limit>0) list=list.slice(0,limit);
+    let total=dup.totalDupsCount||0;
+    return { rows:list.map((d,i)=>({label:d.customer,key:d.customer,value:d.tickets.length,color:P[i%P.length],pct: total>0?((d.tickets.length/total)*100).toFixed(1):'0.0',records:d.tickets})) };
+  }
+  if(String(zKey||'').startsWith('saved_') && zd && zd.type==='filter'){
+    let scId=String(zKey).substring(6);
+    let sc=SAVED_CHARTS.find(c=>String(c.id)===scId);
+    if(sc){
+      let col=sc.config.columnName;
+      let rows=getSavedFilterChartRows(sc);
+      let mp={};
+      rows.forEach(r=>{
+        let v=r[col];
+        let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';
+        if(!mp[k]) mp[k]={ label:k, key:k, value:0, color:P[Object.keys(mp).length%P.length], records:[] };
+        mp[k].value++;
+        mp[k].records.push(r);
+      });
+      let fullList=Object.values(mp).sort((a,b)=>b.value-a.value || String(a.label).localeCompare(String(b.label)));
+      let fullTotal=fullList.reduce((s,x)=>s+(Number(x.value)||0),0);
+      let limit=S.chartLimit||0;
+      let list=limit>0 ? fullList.slice(0,limit) : fullList;
+      return { rows:list.map((x,i)=>({label:x.label,key:x.key,value:Number(x.value||0),color:P[i%P.length],pct: fullTotal>0?((Number(x.value||0)/fullTotal)*100).toFixed(1):'0.0',records:x.records||[]})) };
+    }
+  }
+  if(zKey==='ot_severity' || (zd && zd.columnName==='_overtime')){
+    let cols=loadOverTimeColumnsForCurrentTab();
+    let ot=getOverTimeTicketsData(baseRows, cols.createdCol, cols.resolvedCol, false);
+    let tiers=['lt36','36_50','50_68','gt68'];
+    let colors=[cssVar('--green') || '#10b981', cssVar('--ac') || '#6366f1', cssVar('--orange') || '#f59e0b', cssVar('--red') || '#ef4444'];
+    let total=ot.overTimeTickets.length||0;
+    return { rows:tiers.map((tier,i)=>({label:getOverTimeTierLabel(tier), key:tier, value:ot.counts[tier]||0, color:colors[i], pct: total>0?(((ot.counts[tier]||0)/total)*100).toFixed(1):'0.0', records:ot.overTimeTickets.filter(x=>x.tier===tier).map(x=>x.row)})) };
+  }
+  let labels = Array.isArray(zd.pieLabels) && zd.pieLabels.length ? zd.pieLabels.slice() : (zd.labels||[]).slice();
+  let values = Array.isArray(zd.pieValues) && zd.pieValues.length ? zd.pieValues.slice() : ((zd.datasets&&zd.datasets[0]&&Array.isArray(zd.datasets[0].data)) ? zd.datasets[0].data.map(v=>typeof v==='object'&&v!==null?Number(v.y||0):Number(v||0)) : []);
+  let colors = Array.isArray(zd.pieColors) && zd.pieColors.length ? zd.pieColors.slice() : labels.map((_,i)=>P[i%P.length]);
+  let total = Number(zd.total || values.reduce((s,v)=>s+(Number(v)||0),0) || 0);
+  return { rows: labels.map((label,i)=>({ label, value:Number(values[i]||0), color:colors[i%colors.length], pct: total>0?((Number(values[i]||0)/total)*100).toFixed(1):'0.0' })) };
+}
+function getExpandedChartRows(zd){
+  let computed=computeExpandedChartRowsByZKey(EXPANDED_PAGE_STATE.zKey || (zd && zd.type) || '', zd);
+  return computed && computed.rows ? computed.rows : [];
+}
+function expandedRowClick(zKey,index){
+  let rows = getFilteredExpandedRows();
+  let item=rows[index]; if(!item) return;
+  let zd=CHART_META[zKey]; if(!zd) return;
+  let label=item.label;
+  if(zKey==='site_summary'){
+    if(item.records){
+      let extra=item.fullName ? (' - ' + item.fullName) : '';
+      return showRowsM(item.records, 'Site Ticket Counts: ' + label + extra);
+    }
+    return showSiteTicketDetailsM(label);
+  }
+  if(zKey==='site_complaint_percent'){
+    if(item.records){
+      let extra=item.fullName ? (' - ' + item.fullName) : '';
+      let suffix='';
+      if(item.ratioText || item.percentText) suffix=' (' + (item.ratioText||'0/0') + ' · ' + (item.percentText||'0.0%') + ')';
+      return showRowsM(item.records, 'Site Complaint Percent: ' + label + extra + suffix);
+    }
+    return showSiteComplaintPercentDetailsM(label);
+  }
+  if(zKey==='dup_top_cust'){ 
+    if(item.records) return showRowsM(item.records, 'Duplicate Tickets: ' + label);
+    return showDuplicateTicketsM(label);
+  }
+  if(zKey==='ot_severity' || zd.columnName==='_overtime'){
+    if(item.records) return showRowsM(item.records, 'OverTime Severity: ' + label);
+    let tier = String(label).includes('68.4') || String(label).includes('>') ? 'gt68' : (String(label).includes('50.4') ? '50_68' : (String(label).includes('36') ? '36_50' : 'lt36'));
+    return showOverTimeTicketDetailsM(tier);
+  }
+  if(zKey==='cpe_complaints' || zd.type==='cpe_complaints'){
+    if(item.records) return showRowsM(item.records, 'CPE Model: ' + label);
+    return openCpeModelModal(label);
+  }
+  if(zKey==='trend_total'){
+    let runtime = EXPANDED_PAGE_STATE.runtimeMeta;
+    if(runtime && runtime.rows && runtime.rows[index]){
+      let row = runtime.rows[index];
+      if(row && Array.isArray(row.records)){
+        return showRowsM(row.records, 'Total Ticket Numbers · ' + cap(runtime.gran || 'daily') + ' · ' + row.label);
+      }
+      return openTrendPeriodM(runtime.gran, row.key, row.label);
+    }
+    let rawIndex=(zd.labels||[]).indexOf(label);
+    if(rawIndex>=0) return openTrendPeriodM(TREND_GRAN, zd.keys[rawIndex], zd.labels[rawIndex]);
+  }
+  if(zd.type==='filter'){
+    if(item.records) return showRowsM(item.records, (zd.title || 'Created Graph') + ': ' + label);
+    if(zd.columnName) return scheduleOpenDataM(zd.columnName, label);
+  }
+  if(zd.type==='trend' && zd.columnName) return scheduleOpenDateM(label);
+  if(zd.type==='normal' && zd.columnName) return scheduleOpenDataM(zd.columnName, label);
+}
+function getFilteredExpandedRows(){
+  let rows=(EXPANDED_PAGE_STATE.rows||[]).slice();
+  let q=(EXPANDED_PAGE_STATE.search||'').trim().toLowerCase();
+  if(q) rows=rows.filter(r=>String(r.label||'').toLowerCase().includes(q));
+  let zKey=EXPANDED_PAGE_STATE.zKey||'';
+  let key=EXPANDED_PAGE_STATE.sortBy||'value', dir=EXPANDED_PAGE_STATE.sortDir==='asc'?1:-1;
+  if(key==='natural' || zKey==='trend_total'){
+    return rows;
+  }
+  rows.sort((a,b)=>{
+    if(key==='label') return String(a.label).localeCompare(String(b.label), undefined, {numeric:true,sensitivity:'base'})*dir;
+    if(key==='share') return (parseFloat(a.pct)-parseFloat(b.pct))*dir;
+    return ((Number(a.value)||0)-(Number(b.value)||0))*dir;
+  });
+  return rows;
+}
+function renderExpandedDataTable(){
+  let body=document.getElementById('expandTableBody');
+  let counter=document.getElementById('expandRowsMeta');
+  let table=document.querySelector('.expand-table');
+  if(!body) return;
+  let rows=getFilteredExpandedRows();
+  let zKey=EXPANDED_PAGE_STATE.zKey;
+  if(zKey==='site_summary'){
+    if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Site</th><th>Full Name</th><th>Tickets</th><th>Share</th></tr>'; }
+    body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td title="${escapeHtml(r.fullName||'')}">${escapeHtml(r.fullName||'—')}</td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
+  }else if(zKey==='site_complaint_percent'){
+    if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr>'; }
+    body.innerHTML=rows.map((r,i)=>{ let barPc=Math.max(0,Math.min(100,Number(r.value||0))); return `<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td title="${escapeHtml(r.fullName||'')}">${escapeHtml(r.fullName||'—')}</td><td class="expand-value">${escapeHtml(r.ratioText||'0/0')}</td><td class="expand-share"><div class="bw"><div class="btt"><div class="bf" style="width:${barPc}%;background:${r.color};"></div></div><span class="bn">${escapeHtml(r.percentText||'0.0%')}</span></div></td></tr>`; }).join('');
+  }else{
+    if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Label</th><th>Value</th><th>Share</th></tr>'; }
+    body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
+  }
+  if(counter) counter.textContent = rows.length.toLocaleString() + ' rows';
+  let panel=document.querySelector('.expand-data-panel');
+  if(panel){
+    panel.classList.remove('expand-data-panel-cpe','expand-data-panel-site','expand-data-panel-site-pct','expand-data-panel-dup','expand-data-panel-ot','expand-data-panel-trend','expand-data-panel-generic');
+    panel.classList.add('expand-data-panel-' + getExpandedTableColumnClass(EXPANDED_PAGE_STATE.zKey).replace('expand-table-',''));
+  }
+}
+function setExpandedSearch(val){
+  EXPANDED_PAGE_STATE.search=val||'';
+  renderExpandedDataTable();
+}
+
+function setExpandedSort(key){
+  if(EXPANDED_PAGE_STATE.sortBy===key){ EXPANDED_PAGE_STATE.sortDir = EXPANDED_PAGE_STATE.sortDir==='asc' ? 'desc' : 'asc'; }
+  else { EXPANDED_PAGE_STATE.sortBy=key; EXPANDED_PAGE_STATE.sortDir = key==='label' ? 'asc' : 'desc'; }
+  document.querySelectorAll('[data-expand-sort]').forEach(btn=>{
+    let active=btn.getAttribute('data-expand-sort')===key;
+    btn.classList.toggle('on', active);
+    if(active) btn.setAttribute('data-dir', EXPANDED_PAGE_STATE.sortDir); else btn.removeAttribute('data-dir');
+  });
+  renderExpandedDataTable();
+}
+function createExpandedChartData(zd, chartType){
+  let rows=getFilteredExpandedRows();
+  let labels=rows.map(r=>r.label);
+  let values=rows.map(r=>r.value);
+  let colors=rows.map(r=>r.color);
+  if(chartType==='line'){
+    return { type:'line', data:{ labels: wrapAxisLabels(labels,12), datasets:[{ label: zd.title, data: values, borderColor: colors[0]||cssVar('--ac'), backgroundColor: (colors[0]||cssVar('--ac')) + '22', fill:true, tension:.32, pointRadius:3, pointHoverRadius:4, borderWidth:2.2 }] } };
+  }
+  return { type:'bar', data:{ labels: labels, datasets:[{ label: zd.title, data: values, backgroundColor: colors, borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] } };
+}
+function renderExpandedChart(){
+  let zd=CHART_META[EXPANDED_PAGE_STATE.zKey];
+  if(!zd) return;
+  if(expandedChartInstance){ try{ expandedChartInstance.destroy(); }catch(e){} expandedChartInstance=null; }
+  let gc=S.dark?'rgba(255,255,255,.08)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b';
+  let cfg;
+  let computed=computeExpandedChartRowsByZKey(EXPANDED_PAGE_STATE.zKey, zd);
+  EXPANDED_PAGE_STATE.rows=(computed && computed.rows) ? computed.rows.slice() : [];
+  EXPANDED_PAGE_STATE.runtimeMeta=computed||null;
+  if(EXPANDED_PAGE_STATE.zKey==='trend_total'){
+    let rows=EXPANDED_PAGE_STATE.rows;
+    cfg={
+      type:'bar',
+      data:{ labels: rows.map(r=>r.label), datasets:[{ label: zd.title, data: rows.map(r=>r.value), backgroundColor: rows.map(r=>r.color), borderRadius: 10, borderSkipped:false, maxBarThickness:44, categoryPercentage:.72, barPercentage:.82 }] }
+    };
+  }else{
+    cfg=createExpandedChartData(zd, EXPANDED_PAGE_STATE.chartType||'bar');
+  }
+  cfg.options={
+    responsive:true,
+    maintainAspectRatio:false,
+    animation:{duration:320},
+    plugins:{ legend:{display:false}, valueLabels:{display:true,fontSize:10}, tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}} },
+    scales:{ y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'}}}, x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:8,weight:'700'},autoSkip:false,maxRotation:(EXPANDED_PAGE_STATE.chartType==='line'?24:90),minRotation:(EXPANDED_PAGE_STATE.chartType==='line'?24:90),padding:4}} },
+    onClick:(e,els)=>{ if(els&&els.length) expandedRowClick(EXPANDED_PAGE_STATE.zKey, els[0].index); },
+    onHover:(e,els)=>{ e.native.target.style.cursor=els&&els.length?'pointer':'default'; }
+  };
+  if(EXPANDED_PAGE_STATE.zKey==='site_complaint_percent'){
+    cfg.options.plugins.valueLabels={display:true,fontSize:10,formatter:(val)=>Number(val||0).toFixed(1)};
+    cfg.options.plugins.tooltip.callbacks={
+      title:(ctx)=>{
+        let row=EXPANDED_PAGE_STATE.rows[ctx[0].dataIndex];
+        return row ? row.label : '';
+      },
+      label:(ctx)=>{
+        let row=EXPANDED_PAGE_STATE.rows[ctx.dataIndex];
+        if(!row) return Number(ctx.parsed.y||0).toFixed(1)+'%';
+        return (row.ratioText||'0/0') + ' · ' + (row.percentText||'0.0%');
+      }
+    };
+  }
+  expandedChartInstance=createSafeChart(document.getElementById('expandPageCanvas'),cfg);
+  syncExpandedSummaryPills();
+}
+function getExpandedPeriodPillText(){
+  let exRange=EXPANDED_PAGE_STATE.range || 'all';
+  if(exRange==='all' || !dateCol) return 'All Periods';
+  let opts=getExpandedSubPeriodOptionsForRange();
+  let found=opts.find(o=>o.v===EXPANDED_PAGE_STATE.subPeriod);
+  return found ? found.t : (cap(exRange) + ' View');
+}
+function syncExpandedSummaryPills(){
+  let totalEl=document.getElementById('expandTotalChip');
+  let periodEl=document.getElementById('expandPeriodChip');
+  if(totalEl){
+    if(EXPANDED_PAGE_STATE.zKey==='site_complaint_percent'){
+      let totalComplaints=(EXPANDED_PAGE_STATE.rows||[]).reduce((s,r)=>s+(Number(r.complaintCount)||0),0);
+      totalEl.textContent = totalComplaints.toLocaleString() + ' complaints';
+    }else{
+      let total=(EXPANDED_PAGE_STATE.rows||[]).reduce((s,r)=>s+(Number(r.value)||0),0);
+      totalEl.textContent = total.toLocaleString() + ' total';
+    }
+  }
+  if(periodEl){
+    periodEl.textContent = getExpandedPeriodPillText();
+  }
+}
+function toggleExpandCalendar(forceState){
+  let tray=document.getElementById('expandCalendarTray');
+  let btn=document.getElementById('expandCalendarBtn');
+  if(!tray||!btn) return;
+  let open = typeof forceState === 'boolean' ? forceState : !tray.classList.contains('open');
+  tray.classList.toggle('open', open);
+  btn.classList.toggle('act', open);
+}
+function getExpandedSubPeriodOptionsForRange(){
+  let originalRange = range, originalSub = subPeriod;
+  try {
+    range = EXPANDED_PAGE_STATE.range || 'all';
+    subPeriod = EXPANDED_PAGE_STATE.subPeriod || 'all';
+    return getSubPeriodOptionsForRange();
+  } finally {
+    range = originalRange;
+    subPeriod = originalSub;
+  }
+}
+function getExpandedDateFilteredRows(){
+  let baseRows=(D&&D.rawData)?D.rawData.slice():[];
+  let exRange=EXPANDED_PAGE_STATE.range || 'all';
+  let exSub=EXPANDED_PAGE_STATE.subPeriod || 'all';
+  if(exRange==='all' || !dateCol || D.isPivot) return baseRows;
+  return baseRows.filter(r=>{
+    let v=r[dateCol]; if(!v) return false;
+    let d=parseLocalDate(v); if(!d) return false;
+    if(exSub && exSub!=='all'){
+      if(exSub.startsWith('y_')) return d.getFullYear()===+exSub.split('_')[1];
+      if(exSub.startsWith('m_')){ let p=exSub.split('_'); return d.getFullYear()===+p[1] && d.getMonth()===+p[2]; }
+      if(exSub.startsWith('w_')){ let ws=parseLocalDate(exSub.substring(2)); let we=new Date(ws); we.setDate(we.getDate()+7); return d>=ws && d<we; }
+      if(exSub.startsWith('d_')) return toLocalDateStr(d)===exSub.substring(2);
+    }
+    let now=new Date(),sd;
+    if(exRange==='daily') sd=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    else if(exRange==='weekly') sd=getWeekStart(now);
+    else if(exRange==='monthly') sd=new Date(now.getFullYear(),now.getMonth(),1);
+    else if(exRange==='yearly') sd=new Date(now.getFullYear(),0,1);
+    return d>=sd;
+  });
+}
+function getExpandedTotalTrendGran(){
+  let exRange=EXPANDED_PAGE_STATE.range || 'all';
+  if(exRange==='yearly') return 'monthly';
+  if(exRange==='monthly') return 'weekly';
+  if(exRange==='weekly') return 'daily';
+  if(exRange==='daily') return 'daily';
+  return TREND_GRAN || 'weekly';
+}
+function syncExpandedCalendarUI(){
+  let wrap=document.getElementById('expandSubWrap');
+  let sel=document.getElementById('expandSubSel');
+  let hint=document.getElementById('expandCalendarHint');
+  let tray=document.getElementById('expandCalendarTray');
+  if(!tray) return;
+  let exRange=EXPANDED_PAGE_STATE.range || 'all';
+  let exSub=EXPANDED_PAGE_STATE.subPeriod || 'all';
+  tray.querySelectorAll('[data-expand-range]').forEach(btn=>btn.classList.toggle('on', btn.getAttribute('data-expand-range')===exRange));
+  if(exRange==='all'||!dateCol||D.isPivot||allDates.length===0){
+    if(wrap) wrap.style.display='none';
+    if(hint) hint.style.display='flex';
+    syncExpandedSummaryPills();
+    return;
+  }
+  if(wrap) wrap.style.display='flex';
+  if(hint) hint.style.display='none';
+  let opts=getExpandedSubPeriodOptionsForRange();
+  if(sel){
+    sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.t}</option>`).join('');
+    sel.value = exSub && opts.some(o=>o.v===exSub) ? exSub : 'all';
+  }
+  syncExpandedSummaryPills();
+}
+function setExpandedCalendarRange(r){
+  EXPANDED_PAGE_STATE.range=r;
+  EXPANDED_PAGE_STATE.subPeriod='all';
+  syncExpandedCalendarUI();
+  renderExpandedChart();
+  renderExpandedDataTable();
+  toggleExpandCalendar(true);
+  if(r!=='all'){
+    let sel=document.getElementById('expandSubSel');
+    setTimeout(()=>{ if(sel){ try{ sel.focus(); }catch(e){} } }, 20);
+  }
+}
+function onExpandedCalendarSubChange(){
+  let sel=document.getElementById('expandSubSel');
+  if(!sel) return;
+  EXPANDED_PAGE_STATE.subPeriod=sel.value;
+  renderExpandedChart();
+  renderExpandedDataTable();
+  toggleExpandCalendar(true);
+}
+function openExpandedChartPage(zKey,chartType){
+  let zd=CHART_META[zKey]; if(!zd) return;
+  closeExpandedChartPage(true);
+  let defaultExpandedRange = range || 'all';
+  let defaultExpandedSub = subPeriod || 'all';
+  let defaultSortKey=(zKey==='trend_total' || zKey==='site_complaint_percent') ? 'natural' : 'value';
+  let defaultSortDir=(zKey==='trend_total' || zKey==='site_complaint_percent') ? 'asc' : 'desc';
+  EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows:[], search:'', sortBy:defaultSortKey, sortDir:defaultSortDir, range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
+  let initialComputed=computeExpandedChartRowsByZKey(zKey, zd) || { rows: [] };
+  EXPANDED_PAGE_STATE.rows=(initialComputed.rows||[]).slice();
+  EXPANDED_PAGE_STATE.runtimeMeta=initialComputed;
+  let total = zKey==='site_complaint_percent'
+    ? EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.complaintCount)||0),0)
+    : (EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.value)||0),0) || Number(zd.total||0));
+  let showCalendar = !!dateCol;
+  let page=document.createElement('div');
+  page.id='expandChartPage';
+  page.className='expand-page expand-page-'+zKey;
+  page.innerHTML=`<div class="expand-shell">
+    <div class="expand-topbar">
+      <div class="expand-title-wrap">
+        <button class="expand-back" type="button" onclick="closeExpandedChartPage()"><svg class="ic"><use href="#i-x"/></svg> Back to Dashboard</button>
+        <div class="expand-title-badge"><svg class="ic"><use href="#i-chart"/></svg></div>
+        <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1><p>Lovely simple expanded view with chart + data summary</p></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div></div></div>` : ''}
+        <div class="expand-chip" id="expandPeriodChip">${defaultExpandedRange==='all' ? 'All Periods' : cap(defaultExpandedRange)+' View'}</div>
+        <div class="expand-chip" id="expandTotalChip">${total.toLocaleString()} total</div>
+      </div>
+    </div>
+    <div class="expand-layout">
+      <div class="expand-panel expand-chart-panel"><div class="expand-chart-box"><canvas id="expandPageCanvas"></canvas></div></div>
+      <div class="expand-panel expand-data-panel"><div class="expand-data-head">Data Breakdown</div><div class="expand-table-wrap"><div id="expandRowsMeta" class="expand-rows-meta"></div><table class="expand-table ${getExpandedTableColumnClass(zKey)}"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody id="expandTableBody"></tbody></table></div></div>
+    </div>
+  </div>`;
+  document.body.appendChild(page);
+  document.body.style.overflow='hidden';
+  requestAnimationFrame(()=>{ let el=document.getElementById('expandChartPage'); if(el) el.classList.add('show'); });
+  page.scrollTop=0;
+  syncExpandedCalendarUI();
+  renderExpandedChart();
+  renderExpandedDataTable();
+}
+function openZoom(zKey,chartType){
+  openExpandedChartPage(zKey, chartType || 'bar');
+}
+function switchZT(type){
+  if(!zoomD)return;zoomD.currentType=type;
+  let map={Bar:'bar',Line:'line',Polar:'polarArea',Radar:'radar'};
+  document.querySelectorAll('.ztp').forEach(p=>p.classList.toggle('on',map[p.textContent]===type));
+  buildZC(type);
+}
+function buildZC(type){
+  if(zoomCH){zoomCH.destroy();zoomCH=null;}
+  let zd=zoomD,gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+  let full=zd.labels,dc;
+  
+  // Apply Chart Limit Settings to the expanded view!
+  let limit = S.chartLimit || 0;
+  let labelsToUse = full;
+  let valuesToUse = zd.pieValues;
+  let colorsToUse = zd.pieColors || P.slice(0, labelsToUse.length);
+  if (zd.type === 'normal' && limit > 0) {
+    labelsToUse = full.slice(0, limit);
+    valuesToUse = zd.pieValues.slice(0, limit);
+    colorsToUse = colorsToUse.slice(0, limit);
+  }
+  
+  let isCmpCat=zd.type==='cmpCategory';
+  if(isCmpCat && (type==='bar'||type==='line'||type==='radar')){
+    // multi-dataset by period
+    dc={labels:full,datasets:zd.datasets.map((ds,i)=>({...ds,backgroundColor:type==='line'?P[i%P.length]+'22':P[i%P.length],borderColor:(type==='line'||type==='radar')?P[i%P.length]:undefined,borderWidth:(type==='line'||type==='radar')?2:undefined,pointBackgroundColor:(type==='line'||type==='radar')?P[i%P.length]:undefined,fill:type==='radar',tension:type==='line'?.3:undefined}))};
+  }else if(type==='bar'||type==='line'||type==='radar'){
+    if(zd.type==='pivot')dc={labels:full,datasets:zd.datasets.map((ds,i)=>({...ds,backgroundColor:type==='line'?'transparent':ds.backgroundColor,borderColor:(type==='line'||type==='radar')?P[i%P.length]:undefined,borderWidth:(type==='line'||type==='radar')?2:undefined,pointBackgroundColor:(type==='line'||type==='radar')?P[i%P.length]:undefined,fill:type==='radar',tension:type==='line'?.3:undefined}))};
+    else dc={labels:labelsToUse,datasets:[{label:zd.title,data:valuesToUse,backgroundColor:type==='line'?'transparent':colorsToUse,borderColor:(type==='line'||type==='radar')?P[0]:undefined,borderWidth:(type==='line'||type==='radar')?2:undefined,pointBackgroundColor:(type==='line'||type==='radar')?colorsToUse:undefined,borderRadius:type==='bar'?5:undefined,borderSkipped:false,fill:type==='radar',tension:type==='line'?.3:undefined}]};
+  }else dc={labels:labelsToUse,datasets:[{data:valuesToUse,backgroundColor:colorsToUse,borderWidth:2,borderColor:S.dark?'#1a1d2e':'#fff',hoverOffset:8}]};
+
+  let opts={responsive:true,maintainAspectRatio:false,animation:{duration:300},
+    plugins:{legend:{display:isCmpCat&&(type==='bar'||type==='line'||type==='radar'),position:'top',labels:{color:tc,font:{size:11,family:'Inter',weight:'600'},boxWidth:11,padding:8}},
+      valueLabels:{display:true,fontSize:10},
+      tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',titleFont:{size:12,family:'Inter',weight:'700'},bodyFont:{size:11,family:'Inter'},cornerRadius:8,padding:12}},
+    onClick:(e,el)=>{
+      if(!el||!el.length)return;
+      let i=el[0].index,dsIdx=el[0].datasetIndex;
+      if(zd.columnName==='_overtime'){
+        let tierName = zd.labels[i].includes("50%") ? "50%" : (zd.labels[i].includes("70%") ? "70%" : "90%");
+        showOverTimeTicketDetailsM(tierName);
+      }else if(zd.type==='cpe_complaints'){openCpeModelModal(zd.labels[i]);}else if(zd.type==='trend_total'){
+        openTrendPeriodM(TREND_GRAN, zd.keys[i], zd.labels[i]);
+      }else if(zd.type==='cmpCategory'){
+        let cat=zd.labels[i];let p=zd.periods[dsIdx];scheduleOpenDataM(zd.columnName,cat,p);
+      }else if(zd.type==='cmpTotals'){
+        let p=zd.periods[i];scheduleOpenPeriodM(p);
+      }else if(zd.type==='normal'&&zd.columnName){
+        scheduleOpenDataM(zd.columnName,zd.labels[i]);
+      }else if(zd.type==='filter'&&zd.columnName){
+        openFilterDataM(zd.columnName,zd.labels[i]);
+      }else if(zd.type==='pivotFilter'&&zd.columnName){
+        if(zd.colFieldName&&zd.colValue){
+          openPivotFilterCrossDataM(zd.columnName,zd.labels[i],zd.colFieldName,zd.colValue);
+        }else if(zd.colFieldName&&zd.colKeys&&zd.rowMap){
+          // Multi-dataset pivot: open the specific row + dataset column
+          let ck=zd.colKeys[dsIdx];
+          if(ck)openPivotFilterCrossDataM(zd.columnName,zd.labels[i],zd.colFieldName,ck);
+          else openPivotFilterDataM(zd.columnName,zd.labels[i]);
+        }else{
+          openPivotFilterDataM(zd.columnName,zd.labels[i]);
+        }
+      }else if(zd.type==='trend'&&zd.columnName){
+        scheduleOpenDateM(zd.labels[i]);
+      }else if(zd.type==='pivot'){
+        // pivot: open detail by row label
+      }
+    }
+  };
+  if(type==='bar'||type==='line')opts.scales={y:{grid:{color:gc},ticks:{font:{size:10,family:'Inter'},color:tc}},x:{grid:{color:type==='line'?gc:'transparent'},ticks:{maxRotation:45,autoSkip:true,maxTicksLimit:25,font:{size:9,family:'Inter'},color:tc}}};
+  if(type==='doughnut')opts.cutout='50%';
+  if(type==='radar')opts.scales={r:{grid:{color:gc},pointLabels:{font:{size:9,family:'Inter'},color:tc},ticks:{display:false}}};
+  if(type==='polarArea')opts.scales={r:{grid:{color:gc},ticks:{display:false}}};
+  zoomCH=createSafeChart(document.getElementById('zoomCanvas'),{type,data:dc,options:opts});
+  document.getElementById("zoomInfo").textContent=full.length+' categories · Total: '+(zd.total||0).toLocaleString();
+}
+function buildZL(){
+  let zd=zoomD,el=document.getElementById("zoomLeg"),labels=zd.pieLabels||zd.labels,values=zd.pieValues,colors=zd.pieColors||P.slice(0,labels.length),total=zd.total||values.reduce((a,b)=>a+b,0);
+  
+  // Apply Chart Limit Settings to the legend list in the zoom modal!
+  let limit = S.chartLimit || 0;
+  if (zd.type === 'normal' && limit > 0) {
+    labels = labels.slice(0, limit);
+    values = values.slice(0, limit);
+    colors = colors.slice(0, limit);
+  }
+  
+  let frag=document.createDocumentFragment();
+  labels.forEach((lb,i)=>{
+    let v=values[i]||0,pct=total>0?((v/total)*100).toFixed(1):0,col=colors[i%colors.length];
+    let div=document.createElement('div');div.className='zoom-legend-item';
+    div.innerHTML=`<div class="zoom-legend-dot" style="background:${col};"></div><span>${escapeHtml(lb)}</span><span class="zoom-legend-val">${v.toLocaleString()}</span><span class="zoom-legend-pct">(${pct}%)</span>`;
+    if(zd.columnName==='_overtime'){
+      let tierName = lb.includes("50%") ? "50%" : (lb.includes("70%") ? "70%" : "90%");
+      div.onclick=()=>showOverTimeTicketDetailsM(tierName);
+    }
+    else if(zd.type==='normal'&&zd.columnName)div.onclick=()=>scheduleOpenDataM(zd.columnName,lb);
+    else if(zd.type==='filter'&&zd.columnName)div.onclick=()=>openFilterDataM(zd.columnName,lb);
+    else if(zd.type==='pivotFilter'&&zd.columnName)div.onclick=()=>openPivotFilterDataM(zd.columnName,lb);
+    else if(zd.type==='cmpTotals')div.onclick=()=>scheduleOpenPeriodM(zd.periods[i]);
+    else if(zd.type==='cpe_complaints')div.onclick=()=>openCpeModelModal(lb);
+    else if(zd.type==='trend_total')div.onclick=()=>openTrendPeriodM(TREND_GRAN, zd.keys[i], zd.labels[i]);
+    else if(zd.type==='trend'&&zd.columnName)div.onclick=()=>scheduleOpenDateM(zd.labels[i]);
+    frag.appendChild(div);
+  });
+  el.innerHTML='';el.appendChild(frag);
+}
+
+/* ═══════════ RECORDS MODAL (stacks on top of zoom) ═══════════ */
+let MODAL_ROWS=[],MODAL_HEADERS=[],MODAL_CHUNK=50,MODAL_RENDERED=0,MODAL_COL='',MODAL_CAT='';
+function getHiddenPopupHeaders(){
+  let hidden=[];
+  try {
+    if (D && Array.isArray(D.headers)) {
+      D.headers.forEach(h => {
+        let l=String(h||'').trim().toLowerCase();
+        if (
+          l==='full name' || l.includes('full name') ||
+          l==='short code' || l.includes('short code') ||
+          l==='active site' || l.includes('active site') ||
+          l==='active count' || l.includes('active count')
+        ) hidden.push(h);
+      });
+    }
+  } catch(e) {}
+  return [...new Set(hidden)];
+}
+function scheduleOpenDataM(col,cat,period){
+  if(window.__openingModal)return;
+  window.__openingModal=true;
+  requestAnimationFrame(()=>{openDataM(col,cat,period);window.__openingModal=false;});
+}
+function scheduleOpenPeriodM(p){
+  if(window.__openingModal)return;
+  window.__openingModal=true;
+  requestAnimationFrame(()=>{openPeriodM(p);window.__openingModal=false;});
+}
+function scheduleOpenDateM(ds){
+  if(window.__openingModal)return;
+  window.__openingModal=true;
+  requestAnimationFrame(()=>{openDateM(ds);window.__openingModal=false;});
+}
+/* ═══════════ UNIVERSAL MODERN DATA POPUP MODAL STYLER ═══════════ */
+function styleGeneralRecordsModal(titleStr, count) {
+  let modalContent = document.querySelector('#dModal .modal-content');
+  if (!modalContent) return;
+  
+  modalContent.style.background = 'linear-gradient(180deg, var(--bg2) 0%, color-mix(in srgb, var(--bg2) 92%, var(--bg3)) 100%)';
+  modalContent.style.border = '1px solid color-mix(in srgb, var(--ac) 10%, var(--border))';
+  modalContent.style.borderRadius = '18px';
+  modalContent.style.boxShadow = '0 18px 36px rgba(15,23,42,0.14)';
+  modalContent.style.overflow = 'hidden';
+  modalContent.style.display = 'flex';
+  modalContent.style.flexDirection = 'column';
+  modalContent.style.maxHeight = '84vh';
+  
+  let header = modalContent.querySelector('.modal-header');
+  if (header) {
+    header.style.borderBottom = '1px solid var(--border)';
+    header.style.padding = '12px 16px';
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'center';
+    header.style.background = 'var(--bg3)';
+    header.style.flexShrink = '0';
+    header.innerHTML = `
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:40px;height:40px;border-radius:10px;background:var(--ac);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 10px rgba(0,0,0,0.2);">🔍</div>
+        <div>
+          <h5 class="modal-title" style="font-size:15px;font-weight:800;margin:0;color:var(--t1);">${escapeHtml(titleStr)}</h5>
+          <p style="font-size:11px;color:var(--t2);margin:2px 0 0 0;">Underlying records matching selection (<strong style="color:var(--t1);">${count.toLocaleString()} tickets</strong>)</p>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button type="button" class="btn-pvt-action small primary" style="padding:6px 14px;font-size:11px;background:var(--ac);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,0.15);" onclick="exportRecordsCSV()">
+          📥 Export CSV (${count})
+        </button>
+        <button type="button" class="btn-close" style="filter:${S.dark ? 'invert(1)' : 'none'};margin-left:4px;" data-bs-dismiss="modal"></button>
+      </div>
+    `;
+  }
+  
+  let body = modalContent.querySelector('.modal-body');
+  if (body) {
+    body.style.padding = '0';
+    body.style.overflow = 'auto';
+    body.style.flex = '1';
+    body.style.maxHeight = 'calc(84vh - 124px)';
+  }
+  
+  let footer = modalContent.querySelector('.modal-footer');
+  if (footer) {
+    footer.style.borderTop = '1px solid var(--border)';
+    footer.style.padding = '12px 22px';
+    footer.style.display = 'flex';
+    footer.style.justifyContent = 'space-between';
+    footer.style.alignItems = 'center';
+    footer.style.background = 'var(--bg3)';
+    footer.style.flexShrink = '0';
+    footer.innerHTML = `
+      <span style="font-size:12px;color:var(--t2);font-weight:600;">Showing up to ${count.toLocaleString()} matching records</span>
+      <button type="button" class="btn-pvt-action secondary" style="padding:7px 18px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-weight:600;cursor:pointer;font-size:12.5px;" data-bs-dismiss="modal">Close</button>
+    `;
+  }
+}
+
+function openDataM(col,cat,period){
+  let title=col+' → '+cat;
+  let pool;
+  if(period){
+    title+='  ·  '+periodLabel(period);
+    pool=rowsForPeriod(period);
+  }else{
+    pool=COMPARE_MODE?periodFilter(D.rawData,COMPARE_PICKS):F;
+  }
+  let _omit = getHiddenPopupHeaders();
+  MODAL_HEADERS=(D.headers||[]).filter(h=>_omit.indexOf(h)<0);
+  MODAL_ROWS=[];for(let i=0;i<pool.length;i++){let r=pool[i],v=r[col];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';if(k===cat)MODAL_ROWS.push(r);}
+  MODAL_COL=col;MODAL_CAT=cat;MODAL_RENDERED=0;
+  styleGeneralRecordsModal('Records: ' + title, MODAL_ROWS.length);
+  document.getElementById("mH").innerHTML=MODAL_HEADERS.map(h=>`<th style="padding:10px 14px;background:var(--bg3);font-weight:700;color:var(--t1);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;">${escapeHtml(h)}</th>`).join('');
+  document.getElementById("mB").innerHTML='';
+  let _mc=document.getElementById("mC");if(_mc)_mc.textContent=MODAL_ROWS.length+' tickets';
+  renderMoreRows();
+  showRecordsModalOnTop();
+  let body=document.getElementById("mBody");body.scrollTop=0;
+  body.onscroll=()=>{if(MODAL_RENDERED<MODAL_ROWS.length && body.scrollTop+body.clientHeight>=body.scrollHeight-80)renderMoreRows();};
+}
+function openPeriodM(p){
+  let rows=rowsForPeriod(p);
+  let _omit = getHiddenPopupHeaders();
+  MODAL_HEADERS=(D.headers||[]).filter(h=>_omit.indexOf(h)<0);
+  styleGeneralRecordsModal('Period: ' + periodLabel(p), rows.length);
+  document.getElementById("mH").innerHTML=MODAL_HEADERS.map(h=>`<th style="padding:10px 14px;background:var(--bg3);font-weight:700;color:var(--t1);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;">${escapeHtml(h)}</th>`).join('');
+  document.getElementById("mB").innerHTML='';
+  MODAL_ROWS=rows;MODAL_COL='_period';MODAL_CAT=p;MODAL_RENDERED=0;
+  let _mc=document.getElementById("mC");if(_mc)_mc.textContent=rows.length+' tickets';
+  renderMoreRows();showRecordsModalOnTop();
+  let body=document.getElementById("mBody");body.scrollTop=0;
+  body.onscroll=()=>{if(MODAL_RENDERED<MODAL_ROWS.length && body.scrollTop+body.clientHeight>=body.scrollHeight-80)renderMoreRows();};
+}
+function openDateM(ds){
+  let rows=D.rawData.filter(r=>{let d=parseLocalDate(r[dateCol]);return d&&toLocalDateStr(d)===ds;});
+  let _omit = getHiddenPopupHeaders();
+  MODAL_HEADERS=(D.headers||[]).filter(h=>_omit.indexOf(h)<0);
+  styleGeneralRecordsModal('Date: ' + ds, rows.length);
+  document.getElementById("mH").innerHTML=MODAL_HEADERS.map(h=>`<th style="padding:10px 14px;background:var(--bg3);font-weight:700;color:var(--t1);border:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;">${escapeHtml(h)}</th>`).join('');
+  document.getElementById("mB").innerHTML='';
+  MODAL_ROWS=rows;MODAL_COL='_date';MODAL_CAT=ds;MODAL_RENDERED=0;
+  let _mc=document.getElementById("mC");if(_mc)_mc.textContent=rows.length+' tickets';
+  renderMoreRows();showRecordsModalOnTop();
+  let body=document.getElementById("mBody");body.scrollTop=0;
+  body.onscroll=()=>{if(MODAL_RENDERED<MODAL_ROWS.length && body.scrollTop+body.clientHeight>=body.scrollHeight-80)renderMoreRows();};
+}
+function showRecordsModalOnTop(){
+  let modal=document.getElementById('dModal');
+  if(!modal) return;
+  try{ if(dataModal && typeof dataModal.show==='function') dataModal.show(); }catch(e){}
+  modal.style.setProperty('z-index','6080','important');
+  modal.style.setProperty('position','fixed','important');
+  modal.style.setProperty('inset','0','important');
+  modal.style.setProperty('display','grid','important');
+  modal.style.setProperty('place-items','center','important');
+  modal.style.setProperty('align-items','center','important');
+  modal.style.setProperty('justify-items','center','important');
+  modal.classList.add('show');
+  document.body.classList.add('modal-open');
+  setTimeout(()=>{
+    let dlg=modal.querySelector('.modal-dialog');
+    if(dlg){
+      dlg.style.setProperty('margin','0','important');
+      dlg.style.setProperty('display','flex','important');
+      dlg.style.setProperty('align-items','center','important');
+      dlg.style.setProperty('justify-content','center','important');
+      dlg.style.setProperty('transform','translate3d(0,0,0)','important');
+    }
+    let backdrops=document.querySelectorAll('.modal-backdrop');
+    if(!backdrops.length){
+      let bd=document.createElement('div');
+      bd.className='modal-backdrop fade show high';
+      bd.style.zIndex='6075';
+      document.body.appendChild(bd);
+      backdrops=document.querySelectorAll('.modal-backdrop');
+    }
+    if(backdrops.length){
+      backdrops[backdrops.length-1].style.zIndex='6075';
+      backdrops[backdrops.length-1].classList.add('high');
+    }
+  },10);
+}
+function renderMoreRows(){
+  let bd=document.getElementById("mB");
+  let headers=MODAL_HEADERS&&MODAL_HEADERS.length?MODAL_HEADERS:(D.headers||[]);
+  let end=Math.min(MODAL_ROWS.length,MODAL_RENDERED+MODAL_CHUNK);
+  let parts=new Array(end-MODAL_RENDERED);
+  for(let i=MODAL_RENDERED;i<end;i++){
+    let r=MODAL_ROWS[i];let cells=new Array(headers.length);
+    for(let j=0;j<headers.length;j++){let h=headers[j],val=r[h]!=null?r[h]:'';let hl=h.toLowerCase().includes('duration')||h.toLowerCase().includes('down');cells[j]=`<td style="padding:8px 14px;color:var(--t1);border:1px solid var(--border);white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis;${hl?'font-weight:700;color:var(--ac);':''}">${escapeHtml(String(val))}</td>`;}
+    parts[i-MODAL_RENDERED]='<tr>'+cells.join('')+'</tr>';
+  }
+  bd.insertAdjacentHTML('beforeend',parts.join(''));
+  MODAL_RENDERED=end;
+  document.getElementById("mLoadMore").style.display=MODAL_RENDERED<MODAL_ROWS.length?'block':'none';
+}
+function loadMoreRecords(){renderMoreRows();}
+function exportRecordsCSV(){
+  if(!MODAL_ROWS.length)return;
+  let headers=MODAL_HEADERS&&MODAL_HEADERS.length?MODAL_HEADERS:(D.headers||[]);
+  let lines=[headers.map(csvCell).join(',')];
+  MODAL_ROWS.forEach(r=>lines.push(headers.map(h=>csvCell(r[h]!=null?r[h]:'')).join(',')));
+  let blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  let a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=(D.tabName||'records')+'_'+MODAL_COL+'_'+MODAL_CAT+'.csv';
+  document.body.appendChild(a);a.click();a.remove();
+}
+function csvCell(v){let s=String(v==null?'':v).replace(/"/g,'""');return /[",\n]/.test(s)?'"'+s+'"':s;}
+
+/* ═══════════ UTILS ═══════════ */
+function killCH(){Object.keys(CH).forEach(k=>{try{if(CH[k]&&CH[k].destroy)CH[k].destroy();}catch(e){}});CH={};if(typeof window.Chart!=="undefined"||typeof Chart!=="undefined"){let C=window.Chart||Chart;if(C.instances){Object.keys(C.instances).forEach(id=>{try{if(C.instances[id])C.instances[id].destroy();}catch(e){}});}}}
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+function escapeHtml(s){if(s==null)return '';return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
+function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic"><use href="#i-inbox"/></svg></div><div class="e-t">No records found</div><p style="font-size:11px;color:var(--t3);margin-top:6px;">Try a different period or data tab</p></div>`;}
+</script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a11b096539fabc78',t:'MTc4MjQ2NDU4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
+<!-- Modern Naming Modal -->
+<div id="namingModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border-radius:12px;padding:24px;max-width:500px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <h3 style="margin:0 0 16px 0;font-size:18px;color:var(--t1);">💾 Save Chart</h3>
+    <p style="margin:0 0 12px 0;font-size:13px;color:var(--t2);">Enter a name for your chart:</p>
+    <input type="text" id="chartNameInput" style="width:100%;padding:12px;border:2px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);color:var(--t1);outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+    <div style="display:flex;gap:12px;margin-top:20px;justify-content:flex-end;">
+    <button onclick="cancelNamingModal()" style="padding:7px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;font-weight:600;cursor:pointer;font-size:12px;">Cancel</button>
+      <button onclick="confirmNamingModal()" class="btn-mc" style="padding:10px 20px;font-size:13px;">Save Chart</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modern Delete Confirmation Modal -->
+<div id="deleteConfirmModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border-radius:12px;padding:24px;max-width:450px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="width:40px;height:40px;border-radius:50%;background:rgba(239,68,68,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg style="width:20px;height:20px;fill:none;stroke:#ef4444;stroke-width:2;" viewBox="0 0 24 24">
+          <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+          <line x1="10" y1="11" x2="10" y2="17"/>
+          <line x1="14" y1="11" x2="14" y2="17"/>
+        </svg>
+      </div>
+      <div>
+        <h3 style="margin:0;font-size:18px;color:var(--t1);">Delete Chart</h3>
+        <p style="margin:4px 0 0 0;font-size:13px;color:var(--t2);">This action cannot be undone</p>
+      </div>
+    </div>
+    <p style="margin:0 0 20px 0;font-size:14px;color:var(--t1);line-height:1.5;">
+      Are you sure you want to delete "<strong id="deleteChartName"></strong>"? This chart will be permanently removed from your dashboard.
+    </p>
+    <div style="display:flex;gap:12px;justify-content:flex-end;">
+      <button onclick="cancelDeleteChart()" style="padding:10px 20px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--t1);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">Cancel</button>
+      <button onclick="confirmDeleteChart()" style="padding:10px 20px;border:none;border-radius:8px;background:#ef4444;color:white;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'">Delete Chart</button>
+    </div>
+  </div>
+</div>
+
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1adacd2db54fd6b',t:'MTc4NDAwMjE5OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
