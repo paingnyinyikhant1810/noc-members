@@ -6454,6 +6454,40 @@ body #drInfo .dr-b {
 }
 
 /* ═══════════ TOP ICON COLOR UNIFY PATCH V37 ═══════════ */
+.dashboard-item-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 38px;
+  max-width: min(44vw, 340px);
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 8px 16px rgba(15,23,42,.08);
+  color: var(--t1);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-theme="dark"] .dashboard-item-badge {
+  border-color: color-mix(in srgb, var(--ac) 10%, var(--border)) !important;
+  background: rgba(26,29,46,.88) !important;
+  color: var(--t1);
+}
+@media (max-width: 768px) {
+  .dashboard-item-badge {
+    min-height: 36px;
+    max-width: min(52vw, 220px);
+    padding: 0 12px;
+    border-radius: 11px;
+    font-size: 11px;
+  }
+}
 #periodToggleBtn,
 #toolsToggleBtn,
 #setBtn {
@@ -6703,6 +6737,7 @@ body #drInfo .dr-b {
     <div class="palette-settings-wrap">
       <button class="icon-btn palette-settings-btn" id="setBtn" title="Settings" onclick="openSettings()"><svg class="ic"><use href="#i-settings"/></svg></button>
     </div>
+    <div class="dashboard-item-badge" id="dashboardItemBadge" title="Current Dashboard Item"></div>
   </div>
 </header>
 
@@ -6848,6 +6883,18 @@ function getDashboardScopeKey(){
 }
 function getScopedStorageKey(base){
   return base + '__' + getDashboardScopeKey();
+}
+function updateDashboardItemBadge(){
+  let el = document.getElementById('dashboardItemBadge');
+  if(!el) return;
+  let name = (DASH_EMBED && DASH_EMBED.dashboardName) ? String(DASH_EMBED.dashboardName).trim() : '';
+  if(!name){
+    el.style.display='none';
+    el.textContent='';
+    return;
+  }
+  el.style.display='inline-flex';
+  el.textContent = name;
 }
 function getEmbedDashboardDataCacheKey(){
   return 'noc_embed_dashboard_data__' + getDashboardScopeKey();
@@ -7805,7 +7852,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   zoomModal2 = createSafeModal(document.getElementById('zoomModal'));
   settingsModal = createSafeModal(document.getElementById('settingsModal'));
 
-  loadSettings();applyTheme();buildSwatchRow();bindSegs();loadSavedCharts();
+  loadSettings();applyTheme();buildSwatchRow();bindSegs();loadSavedCharts();updateDashboardItemBadge();
   setInterval(() => {
     let prevTheme = document.documentElement.getAttribute('data-theme');
     let prevAcc = document.documentElement.getAttribute('data-acc');
@@ -14130,5 +14177,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ad273d0c8d8965',t:'MTc4Mzk5NjcyNw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1adacd2db54fd6b',t:'MTc4NDAwMjE5OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
