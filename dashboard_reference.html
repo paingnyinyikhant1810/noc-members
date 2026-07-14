@@ -7864,7 +7864,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     }
   }, 1200);
   
-  showL("Loading dashboard from Google Sheets…");
+  showL("Loading dashboard...");
   apiCall('getStartupBundle', { defaultTab: S.defaultTab }).then(bundle => {
     console.log("Received fast startup bundle:", bundle);
     
@@ -9375,7 +9375,6 @@ function renderCpeComplaintSection(){
         <div class="cd-dot" style="background:var(--green);"></div>
         <h3>${escapeHtml(title)}</h3>
       </div>
-      <span class="c-tag" style="background:var(--green);">${activeModels.length} models</span>
       <div class="cd-actions">
         <button class="btn-expand-dash" onclick="openZoom('cpe_complaints','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button>
       </div>
@@ -9419,7 +9418,7 @@ function renderCpeComplaintSection(){
       title: title,
       labels: activeModels,
       shortLabels: activeModels,
-      datasets: [{ label: 'Unique Devices', data: activeCounts, backgroundColor: colors }],
+      datasets: [{ label: 'Counts', data: activeCounts, backgroundColor: colors }],
       pieLabels: activeModels,
       pieValues: activeCounts,
       pieColors: colors,
@@ -9432,7 +9431,7 @@ function renderCpeComplaintSection(){
       type: 'bar',
       data: {
         labels: activeModels,
-        datasets: [{ label: 'Unique Devices', data: activeCounts, backgroundColor: colors, borderRadius: 8, borderSkipped: false, maxBarThickness: 32, categoryPercentage:.72, barPercentage:.82 }]
+        datasets: [{ label: 'Counts', data: activeCounts, backgroundColor: colors, borderRadius: 8, borderSkipped: false, maxBarThickness: 32, categoryPercentage:.72, barPercentage:.82 }]
       },
       options: {
         responsive: true,
@@ -13790,7 +13789,7 @@ function openExpandedChartPage(zKey,chartType){
       <div class="expand-title-wrap">
         <button class="expand-back" type="button" onclick="closeExpandedChartPage()"><svg class="ic"><use href="#i-x"/></svg> Back to Dashboard</button>
         <div class="expand-title-badge"><svg class="ic"><use href="#i-chart"/></svg></div>
-        <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1><p>Lovely simple expanded view with chart + data summary</p></div>
+        <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
         ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div></div></div>` : ''}
