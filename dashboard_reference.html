@@ -5798,19 +5798,29 @@ body #drInfo .dr-b {
   box-shadow: 0 6px 14px rgba(15,23,42,.06) !important;
 }
 .expand-page-site_summary .expand-layout,
-.expand-page-site_complaint_percent .expand-layout {
+.expand-page-site_complaint_percent .expand-layout,
+.expand-page-site_complaint_percent_high .expand-layout,
+.expand-page-site_complaint_percent_low .expand-layout {
   grid-template-columns: minmax(0, 1.05fr) minmax(580px, 1.25fr) !important;
 }
 .expand-page-site_summary .expand-table-site th:nth-child(1),
 .expand-page-site_summary .expand-table-site td:nth-child(1),
 .expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(1),
-.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(1) {
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(1),
+.expand-page-site_complaint_percent_high .expand-table-site-pct th:nth-child(1),
+.expand-page-site_complaint_percent_high .expand-table-site-pct td:nth-child(1),
+.expand-page-site_complaint_percent_low .expand-table-site-pct th:nth-child(1),
+.expand-page-site_complaint_percent_low .expand-table-site-pct td:nth-child(1) {
   width: 14% !important;
 }
 .expand-page-site_summary .expand-table-site th:nth-child(2),
 .expand-page-site_summary .expand-table-site td:nth-child(2),
 .expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(2),
-.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(2) {
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(2),
+.expand-page-site_complaint_percent_high .expand-table-site-pct th:nth-child(2),
+.expand-page-site_complaint_percent_high .expand-table-site-pct td:nth-child(2),
+.expand-page-site_complaint_percent_low .expand-table-site-pct th:nth-child(2),
+.expand-page-site_complaint_percent_low .expand-table-site-pct td:nth-child(2) {
   width: 52% !important;
   white-space: normal !important;
   line-height: 1.34 !important;
@@ -5824,21 +5834,33 @@ body #drInfo .dr-b {
   width: 20% !important;
 }
 .expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(3),
-.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(3) {
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(3),
+.expand-page-site_complaint_percent_high .expand-table-site-pct th:nth-child(3),
+.expand-page-site_complaint_percent_high .expand-table-site-pct td:nth-child(3),
+.expand-page-site_complaint_percent_low .expand-table-site-pct th:nth-child(3),
+.expand-page-site_complaint_percent_low .expand-table-site-pct td:nth-child(3) {
   width: 14% !important;
 }
 .expand-page-site_complaint_percent .expand-table-site-pct th:nth-child(4),
-.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(4) {
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(4),
+.expand-page-site_complaint_percent_high .expand-table-site-pct th:nth-child(4),
+.expand-page-site_complaint_percent_high .expand-table-site-pct td:nth-child(4),
+.expand-page-site_complaint_percent_low .expand-table-site-pct th:nth-child(4),
+.expand-page-site_complaint_percent_low .expand-table-site-pct td:nth-child(4) {
   width: 20% !important;
 }
 .expand-page-site_summary .expand-table-site td:nth-child(2),
-.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(2) {
+.expand-page-site_complaint_percent .expand-table-site-pct td:nth-child(2),
+.expand-page-site_complaint_percent_high .expand-table-site-pct td:nth-child(2),
+.expand-page-site_complaint_percent_low .expand-table-site-pct td:nth-child(2) {
   word-break: normal !important;
   overflow-wrap: anywhere !important;
 }
 @media (max-width: 980px) {
   .expand-page-site_summary .expand-layout,
-  .expand-page-site_complaint_percent .expand-layout {
+  .expand-page-site_complaint_percent .expand-layout,
+  .expand-page-site_complaint_percent_high .expand-layout,
+  .expand-page-site_complaint_percent_low .expand-layout {
     grid-template-columns: 1fr !important;
   }
 }
@@ -6064,20 +6086,26 @@ body #drInfo .dr-b {
 
 /* ═══════════ SITE MATCH + FULL-WIDTH 70/30 + STRONGER EXPAND BLUR PATCH V33 ═══════════ */
 #card_site_summary,
-#card_site_complaint_percent {
+#card_site_complaint_percent,
+#card_site_complaint_percent_high,
+#card_site_complaint_percent_low {
   flex: 1 1 100% !important;
   width: 100% !important;
   max-width: 100% !important;
   grid-column: 1 / -1 !important;
 }
 #card_site_summary .row.g-3,
-#card_site_complaint_percent .row.g-3 {
+#card_site_complaint_percent .row.g-3,
+#card_site_complaint_percent_high .row.g-3,
+#card_site_complaint_percent_low .row.g-3 {
   grid-template-columns: minmax(0, 7fr) minmax(220px, 3fr) !important;
   gap: 10px !important;
   align-items: stretch !important;
 }
 #card_site_summary .col-lg-5 > div,
-#card_site_complaint_percent .col-lg-5 > div {
+#card_site_complaint_percent .col-lg-5 > div,
+#card_site_complaint_percent_high .col-lg-5 > div,
+#card_site_complaint_percent_low .col-lg-5 > div {
   width: 100% !important;
   justify-self: stretch !important;
   height: 230px !important;
@@ -6085,7 +6113,9 @@ body #drInfo .dr-b {
   max-height: 230px !important;
 }
 #card_site_summary .chb,
-#card_site_complaint_percent .chb {
+#card_site_complaint_percent .chb,
+#card_site_complaint_percent_high .chb,
+#card_site_complaint_percent_low .chb {
   height: 230px !important;
   min-height: 230px !important;
 }
@@ -6127,11 +6157,17 @@ body #drInfo .dr-b {
 
 @media (max-width: 980px) {
   #card_site_summary .row.g-3,
-  #card_site_complaint_percent .row.g-3 { grid-template-columns: 1fr !important; }
+  #card_site_complaint_percent .row.g-3,
+  #card_site_complaint_percent_high .row.g-3,
+  #card_site_complaint_percent_low .row.g-3 { grid-template-columns: 1fr !important; }
   #card_site_summary .col-lg-5 > div,
   #card_site_summary .chb,
   #card_site_complaint_percent .col-lg-5 > div,
-  #card_site_complaint_percent .chb { height: 200px !important; min-height: 200px !important; max-height: 200px !important; }
+  #card_site_complaint_percent .chb,
+  #card_site_complaint_percent_high .col-lg-5 > div,
+  #card_site_complaint_percent_high .chb,
+  #card_site_complaint_percent_low .col-lg-5 > div,
+  #card_site_complaint_percent_low .chb { height: 200px !important; min-height: 200px !important; max-height: 200px !important; }
   .expand-page { padding: 10px !important; }
   .expand-shell {
     width: min(100%, calc(100vw - 20px)) !important;
@@ -6143,11 +6179,17 @@ body #drInfo .dr-b {
 }
 @media (max-width: 768px) {
   #card_site_summary .row.g-3,
-  #card_site_complaint_percent .row.g-3 { grid-template-columns: 1fr !important; }
+  #card_site_complaint_percent .row.g-3,
+  #card_site_complaint_percent_high .row.g-3,
+  #card_site_complaint_percent_low .row.g-3 { grid-template-columns: 1fr !important; }
   #card_site_summary .col-lg-5 > div,
   #card_site_summary .chb,
   #card_site_complaint_percent .col-lg-5 > div,
-  #card_site_complaint_percent .chb { height: 176px !important; min-height: 176px !important; max-height: 176px !important; }
+  #card_site_complaint_percent .chb,
+  #card_site_complaint_percent_high .col-lg-5 > div,
+  #card_site_complaint_percent_high .chb,
+  #card_site_complaint_percent_low .col-lg-5 > div,
+  #card_site_complaint_percent_low .chb { height: 176px !important; min-height: 176px !important; max-height: 176px !important; }
   .expand-page { padding: 6px !important; }
   .expand-shell {
     width: calc(100vw - 12px) !important;
@@ -6251,6 +6293,8 @@ body #drInfo .dr-b {
 #card_cpe_complaints,
 #card_site_summary,
 #card_site_complaint_percent,
+#card_site_complaint_percent_high,
+#card_site_complaint_percent_low,
 #card_dup_top_cust,
 #card_ot_severity,
 [id^="card_saved_"],
@@ -6303,6 +6347,8 @@ body #drInfo .dr-b {
 #card_cpe_complaints:hover,
 #card_site_summary:hover,
 #card_site_complaint_percent:hover,
+#card_site_complaint_percent_high:hover,
+#card_site_complaint_percent_low:hover,
 #card_dup_top_cust:hover,
 #card_ot_severity:hover,
 [id^="card_saved_"]:hover,
@@ -7756,7 +7802,7 @@ const VALUE_LABEL_PLUGIN={
     opts=opts||{}; if(opts.display===false)return;
     const ctx=chart.ctx;
     ctx.save();
-    const fs=opts.fontSize||10;
+    const fs=opts.fontSize||11;
     ctx.font='800 '+fs+'px Inter, sans-serif';
     ctx.textAlign='center';
     ctx.textBaseline='middle';
@@ -7864,7 +7910,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     }
   }, 1200);
   
-  showL("Loading dashboard...");
+  showL("Loading dashboard from Google Sheets…");
   apiCall('getStartupBundle', { defaultTab: S.defaultTab }).then(bundle => {
     console.log("Received fast startup bundle:", bundle);
     
@@ -8132,7 +8178,8 @@ const DEFAULT_GRAPH_TITLE_MAP={
   trend_total:'Total Ticket Numbers',
   cpe_complaints:"CPE Model\'s Complaint Counts",
   site_summary:'Site Ticket Counts',
-  site_complaint_percent:'Site Complaint Percent',
+  site_complaint_percent_high:'Complaint Percents by OPI Sites (>50 Active Count)',
+  site_complaint_percent_low:'Complaint Percents by OPI Sites (≤50 Active Count)',
   dup_top_cust:'Top Customers with Duplicate Tickets',
   ot_severity:'OverTime Severity Distribution',
   dup_trend:'Duplicate Tickets Over Time',
@@ -8151,7 +8198,7 @@ function getModeRelevantDefaultGraphKeys(){
   if (ovr) return ['ot_trend','ot_severity'];
   if (flt || pflt) return [];
   if (pvt) return [];
-  return ['trend_total','cpe_complaints','site_summary','site_complaint_percent','dup_top_cust','ot_severity'];
+  return ['trend_total','cpe_complaints','site_summary','site_complaint_percent_high','site_complaint_percent_low','dup_top_cust','ot_severity'];
 }
 function isGraphKeyRelevantToCurrentMode(k){
   if (!k) return false;
@@ -9083,10 +9130,10 @@ function bindSiteTicketGraphContext(card){
   };
   card.title='Right-click to rename or change site code / full name / short code fields';
 }
-function bindSiteComplaintPercentGraphContext(card){
+function bindSiteComplaintPercentGraphContext(card, zKey, baseTitle){
   if(!card) return;
   card.oncontextmenu=function(e){
-    openDefaultGraphContextMenu(e,'site_complaint_percent','Site Complaint Percent',[
+    openDefaultGraphContextMenu(e,zKey || 'site_complaint_percent_high',baseTitle || 'Complaint Percents by OPI Sites',[
       {icon:'⚙️',label:'Site Complaint Percent Settings',onClick:openSiteComplaintPercentGraphSettingsModal}
     ]);
   };
@@ -9109,7 +9156,10 @@ function renderSiteComplaintPercentInMain(){
   if(!cols.siteCodeCol || !cols.activeSiteCol || !cols.activeCountCol) return;
   let sites=getSiteComplaintPercentData(F, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, cols.activeSiteCol, cols.activeCountCol, (D&&D.rawData)||F);
   if(!sites.length) return;
-  renderSiteComplaintPercentCard(sites, cols);
+  let highSites=sites.filter(s=>Number(s.activeCount||0) > 50);
+  let lowSites=sites.filter(s=>Number(s.activeCount||0) <= 50);
+  if(highSites.length) renderSiteComplaintPercentCard(highSites, cols, 'site_complaint_percent_high', 'Complaint Percents by OPI Sites (>50 Active Count)', '>50 Active');
+  if(lowSites.length) renderSiteComplaintPercentCard(lowSites, cols, 'site_complaint_percent_low', 'Complaint Percents by OPI Sites (≤50 Active Count)', '≤50 Active');
 }
 function renderSiteTicketCountsCard(sites, cols){
   let bId='siteTicketCanvas';
@@ -9144,10 +9194,10 @@ function renderSiteTicketCountsCard(sites, cols){
     CHART_META[zKey]={ title, labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total, type:'site_summary', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[]}])) };
   },30);
 }
-function renderSiteComplaintPercentCard(sites, cols){
-  let bId='siteComplaintPercentCanvas';
-  let zKey='site_complaint_percent';
-  let baseTitle='Site Complaint Percent';
+function renderSiteComplaintPercentCard(sites, cols, zKey, baseTitle, badgeText){
+  zKey = zKey || 'site_complaint_percent_high';
+  let bId='siteComplaintPercentCanvas_' + zKey;
+  baseTitle = baseTitle || 'Complaint Percents by OPI Sites';
   let title=getGraphDisplayTitle(zKey, baseTitle);
   let limit=S.chartLimit||0;
   let displaySites=limit>0?sites.slice(0,limit):sites.slice();
@@ -9166,9 +9216,9 @@ function renderSiteComplaintPercentCard(sites, cols){
   card.id='card_'+zKey;
   card.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;';
   if(isHidden(zKey)) card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[2]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[2]};">${sites.length} Sites</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[2]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[2]};">${escapeHtml(badgeText || (sites.length + ' Sites'))}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${bId}"></canvas></div></div><div class="col-lg-5"><div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;"><table class="tb"><thead><tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   area.appendChild(card);
-  bindSiteComplaintPercentGraphContext(card);
+  bindSiteComplaintPercentGraphContext(card, zKey, baseTitle);
   setTimeout(()=>{
     let colors=chartLabels.map((_,i)=>P[i%P.length]);
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
@@ -9181,7 +9231,7 @@ function renderSiteComplaintPercentCard(sites, cols){
         animation:{duration:350},
         plugins:{
           legend:{display:false},
-          valueLabels:{display:true,fontSize:8,formatter:(val)=>Number(val||0).toFixed(1)},
+          valueLabels:{display:true,fontSize:9,formatter:(val)=>Number(val||0).toFixed(1)},
           tooltip:{
             callbacks:{
               title:(ctx)=>chartLabels[ctx[0].dataIndex]||'',
@@ -9194,8 +9244,8 @@ function renderSiteComplaintPercentCard(sites, cols){
           }
         },
         scales:{
-          y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:9,weight:'600'}}},
-          x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:6.6,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
+          y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'600'}}},
+          x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:7.4,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
         }
       }
     });
@@ -9375,6 +9425,7 @@ function renderCpeComplaintSection(){
         <div class="cd-dot" style="background:var(--green);"></div>
         <h3>${escapeHtml(title)}</h3>
       </div>
+      <span class="c-tag" style="background:var(--green);">${activeModels.length} models</span>
       <div class="cd-actions">
         <button class="btn-expand-dash" onclick="openZoom('cpe_complaints','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button>
       </div>
@@ -9418,7 +9469,7 @@ function renderCpeComplaintSection(){
       title: title,
       labels: activeModels,
       shortLabels: activeModels,
-      datasets: [{ label: 'Counts', data: activeCounts, backgroundColor: colors }],
+      datasets: [{ label: 'Unique Devices', data: activeCounts, backgroundColor: colors }],
       pieLabels: activeModels,
       pieValues: activeCounts,
       pieColors: colors,
@@ -9431,7 +9482,7 @@ function renderCpeComplaintSection(){
       type: 'bar',
       data: {
         labels: activeModels,
-        datasets: [{ label: 'Counts', data: activeCounts, backgroundColor: colors, borderRadius: 8, borderSkipped: false, maxBarThickness: 32, categoryPercentage:.72, barPercentage:.82 }]
+        datasets: [{ label: 'Unique Devices', data: activeCounts, backgroundColor: colors, borderRadius: 8, borderSkipped: false, maxBarThickness: 32, categoryPercentage:.72, barPercentage:.82 }]
       },
       options: {
         responsive: true,
@@ -9439,7 +9490,7 @@ function renderCpeComplaintSection(){
         animation: { duration: 350 },
         plugins: {
           legend: { display: false },
-          valueLabels: { display: true, fontSize: 9 },
+          valueLabels: { display: true, fontSize: 10 },
           tooltip: {
             backgroundColor: S.dark ? '#252836' : '#111827',
             cornerRadius: 10,
@@ -9452,8 +9503,8 @@ function renderCpeComplaintSection(){
           openZoom('cpe_complaints','bar');
         },
         scales: {
-          y: { beginAtZero: true, grid: { color: gc }, ticks: { color: tc, font: { family: 'Inter', size: 9, weight: '600' } } },
-          x: { grid: { display: false }, ticks: { color: tc, font: { family: 'Inter', size: 6.6, weight: '700' }, autoSkip:false, maxRotation:90, minRotation:90, padding:2 } }
+          y: { beginAtZero: true, grid: { color: gc }, ticks: { color: tc, font: { family: 'Inter', size: 10, weight: '600' } } },
+          x: { grid: { display: false }, ticks: { color: tc, font: { family: 'Inter', size: 7.4, weight: '700' }, autoSkip:false, maxRotation:90, minRotation:90, padding:2 } }
         }
       }
     });
@@ -9468,7 +9519,7 @@ function openCpeModelModal(modelName) {
 function getExpandedTableColumnClass(zKey){
   if(zKey==='cpe_complaints') return 'expand-table-cpe';
   if(zKey==='site_summary') return 'expand-table-site';
-  if(zKey==='site_complaint_percent') return 'expand-table-site-pct';
+  if(zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low') return 'expand-table-site-pct';
   if(zKey==='dup_top_cust') return 'expand-table-dup';
   if(zKey==='ot_severity') return 'expand-table-ot';
   if(zKey==='trend_total') return 'expand-table-trend';
@@ -9686,12 +9737,12 @@ function buildTicketTrendChart(gran){
       animation:{duration:350},
       plugins:{
         legend:{display:false},
-        valueLabels:{display:true,fontSize:9},
+        valueLabels:{display:true,fontSize:10},
         tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}}
       },
       scales:{
-        y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:9,weight:'700'}}},
-        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:6.6,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
+        y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'}}},
+        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:7.4,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
       },
       onClick:(e,els)=>{
         openZoom('trend_total', 'bar');
@@ -9928,12 +9979,12 @@ function mkChart(id,type,data,gc,tc,fullLabels,showLeg,clickCol){
   }
   let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},
     plugins:{
-      legend:{display:type==='doughnut'?false:!!showLeg,labels:{boxWidth:9,font:{size:9,family:'Inter'},color:tc,padding:6}},
-      valueLabels:{display:true,fontSize:8},
-      tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',titleFont:{size:10,family:'Inter',weight:'700'},bodyFont:{size:9,family:'Inter'},cornerRadius:6,padding:8,callbacks:{title:ctx=>fullLabels[ctx[0].dataIndex]||''}}
+      legend:{display:type==='doughnut'?false:!!showLeg,labels:{boxWidth:9,font:{size:10,family:'Inter'},color:tc,padding:6}},
+      valueLabels:{display:true,fontSize:9},
+      tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',titleFont:{size:11,family:'Inter',weight:'700'},bodyFont:{size:10,family:'Inter'},cornerRadius:6,padding:8,callbacks:{title:ctx=>fullLabels[ctx[0].dataIndex]||''}}
     }};
-  if(type==='bar')opts.scales={y:{grid:{color:gc},ticks:{font:{size:9,family:'Inter',weight:'600'},color:tc}},x:{grid:{display:false},ticks:{maxRotation:90,minRotation:90,autoSkip:false,font:{size:6.6,family:'Inter',weight:'600'},color:tc,padding:2}}};
-  if(type==='line')opts.scales={y:{grid:{color:gc},ticks:{font:{size:9,family:'Inter',weight:'600'},color:tc}},x:{grid:{color:gc},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:labelCount>14?7:9,font:{size:7,family:'Inter',weight:'600'},color:tc,padding:4}}};
+  if(type==='bar')opts.scales={y:{grid:{color:gc},ticks:{font:{size:10,family:'Inter',weight:'600'},color:tc}},x:{grid:{display:false},ticks:{maxRotation:90,minRotation:90,autoSkip:false,font:{size:7.4,family:'Inter',weight:'600'},color:tc,padding:2}}};
+  if(type==='line')opts.scales={y:{grid:{color:gc},ticks:{font:{size:10,family:'Inter',weight:'600'},color:tc}},x:{grid:{color:gc},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:labelCount>14?7:9,font:{size:8,family:'Inter',weight:'600'},color:tc,padding:4}}};
   if(type==='doughnut')opts.cutout='52%';
   if(clickCol)opts.onClick=(e,el)=>{if(el&&el.length)scheduleOpenDataM(clickCol,fullLabels[el[0].index]);};
   return createSafeChart(document.getElementById(id),{type,data,options:opts});
@@ -13436,9 +13487,11 @@ function computeExpandedChartRowsByZKey(zKey, zd){
     let total=sites.reduce((s,x)=>s+(Number(x.count)||0),0);
     return { rows:sites.map((s,i)=>({label:s.site,key:s.site,fullName:s.fullName||'',value:Number(s.count||0),color:P[i%P.length],pct: total>0?((Number(s.count||0)/total)*100).toFixed(1):'0.0',records:s.rows||[]})) };
   }
-  if(zKey==='site_complaint_percent'){
+  if(zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low'){
     let cols=loadSiteColumnsForCurrentTab();
     let sites=getSiteComplaintPercentData(baseRows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, cols.activeSiteCol, cols.activeCountCol, (D&&D.rawData)||baseRows);
+    if(zKey==='site_complaint_percent_high') sites=sites.filter(s=>Number(s.activeCount||0) > 50);
+    if(zKey==='site_complaint_percent_low') sites=sites.filter(s=>Number(s.activeCount||0) <= 50);
     let limit=S.chartLimit||0; if(limit>0) sites=sites.slice(0,limit);
     return { rows:sites.map((s,i)=>({label:s.site,key:s.site,fullName:s.fullName||'',ratioText:s.ratioText||'0/0',percentText:s.percentText||'0.0%',complaintCount:Number(s.complaintCount||0),activeCount:Number(s.activeCount||0),value:Number(s.percentValue||0),color:P[i%P.length],pct:s.percentText||'0.0%',records:s.rows||[]})) };
   }
@@ -13500,7 +13553,7 @@ function expandedRowClick(zKey,index){
     }
     return showSiteTicketDetailsM(label);
   }
-  if(zKey==='site_complaint_percent'){
+  if(zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low'){
     if(item.records){
       let extra=item.fullName ? (' - ' + item.fullName) : '';
       let suffix='';
@@ -13567,7 +13620,7 @@ function renderExpandedDataTable(){
   if(zKey==='site_summary'){
     if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Site</th><th>Full Name</th><th>Tickets</th><th>Share</th></tr>'; }
     body.innerHTML=rows.map((r,i)=>`<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td title="${escapeHtml(r.fullName||'')}">${escapeHtml(r.fullName||'—')}</td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${r.pct}%</td></tr>`).join('');
-  }else if(zKey==='site_complaint_percent'){
+  }else if(zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low'){
     if(table){ table.className='expand-table ' + getExpandedTableColumnClass(zKey); table.querySelector('thead').innerHTML='<tr><th>Site</th><th>Full Name</th><th>Ratio</th><th>Percent</th></tr>'; }
     body.innerHTML=rows.map((r,i)=>{ let barPc=Math.max(0,Math.min(100,Number(r.value||0))); return `<tr title="${escapeHtml(r.label)}" onclick="expandedRowClick('${escapeJs(zKey)}',${i})"><td title="${escapeHtml(r.label)}"><span class="expand-swatch" style="background:${r.color};"></span><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td title="${escapeHtml(r.fullName||'')}">${escapeHtml(r.fullName||'—')}</td><td class="expand-value">${escapeHtml(r.ratioText||'0/0')}</td><td class="expand-share"><div class="bw"><div class="btt"><div class="bf" style="width:${barPc}%;background:${r.color};"></div></div><span class="bn">${escapeHtml(r.percentText||'0.0%')}</span></div></td></tr>`; }).join('');
   }else{
@@ -13628,12 +13681,12 @@ function renderExpandedChart(){
     responsive:true,
     maintainAspectRatio:false,
     animation:{duration:320},
-    plugins:{ legend:{display:false}, valueLabels:{display:true,fontSize:10}, tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}} },
-    scales:{ y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'}}}, x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:8,weight:'700'},autoSkip:false,maxRotation:(EXPANDED_PAGE_STATE.chartType==='line'?24:90),minRotation:(EXPANDED_PAGE_STATE.chartType==='line'?24:90),padding:4}} },
+    plugins:{ legend:{display:false}, valueLabels:{display:true,fontSize:11}, tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}} },
+    scales:{ y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:11,weight:'700'}}}, x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:9,weight:'700'},autoSkip:false,maxRotation:(EXPANDED_PAGE_STATE.chartType==='line'?24:90),minRotation:(EXPANDED_PAGE_STATE.chartType==='line'?24:90),padding:4}} },
     onClick:(e,els)=>{ if(els&&els.length) expandedRowClick(EXPANDED_PAGE_STATE.zKey, els[0].index); },
     onHover:(e,els)=>{ e.native.target.style.cursor=els&&els.length?'pointer':'default'; }
   };
-  if(EXPANDED_PAGE_STATE.zKey==='site_complaint_percent'){
+  if(EXPANDED_PAGE_STATE.zKey==='site_complaint_percent' || EXPANDED_PAGE_STATE.zKey==='site_complaint_percent_high' || EXPANDED_PAGE_STATE.zKey==='site_complaint_percent_low'){
     cfg.options.plugins.valueLabels={display:true,fontSize:10,formatter:(val)=>Number(val||0).toFixed(1)};
     cfg.options.plugins.tooltip.callbacks={
       title:(ctx)=>{
@@ -13661,7 +13714,7 @@ function syncExpandedSummaryPills(){
   let totalEl=document.getElementById('expandTotalChip');
   let periodEl=document.getElementById('expandPeriodChip');
   if(totalEl){
-    if(EXPANDED_PAGE_STATE.zKey==='site_complaint_percent'){
+    if(EXPANDED_PAGE_STATE.zKey==='site_complaint_percent' || EXPANDED_PAGE_STATE.zKey==='site_complaint_percent_high' || EXPANDED_PAGE_STATE.zKey==='site_complaint_percent_low'){
       let totalComplaints=(EXPANDED_PAGE_STATE.rows||[]).reduce((s,r)=>s+(Number(r.complaintCount)||0),0);
       totalEl.textContent = totalComplaints.toLocaleString() + ' complaints';
     }else{
@@ -13771,13 +13824,13 @@ function openExpandedChartPage(zKey,chartType){
   closeExpandedChartPage(true);
   let defaultExpandedRange = range || 'all';
   let defaultExpandedSub = subPeriod || 'all';
-  let defaultSortKey=(zKey==='trend_total' || zKey==='site_complaint_percent') ? 'natural' : 'value';
-  let defaultSortDir=(zKey==='trend_total' || zKey==='site_complaint_percent') ? 'asc' : 'desc';
+  let defaultSortKey=(zKey==='trend_total' || zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low') ? 'natural' : 'value';
+  let defaultSortDir=(zKey==='trend_total' || zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low') ? 'asc' : 'desc';
   EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows:[], search:'', sortBy:defaultSortKey, sortDir:defaultSortDir, range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
   let initialComputed=computeExpandedChartRowsByZKey(zKey, zd) || { rows: [] };
   EXPANDED_PAGE_STATE.rows=(initialComputed.rows||[]).slice();
   EXPANDED_PAGE_STATE.runtimeMeta=initialComputed;
-  let total = zKey==='site_complaint_percent'
+  let total = (zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low')
     ? EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.complaintCount)||0),0)
     : (EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.value)||0),0) || Number(zd.total||0));
   let showCalendar = !!dateCol;
@@ -13789,7 +13842,7 @@ function openExpandedChartPage(zKey,chartType){
       <div class="expand-title-wrap">
         <button class="expand-back" type="button" onclick="closeExpandedChartPage()"><svg class="ic"><use href="#i-x"/></svg> Back to Dashboard</button>
         <div class="expand-title-badge"><svg class="ic"><use href="#i-chart"/></svg></div>
-        <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1></div>
+        <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1><p>Lovely simple expanded view with chart + data summary</p></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
         ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div></div></div>` : ''}
@@ -14176,5 +14229,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1adacd2db54fd6b',t:'MTc4NDAwMjE5OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae032e689f1d1c',t:'MTc4NDAwNTczNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
