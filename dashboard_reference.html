@@ -7932,16 +7932,18 @@ function saveUniversalAppStateToCloud(immediate, reason) {
 
   const doSync = () => {
     if (typeof apiCall === 'function') {
-      if (reason && typeof showAppToast === 'function') showAppToast('Syncing ' + reason + '…', 'info');
+      if (immediate && typeof showL === 'function') showL(reason ? ('Saving ' + reason + '…') : 'Saving…');
       apiCall('saveAppState', { stateJson: JSON.stringify(stateObj) })
         .then(res => {
           console.log('Universal App State synced to Google Sheets Cloud DB permanently:', res);
+          if (immediate && typeof hideL === 'function') hideL();
           if (!reason || typeof showAppToast !== 'function') return;
           if (res && res.mode === 'remote-dashboard-state') showAppToast(reason + ' synced online.', 'success');
           else showAppToast(reason + ' saved locally.', 'info');
         })
         .catch(err => {
           console.warn('Cloud Sync failed:', err);
+          if (immediate && typeof hideL === 'function') hideL();
           if (reason && typeof showAppToast === 'function') showAppToast(reason + ' local save only.', 'info');
         });
     }
@@ -8110,9 +8112,21 @@ function getChartCardElement(zKey){
   if (!el && zKey === 'trend_main') el = document.getElementById('card_trend_main');
   return el || null;
 }
+const DEFAULT_GRAPH_TITLE_MAP={
+  trend_total:'Total Ticket Numbers',
+  cpe_complaints:"CPE Model\'s Complaint Counts",
+  site_summary:'Site Ticket Counts',
+  site_complaint_percent:'Site Complaint Percent',
+  dup_top_cust:'Top Customers with Duplicate Tickets',
+  ot_severity:'OverTime Severity Distribution',
+  dup_trend:'Duplicate Tickets Over Time',
+  ot_trend:'OverTime Tickets Over Time',
+  cmp_totals:'Tickets per period'
+};
 function getCurrentDashboardGraphKeys(tab){
   let activeTab = tab || (D && D.tabName) || '';
   let keys = [];
+  Object.keys(DEFAULT_GRAPH_TITLE_MAP).forEach(k=>{ if(keys.indexOf(k)<0) keys.push(k); });
   if (CHART_META) {
     Object.keys(CHART_META).forEach(k => {
       if (keys.indexOf(k) < 0) keys.push(k);
@@ -8281,10 +8295,14 @@ function resetSettings(){
 }
 function buildChartVisibilityList(){
   let list=document.getElementById("chList");let tab=D.tabName||'';
-  let hasCharts=(CHART_META && Object.keys(CHART_META).length>0);
   let tabSaved=SAVED_CHARTS.filter(sc=>sc.tabName===tab);
-  if(!hasCharts && !tabSaved.length){list.innerHTML='<div style="padding:14px;text-align:center;color:var(--t3);font-size:11px;">Load a tab to manage chart visibility.</div>';return;}
   let hidden=HIDDEN_CHARTS[tab]||[];
+  let autoChartKeys = Array.from(new Set([
+    ...Object.keys((CHART_META||{})).filter(k => !k.startsWith('saved_')),
+    ...hidden.filter(k => !String(k).startsWith('saved_')),
+    ...Object.keys(DEFAULT_GRAPH_TITLE_MAP)
+  ]));
+  if(!autoChartKeys.length && !tabSaved.length){list.innerHTML='<div style="padding:14px;text-align:center;color:var(--t3);font-size:11px;">Load a tab to manage chart visibility.</div>';return;}
   let html='';
   
   let defaultSortPriority = (k) => {
@@ -8307,21 +8325,18 @@ function buildChartVisibilityList(){
   };
   
   // Auto-generated charts (exclude saved charts which start with "saved_")
-  if(hasCharts){
-    let autoChartKeys = Object.keys(CHART_META).filter(k => !k.startsWith('saved_'));
-    autoChartKeys.sort(sortKeyFunc);
-    
-    if(autoChartKeys.length > 0){
-      html+='<div style="padding:6px 8px;font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;"><span>Default Graphs</span><span style="font-size:9.5px;color:var(--ac);text-transform:none;font-weight:700;">↕ Drag to sort</span></div>';
-      html+=autoChartKeys.map(k=>{
-        let m=CHART_META[k],checked=hidden.indexOf(k)<0?'checked':'';
-        return `<div class="ch-item" data-graph-key="${k}" draggable="true" style="cursor:grab;display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;transition:all 0.15s;user-select:none;margin-bottom:2px;">
-          <span class="drag-handle" style="cursor:grab;color:var(--t3);font-size:16px;padding:0 6px;line-height:1;" title="Drag to sort graph in dashboard">⋮⋮</span>
-          <input type="checkbox" id="cv_${k}" ${checked} onchange="toggleChartVis('${k}',this.checked)">
-          <label for="cv_${k}" style="flex:1;cursor:pointer;margin:0;font-weight:600;color:var(--t1);">${escapeHtml(m.title)}</label>
-        </div>`;
-      }).join('');
-    }
+  autoChartKeys.sort(sortKeyFunc);
+  if(autoChartKeys.length > 0){
+    html+='<div style="padding:6px 8px;font-size:10px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;"><span>Default Graphs</span><span style="font-size:9.5px;color:var(--ac);text-transform:none;font-weight:700;">↕ Drag to sort</span></div>';
+    html+=autoChartKeys.map(k=>{
+      let m=CHART_META[k] || { title: getGraphDisplayTitle(k, DEFAULT_GRAPH_TITLE_MAP[k] || k) };
+      let checked=hidden.indexOf(k)<0?'checked':'';
+      return `<div class="ch-item" data-graph-key="${k}" draggable="true" style="cursor:grab;display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;transition:all 0.15s;user-select:none;margin-bottom:2px;">
+        <span class="drag-handle" style="cursor:grab;color:var(--t3);font-size:16px;padding:0 6px;line-height:1;" title="Drag to sort graph in dashboard">⋮⋮</span>
+        <input type="checkbox" id="cv_${k}" ${checked} onchange="toggleChartVis('${k}',this.checked)">
+        <label for="cv_${k}" style="flex:1;cursor:pointer;margin:0;font-weight:600;color:var(--t1);">${escapeHtml(m.title)}</label>
+      </div>`;
+    }).join('');
   }
   
   // Saved/Created charts
@@ -14094,5 +14109,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1acc9a13d0e87f0',t:'MTc4Mzk5Mjg5Mw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
