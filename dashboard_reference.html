@@ -14161,6 +14161,7 @@ function openExpandedChartPage(zKey,chartType){
     ? EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.complaintCount)||0),0)
     : (EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.value)||0),0) || Number(zd.total||0));
   let isCompareExpanded = !!(zd && (zd.type==='cmpCategory' || zd.type==='cmpTotals' || String(zKey||'').startsWith('cmp_')));
+  let hidePeriodChip = isCompareExpanded;
   let showCalendar = !!dateCol && !isCompareExpanded;
   let page=document.createElement('div');
   page.id='expandChartPage';
@@ -14174,7 +14175,7 @@ function openExpandedChartPage(zKey,chartType){
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
         ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div></div></div>` : ''}
-        <div class="expand-chip" id="expandPeriodChip">${defaultExpandedRange==='all' ? 'All Periods' : cap(defaultExpandedRange)+' View'}</div>
+        ${hidePeriodChip ? '' : `<div class="expand-chip" id="expandPeriodChip">${defaultExpandedRange==='all' ? 'All Periods' : cap(defaultExpandedRange)+' View'}</div>`}
         <div class="expand-chip" id="expandTotalChip">${total.toLocaleString()} total</div>
       </div>
     </div>
@@ -14563,5 +14564,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1aed564e8246be2',t:'MTc4NDAxNDM0Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
