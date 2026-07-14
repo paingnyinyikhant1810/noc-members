@@ -7603,6 +7603,7 @@ let DETECTED_RES_COL=null;
 
 /* ═══ FILTER MODE STATE ═══ */
 let FILTER_MODE=false;
+let PIVOT_FILTER_MODE=false;
 let PIVOT_BUILDER_MODE=false;
 let FILTER_SELECTIONS={}; // { columnName: [selectedValue1, selectedValue2, ...] }
 let FILTER_OPEN_DROPDOWN=null;
@@ -8124,21 +8125,33 @@ const DEFAULT_GRAPH_TITLE_MAP={
   cmp_totals:'Tickets per period'
 };
 function getModeRelevantDefaultGraphKeys(){
-  if (COMPARE_MODE) return ['cmp_totals'];
-  if (DUPLICATE_MODE) return ['dup_trend','dup_top_cust'];
-  if (OVERTIME_MODE) return ['ot_trend','ot_severity'];
-  if (FILTER_MODE || PIVOT_FILTER_MODE) return [];
-  if (PIVOT_BUILDER_MODE) return [];
+  let cmp = (typeof COMPARE_MODE !== 'undefined') && COMPARE_MODE;
+  let dup = (typeof DUPLICATE_MODE !== 'undefined') && DUPLICATE_MODE;
+  let ovr = (typeof OVERTIME_MODE !== 'undefined') && OVERTIME_MODE;
+  let flt = (typeof FILTER_MODE !== 'undefined') && FILTER_MODE;
+  let pflt = (typeof PIVOT_FILTER_MODE !== 'undefined') && PIVOT_FILTER_MODE;
+  let pvt = (typeof PIVOT_BUILDER_MODE !== 'undefined') && PIVOT_BUILDER_MODE;
+  if (cmp) return ['cmp_totals'];
+  if (dup) return ['dup_trend','dup_top_cust'];
+  if (ovr) return ['ot_trend','ot_severity'];
+  if (flt || pflt) return [];
+  if (pvt) return [];
   return ['trend_total','cpe_complaints','site_summary','site_complaint_percent','dup_top_cust','ot_severity'];
 }
 function isGraphKeyRelevantToCurrentMode(k){
   if (!k) return false;
+  let cmp = (typeof COMPARE_MODE !== 'undefined') && COMPARE_MODE;
+  let dup = (typeof DUPLICATE_MODE !== 'undefined') && DUPLICATE_MODE;
+  let ovr = (typeof OVERTIME_MODE !== 'undefined') && OVERTIME_MODE;
+  let flt = (typeof FILTER_MODE !== 'undefined') && FILTER_MODE;
+  let pflt = (typeof PIVOT_FILTER_MODE !== 'undefined') && PIVOT_FILTER_MODE;
+  let pvt = (typeof PIVOT_BUILDER_MODE !== 'undefined') && PIVOT_BUILDER_MODE;
   if (String(k).startsWith('saved_')) return true;
-  if (COMPARE_MODE) return k==='cmp_totals' || String(k).startsWith('cmp_cat_');
-  if (DUPLICATE_MODE) return k==='dup_trend' || k==='dup_top_cust';
-  if (OVERTIME_MODE) return k==='ot_trend' || k==='ot_severity';
-  if (FILTER_MODE || PIVOT_FILTER_MODE) return String(k).startsWith('flt_');
-  if (PIVOT_BUILDER_MODE) return String(k).startsWith('pv_') || String(k).startsWith('pvt_');
+  if (cmp) return k==='cmp_totals' || String(k).startsWith('cmp_cat_');
+  if (dup) return k==='dup_trend' || k==='dup_top_cust';
+  if (ovr) return k==='ot_trend' || k==='ot_severity';
+  if (flt || pflt) return String(k).startsWith('flt_');
+  if (pvt) return String(k).startsWith('pv_') || String(k).startsWith('pvt_');
   return getModeRelevantDefaultGraphKeys().includes(k);
 }
 function getCurrentDashboardGraphKeys(tab){
@@ -14131,5 +14144,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1acd83278c687f0',t:'MTc4Mzk5MzQ5MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
