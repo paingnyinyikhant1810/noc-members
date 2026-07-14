@@ -398,7 +398,7 @@ function renderInfoDropdown(){
   if(isAdmin()){
     html+=`<div class="dd-sep"></div>
       <button onclick="el('infoDropdown').classList.add('hidden');openCategoryManagerModal()" class="dd-item dd-item--setting">
-        <i class="fas fa-cog"></i> Categories Setting
+        <i class="fas fa-cog"></i> Manage Categories
       </button>`;
   }
   d.innerHTML=html;
