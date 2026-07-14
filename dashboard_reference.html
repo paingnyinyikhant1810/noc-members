@@ -7672,7 +7672,7 @@ function persistUniversalStateLocalNow(){
 function saveSavedCharts(){
   localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'),JSON.stringify(SAVED_CHARTS));
   persistUniversalStateLocalNow();
-  if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true);
+  if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'created graphs');
 }
 function addToDashboard(chartConfig){
   if(!chartConfig)return;
@@ -7918,7 +7918,7 @@ function getCurrentActiveMode() {
   return 'home';
 }
 
-function saveUniversalAppStateToCloud(immediate) {
+function saveUniversalAppStateToCloud(immediate, reason) {
   let stateObj = buildUniversalStateSnapshot();
 
   // Immediate offline fast cache
@@ -7932,9 +7932,18 @@ function saveUniversalAppStateToCloud(immediate) {
 
   const doSync = () => {
     if (typeof apiCall === 'function') {
+      if (reason && typeof showAppToast === 'function') showAppToast('Syncing ' + reason + '…', 'info');
       apiCall('saveAppState', { stateJson: JSON.stringify(stateObj) })
-        .then(res => console.log('Universal App State synced to Google Sheets Cloud DB permanently:', res))
-        .catch(err => console.warn('Cloud Sync failed:', err));
+        .then(res => {
+          console.log('Universal App State synced to Google Sheets Cloud DB permanently:', res);
+          if (!reason || typeof showAppToast !== 'function') return;
+          if (res && res.mode === 'remote-dashboard-state') showAppToast(reason + ' synced online.', 'success');
+          else showAppToast(reason + ' saved locally.', 'info');
+        })
+        .catch(err => {
+          console.warn('Cloud Sync failed:', err);
+          if (reason && typeof showAppToast === 'function') showAppToast(reason + ' local save only.', 'info');
+        });
     }
   };
 
@@ -7950,6 +7959,9 @@ function loadUniversalAppStateFromCloud() {
   if (typeof apiCall !== 'function') return;
   apiCall('loadAppState')
     .then(res => {
+      if (res && res.mode === 'remote-dashboard-state' && typeof showAppToast === 'function') {
+        showAppToast('Dashboard state synced from online storage.', 'success');
+      }
       if (res && res.success && res.stateJson) {
         try {
           let cloudState = JSON.parse(res.stateJson);
@@ -8077,8 +8089,8 @@ function loadSettings(){
   try { let savedApi = localStorage.getItem('noc_gas_api_url'); if (savedApi) GAS_WEB_APP_URL = savedApi; let inp = document.getElementById('gasApiUrlInput'); if (inp) inp.value = GAS_WEB_APP_URL; } catch(e) {}
   try{let h=localStorage.getItem(getScopedStorageKey('noc_hidden_charts')) || localStorage.getItem('noc_hidden_charts');if(h)HIDDEN_CHARTS=JSON.parse(h);}catch(e){HIDDEN_CHARTS={};}
 }
-function saveSettings(){localStorage.setItem(getScopedStorageKey('noc_settings_v2'),JSON.stringify(S)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true);}
-function saveHidden(){localStorage.setItem(getScopedStorageKey('noc_hidden_charts'),JSON.stringify(HIDDEN_CHARTS)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true);}
+function saveSettings(){localStorage.setItem(getScopedStorageKey('noc_settings_v2'),JSON.stringify(S)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'dashboard settings');}
+function saveHidden(){localStorage.setItem(getScopedStorageKey('noc_hidden_charts'),JSON.stringify(HIDDEN_CHARTS)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'graph visibility');}
 function getGraphOrderForTab(tab){
   let t = tab || (D && D.tabName) || '';
   if (S.graphOrderByTab && Array.isArray(S.graphOrderByTab[t])) return S.graphOrderByTab[t];
@@ -8443,8 +8455,7 @@ function toggleChartVis(zKey,visible){
   let tab=D.tabName||'';if(!HIDDEN_CHARTS[tab])HIDDEN_CHARTS[tab]=[];
   let idx=HIDDEN_CHARTS[tab].indexOf(zKey);
   if(visible){if(idx>=0)HIDDEN_CHARTS[tab].splice(idx,1);}else{if(idx<0)HIDDEN_CHARTS[tab].push(zKey);}
-  saveHidden();
-  
+
   let el=getChartCardElement(zKey);
   if(el){
     if(visible){
@@ -8454,7 +8465,9 @@ function toggleChartVis(zKey,visible){
       el.style.setProperty('display','none','important');
     }
   }
+  persistUniversalStateLocalNow();
   applyHiddenStateToCurrentDashboard();
+  saveHidden();
   
   if(D.rawData && !FILTER_MODE && !PIVOT_BUILDER_MODE && !COMPARE_MODE && !DUPLICATE_MODE && !OVERTIME_MODE) {
     doRender();
@@ -11034,7 +11047,7 @@ function saveSavedPivotTables() {
   try {
     localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(SAVED_PIVOT_TABLES));
     persistUniversalStateLocalNow();
-    if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true);
+    if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'pivot tables');
   } catch(e) {}
 }
 
