@@ -8533,11 +8533,14 @@ function updateCreatedGraphsVisibility(){
   let tab = (D && D.tabName) || '';
   let tabCharts = SAVED_CHARTS.filter(sc=>sc.tabName===tab);
   let hidden = HIDDEN_CHARTS[tab] || [];
-  let anyVisible = tabCharts.some(sc => hidden.indexOf('saved_' + sc.id) < 0 && savedChartHasData(sc));
+  let visibleCharts = tabCharts.filter(sc => hidden.indexOf('saved_' + sc.id) < 0 && savedChartHasData(sc));
+  let anyVisible = visibleCharts.length > 0;
 
   let dashboardHeading = document.getElementById('createdGraphsHeading');
   if (dashboardHeading) {
-    dashboardHeading.style.display = tabCharts.length ? '' : 'none';
+    dashboardHeading.style.display = anyVisible ? '' : 'none';
+    let txt = dashboardHeading.querySelector('.enterprise-title p');
+    if (txt) txt.textContent = `${visibleCharts.length} saved chart${visibleCharts.length===1?'':'s'}`;
   }
   let dashboardGrid = document.getElementById('createdGraphsGrid');
   if (dashboardGrid) {
@@ -12936,13 +12939,13 @@ function renderSavedDashboardCharts(){
     return hidden.indexOf(sKey)<0 && savedChartHasData(sc);
   });
   
-  // Always keep the Created Graphs section above created graphs for this tab
-  if(tabCharts.length > 0) {
+  // Show Created Graphs section only when at least one created graph is currently visible
+  if(visibleCharts.length > 0) {
     let heading=document.createElement('div');
     heading.className='enterprise-card';
     heading.id='createdGraphsHeading';
     heading.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;padding:0;overflow:hidden;';
-    heading.innerHTML=`<div class="enterprise-head" style="background:linear-gradient(135deg, var(--ac-bg), rgba(0,0,0,0));"><div class="enterprise-title"><div class="badge-ico" style="background:var(--ac-bg);color:var(--ac);"><svg class="ic"><use href="#i-chart"/></svg></div><div><h2>Created Graphs</h2><p>${tabCharts.length} saved chart${tabCharts.length>1?'s':''} </p></div></div></div>`;
+    heading.innerHTML=`<div class="enterprise-head" style="background:linear-gradient(135deg, var(--ac-bg), rgba(0,0,0,0));"><div class="enterprise-title"><div class="badge-ico" style="background:var(--ac-bg);color:var(--ac);"><svg class="ic"><use href="#i-chart"/></svg></div><div><h2>Created Graphs</h2><p>${visibleCharts.length} saved chart${visibleCharts.length>1?'s':''}</p></div></div></div>`;
     area.appendChild(heading);
     let grid=document.createElement('div');
     grid.id='createdGraphsGrid';
