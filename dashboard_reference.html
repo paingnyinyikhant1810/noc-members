@@ -10918,7 +10918,24 @@ function renderCompareMainCard(zKey, baseTitle, periodMaps, countLabel){
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
     let labels=wrapAxisLabels(bundle.cats,12);
     let datasets=bundle.datasets.map((ds,i)=>({ ...ds, backgroundColor:P[i%P.length], maxBarThickness:34, categoryPercentage:.72, barPercentage:.82 }));
-    CH[zKey+'_canvas']=createSafeChart(document.getElementById(zKey+'_canvas'),{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,animation:{duration:250},plugins:{legend:{display:true,position:'top',labels:{boxWidth:10,font:{size:11,family:'Inter'},color:tc,padding:6}},valueLabels:{display:true,fontSize:10},tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',callbacks:{title:ctx=>bundle.cats[ctx[0].dataIndex]}}},scales:{y:{grid:{color:gc},ticks:{color:tc,font:{size:10}}},x:{grid:{display:false},ticks:{color:tc,font:{size:10},maxRotation:0}}}});
+    CH[zKey+'_canvas']=createSafeChart(document.getElementById(zKey+'_canvas'),{
+      type:'bar',
+      data:{ labels, datasets },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        animation:{duration:250},
+        plugins:{
+          legend:{display:true,position:'top',labels:{boxWidth:10,font:{size:12,family:'Inter'},color:tc,padding:6}},
+          valueLabels:{display:true,fontSize:11},
+          tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',callbacks:{title:ctx=>bundle.cats[ctx[0].dataIndex]}}
+        },
+        scales:{
+          y:{grid:{color:gc},ticks:{color:tc,font:{size:11}}},
+          x:{grid:{display:false},ticks:{color:tc,font:{size:11},maxRotation:0}}
+        }
+      }
+    });
     CHART_META[zKey]={title,labels:bundle.cats,shortLabels:labels,datasets:bundle.datasets,pieLabels:bundle.cats,pieValues:bundle.cats.map(c=>bundle.union[c]),pieColors:bundle.cats.map((_,i)=>P[i%P.length]),total:bundle.total,type:'cmpCategory',columnName:null,periods:COMPARE_PICKS.slice(),recordsMap:bundle.recordsMap,recordsByCategory:bundle.recordsByCategory};
   },30);
 }
@@ -14342,5 +14359,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae50cd4898ed99',t:'MTc4NDAwODkxNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae56b4488b6cc1',t:'MTc4NDAwOTE1Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
