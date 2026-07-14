@@ -7552,8 +7552,8 @@ function onPivotCardRightClick(e, idx) {
   ]);
 }
 
-function getSavedFilterChartRows(sc) {
-  let pool = getActiveTicketPool();
+function getSavedFilterChartRows(sc, poolOverride) {
+  let pool = Array.isArray(poolOverride) ? poolOverride : getActiveTicketPool();
   if (!pool.length || !sc || sc.type !== 'filter') return [];
   let allFilters = sc.config.allFilters || {};
   let filterColumns = Object.keys(allFilters).filter(c => allFilters[c] && allFilters[c].length > 0);
@@ -8648,6 +8648,10 @@ function toggleAllCharts(showAll){
   updateCreatedGraphsVisibility();
 }
 function isHidden(zKey){return ((HIDDEN_CHARTS[D.tabName||'']||[]).indexOf(zKey)>=0);}
+function isSourceGraphVisible(sourceKey){
+  if(!sourceKey) return true;
+  return !isHidden(sourceKey);
+}
 
 /* ═══════════ LOAD / FILTER ═══════════ */
 function showL(customMsg){
@@ -9171,7 +9175,7 @@ function renderSiteTicketCountsCard(sites, cols){
   let bId='siteTicketCanvas';
   let zKey='site_summary';
   let baseTitle='Site Ticket Counts';
-  let title=getGraphDisplayTitle(zKey, baseTitle);
+  let title=getGraphDisplayTitle(sourceKey || zKey, baseTitle);
   let limit=S.chartLimit||0;
   let displaySites=limit>0?sites.slice(0,limit):sites.slice();
   let chartLabels=displaySites.map(s=>s.site);
@@ -10903,7 +10907,8 @@ function buildCompareBundleFromPeriodMaps(periodMaps){
   let total=cats.reduce((s,c)=>s+Number(union[c]||0),0);
   return { cats, union, datasets, total, recordsMap, recordsByCategory };
 }
-function renderCompareMainCard(zKey, baseTitle, periodMaps, countLabel){
+function renderCompareMainCard(zKey, baseTitle, periodMaps, countLabel, sourceKey){
+  if(sourceKey && !isSourceGraphVisible(sourceKey)) return;
   let bundle=buildCompareBundleFromPeriodMaps(periodMaps);
   if(!bundle.cats.length) return;
   let title=getGraphDisplayTitle(zKey, baseTitle);
@@ -10912,7 +10917,7 @@ function renderCompareMainCard(zKey, baseTitle, periodMaps, countLabel){
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   if(isHidden(zKey)) card.style.display='none';
   card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[0]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[0]};">${escapeHtml(countLabel || (bundle.cats.length + ' categories'))}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;"><canvas id="${zKey}_canvas"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:60px;">Total</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
-  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
+  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,sourceKey || zKey,baseTitle);
   area.appendChild(card);
   setTimeout(()=>{
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
@@ -11001,19 +11006,33 @@ function renderCompareDashboard(){
   }
   if(D.isPivot){area.innerHTML = '<div class="empty-s"><div class="e-t">Compare is not available for pivot tabs.</div></div>';return;}
 
-  renderPeriodTotalsCard();
   let periodRows=COMPARE_PICKS.map(p=>rowsForPeriod(p));
-  renderCompareMainCard('cmp_cpe_complaints', "CPE Model's Complaint Counts", periodRows.map(r=>getCpeComplaintCountsForRows(r)), 'Models');
-  renderCompareMainCard('cmp_site_summary', 'Site Ticket Counts', periodRows.map(r=>getSiteTicketCountMapForRows(r)), 'Sites');
-  renderCompareMainCard('cmp_site_complaint_percent_high', 'Complaint Percents by OPI Sites (>50 Active Count)', periodRows.map(r=>getSiteComplaintPercentMapForRows(r,'high')), '>50 Active');
-  renderCompareMainCard('cmp_site_complaint_percent_low', 'Complaint Percents by OPI Sites (≤50 Active Count)', periodRows.map(r=>getSiteComplaintPercentMapForRows(r,'low')), '≤50 Active');
-  renderCompareMainCard('cmp_dup_top_cust', 'Top Customers with Duplicate Tickets', periodRows.map(r=>getDuplicateTopCustomerMapForRows(r)), 'Customers');
-  renderCompareMainCard('cmp_ot_severity', 'OverTime Severity Distribution', periodRows.map(r=>getOvertimeSeverityMapForRows(r)), 'Severity');
+  renderPeriodTotalsCard('trend_total');
+  renderCompareMainCard('cmp_cpe_complaints', "CPE Model's Complaint Counts", periodRows.map(r=>getCpeComplaintCountsForRows(r)), 'Models', 'cpe_complaints');
+  renderCompareMainCard('cmp_site_summary', 'Site Ticket Counts', periodRows.map(r=>getSiteTicketCountMapForRows(r)), 'Sites', 'site_summary');
+  renderCompareMainCard('cmp_site_complaint_percent_high', 'Complaint Percents by OPI Sites (>50 Active Count)', periodRows.map(r=>getSiteComplaintPercentMapForRows(r,'high')), '>50 Active', 'site_complaint_percent_high');
+  renderCompareMainCard('cmp_site_complaint_percent_low', 'Complaint Percents by OPI Sites (≤50 Active Count)', periodRows.map(r=>getSiteComplaintPercentMapForRows(r,'low')), '≤50 Active', 'site_complaint_percent_low');
+  renderCompareMainCard('cmp_dup_top_cust', 'Top Customers with Duplicate Tickets', periodRows.map(r=>getDuplicateTopCustomerMapForRows(r)), 'Customers', 'dup_top_cust');
+  renderCompareMainCard('cmp_ot_severity', 'OverTime Severity Distribution', periodRows.map(r=>getOvertimeSeverityMapForRows(r)), 'Severity', 'ot_severity');
+
+  let visibleSaved=SAVED_CHARTS.filter(sc=>sc.tabName===(D.tabName||'') && !isHidden('saved_' + sc.id));
+  visibleSaved.forEach(sc=>{
+    if(sc.type!=='filter') return;
+    let periodMaps=COMPARE_PICKS.map(p=>{
+      let rows=getSavedFilterChartRows(sc, rowsForPeriod(p));
+      let col=sc.config.columnName;
+      let mp={};
+      rows.forEach(r=>{ let v=r[col]; let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)'; if(!mp[k]) mp[k]={value:0,records:[]}; mp[k].value++; mp[k].records.push(r); });
+      return mp;
+    });
+    renderCompareMainCard('cmp_saved_' + sc.id, sc.title, periodMaps, 'Categories', 'saved_' + sc.id);
+  });
 }
 
-function renderPeriodTotalsCard(){
+function renderPeriodTotalsCard(sourceKey){
   let zKey='cmp_totals';
-  let baseTitle='Tickets per period';
+  if(sourceKey && !isSourceGraphVisible(sourceKey)) return;
+  let baseTitle='Total Ticket Numbers';
   let title=getGraphDisplayTitle(zKey, baseTitle);
   let area=document.getElementById("main");
   let labels=COMPARE_PICKS.map(periodLabel);
@@ -14359,5 +14378,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae56b4488b6cc1',t:'MTc4NDAwOTE1Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae6bdcdf33d98b',t:'MTc4NDAxMDAyNA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
