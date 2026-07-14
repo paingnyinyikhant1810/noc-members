@@ -7822,28 +7822,30 @@ document.addEventListener("DOMContentLoaded",()=>{
     console.log("Received fast startup bundle:", bundle);
     
     // 1. Process cloud state if present
-    if (bundle.appState && bundle.appState.success && bundle.appState.stateJson) {
-      try {
-        let cloudState = JSON.parse(bundle.appState.stateJson);
-        if (cloudState.savedCharts && Array.isArray(cloudState.savedCharts)) SAVED_CHARTS = cloudState.savedCharts;
-        if (cloudState.savedPivots && Array.isArray(cloudState.savedPivots)) SAVED_PIVOT_TABLES = cloudState.savedPivots;
-        if (cloudState.settings && typeof cloudState.settings === 'object') {
-          Object.assign(S, cloudState.settings);
-          applyTheme(); buildSwatchRow();
-        }
-        if (cloudState.hiddenCharts) HIDDEN_CHARTS = cloudState.hiddenCharts;
-        if (cloudState.dropdownState) {
-          let ds = cloudState.dropdownState;
-          /* Do NOT restore lastSelectedRange / lastSelectedSubPeriod here.
-             Startup must respect S.defaultRange so Default period works reliably. */
-          if (ds.compareState) { COMPARE_GRAN = ds.compareState.gran || 'month'; COMPARE_PICKS = ds.compareState.picks || []; }
-          if (ds.filterState && ds.filterState.selections) FILTER_SELECTIONS = ds.filterState.selections;
-          if (ds.dupState) { DUP_SEARCH_QUERY = ds.dupState.search || ''; DETECTED_CUST_COL = ds.dupState.cust || null; DETECTED_TKT_COL = ds.dupState.tkt || null; }
-          if (ds.ovrState) { DETECTED_CRE_COL = ds.ovrState.cre || null; DETECTED_RES_COL = ds.ovrState.res || null; }
-        }
-      } catch(e) { console.error("Error parsing startup appState:", e); }
-    } else {
-      if(typeof loadUniversalAppStateFromCloud==='function') loadUniversalAppStateFromCloud();
+    if (bundle.appState) {
+      if (bundle.appState.success && bundle.appState.stateJson) {
+        try {
+          let cloudState = JSON.parse(bundle.appState.stateJson);
+          if (cloudState.savedCharts && Array.isArray(cloudState.savedCharts)) SAVED_CHARTS = cloudState.savedCharts;
+          if (cloudState.savedPivots && Array.isArray(cloudState.savedPivots)) SAVED_PIVOT_TABLES = cloudState.savedPivots;
+          if (cloudState.settings && typeof cloudState.settings === 'object') {
+            Object.assign(S, cloudState.settings);
+            applyTheme(); buildSwatchRow();
+          }
+          if (cloudState.hiddenCharts) HIDDEN_CHARTS = cloudState.hiddenCharts;
+          if (cloudState.dropdownState) {
+            let ds = cloudState.dropdownState;
+            /* Do NOT restore lastSelectedRange / lastSelectedSubPeriod here.
+               Startup must respect S.defaultRange so Default period works reliably. */
+            if (ds.compareState) { COMPARE_GRAN = ds.compareState.gran || 'month'; COMPARE_PICKS = ds.compareState.picks || []; }
+            if (ds.filterState && ds.filterState.selections) FILTER_SELECTIONS = ds.filterState.selections;
+            if (ds.dupState) { DUP_SEARCH_QUERY = ds.dupState.search || ''; DETECTED_CUST_COL = ds.dupState.cust || null; DETECTED_TKT_COL = ds.dupState.tkt || null; }
+            if (ds.ovrState) { DETECTED_CRE_COL = ds.ovrState.cre || null; DETECTED_RES_COL = ds.ovrState.res || null; }
+          }
+        } catch(e) { console.error("Error parsing startup appState:", e); }
+      } else {
+        console.warn('Startup app-state unavailable; continuing without remote state.', bundle.appState);
+      }
     }
     
     // 2. Populate tab dropdowns
@@ -7912,7 +7914,8 @@ function saveUniversalAppStateToCloud(immediate, reason) {
       if (immediate && typeof showL === 'function') showL(reason ? ('Saving ' + reason + '…') : 'Saving…');
       apiCall('saveAppState', { stateJson: JSON.stringify(stateObj) })
         .then(res => {
-          console.log('Universal App State synced to Google Sheets Cloud DB permanently:', res);
+          if (res && res.success) console.log('Universal App State synced to online store:', res);
+          else console.warn('Universal App State remote sync unavailable:', res);
           if (immediate && typeof hideL === 'function') hideL();
         })
         .catch(err => {
@@ -14127,5 +14130,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ad1a453f4a8965',t:'MTc4Mzk5NjE5Ng=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ad273d0c8d8965',t:'MTc4Mzk5NjcyNw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
