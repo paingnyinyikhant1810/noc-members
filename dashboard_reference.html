@@ -13889,15 +13889,16 @@ function renderExpandedDataTable(){
     table.style.display='none';
     let labels=rows.map(r=>r.label);
     let periods=zd.periods||[];
+    let totalRows=rows.filter(r=>Number(r.value||0)>0);
+    let totalTotal=totalRows.reduce((s,r)=>s+Number(r.value||0),0);
+    sectionHtml += `<div class="compare-breakdown-section"><div class="compare-breakdown-title">Total Breakdown</div><table class="expand-table expand-table-generic"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${totalRows.map((r)=>`<tr onclick="expandedRowClick('${escapeJs(zKey)}',${rows.indexOf(r)})"><td><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${totalTotal>0?((Number(r.value||0)/totalTotal)*100).toFixed(1):'0.0'}%</td></tr>`).join('')}</tbody></table></div>`;
+    let holder=document.createElement('div');
     let sectionHtml=periods.map((p,di)=>{
       let secRows=labels.map((lb,i)=>{ let idx=(zd.labels||[]).indexOf(lb); let val=idx>=0 ? Number((((zd.datasets||[])[di]||{}).data||[])[idx]||0) : 0; return {label:lb,value:val,records:(zd.recordsMap&&zd.recordsMap[p]&&zd.recordsMap[p][lb])?zd.recordsMap[p][lb]:[]}; }).filter(r=>r.value>0);
       let secTotal=secRows.reduce((s,r)=>s+r.value,0);
       return `<div class="compare-breakdown-section"><div class="compare-breakdown-title">${escapeHtml(periodLabel(p))}</div><table class="expand-table expand-table-generic"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${secRows.map((r)=>`<tr onclick="showRowsM((CHART_META['${zKey}'].recordsMap['${escapeJs(p)}']['${escapeJs(r.label)}'])||[],'${escapeJs(zd.title || 'Compare Graph')} · ${escapeJs(r.label)} · ${escapeJs(periodLabel(p))}')"><td><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${secTotal>0?((Number(r.value||0)/secTotal)*100).toFixed(1):'0.0'}%</td></tr>`).join('')}</tbody></table></div>`;
     }).join('');
-    let totalRows=rows.filter(r=>Number(r.value||0)>0);
-    let totalTotal=totalRows.reduce((s,r)=>s+Number(r.value||0),0);
-    sectionHtml += `<div class="compare-breakdown-section"><div class="compare-breakdown-title">Total Breakdown</div><table class="expand-table expand-table-generic"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${totalRows.map((r)=>`<tr onclick="expandedRowClick('${escapeJs(zKey)}',${rows.indexOf(r)})"><td><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${totalTotal>0?((Number(r.value||0)/totalTotal)*100).toFixed(1):'0.0'}%</td></tr>`).join('')}</tbody></table></div>`;
-    let holder=document.createElement('div');
+    
     holder.className='compare-breakdown-wrap';
     holder.innerHTML=sectionHtml;
     wrap.appendChild(holder);
