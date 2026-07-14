@@ -8184,7 +8184,13 @@ const DEFAULT_GRAPH_TITLE_MAP={
   ot_severity:'OverTime Severity Distribution',
   dup_trend:'Duplicate Tickets Over Time',
   ot_trend:'OverTime Tickets Over Time',
-  cmp_totals:'Tickets per period'
+  cmp_totals:'Total Ticket Numbers',
+  cmp_cpe_complaints:"CPE Model\'s Complaint Counts",
+  cmp_site_summary:'Site Ticket Counts',
+  cmp_site_complaint_percent_high:'Complaint Percents by OPI Sites (>50 Active Count)',
+  cmp_site_complaint_percent_low:'Complaint Percents by OPI Sites (≤50 Active Count)',
+  cmp_dup_top_cust:'Top Customers with Duplicate Tickets',
+  cmp_ot_severity:'OverTime Severity Distribution'
 };
 function getModeRelevantDefaultGraphKeys(){
   let cmp = (typeof COMPARE_MODE !== 'undefined') && COMPARE_MODE;
@@ -8193,7 +8199,7 @@ function getModeRelevantDefaultGraphKeys(){
   let flt = (typeof FILTER_MODE !== 'undefined') && FILTER_MODE;
   let pflt = (typeof PIVOT_FILTER_MODE !== 'undefined') && PIVOT_FILTER_MODE;
   let pvt = (typeof PIVOT_BUILDER_MODE !== 'undefined') && PIVOT_BUILDER_MODE;
-  if (cmp) return ['cmp_totals'];
+  if (cmp) return ['cmp_totals','cmp_cpe_complaints','cmp_site_summary','cmp_site_complaint_percent_high','cmp_site_complaint_percent_low','cmp_dup_top_cust','cmp_ot_severity'];
   if (dup) return ['dup_trend','dup_top_cust'];
   if (ovr) return ['ot_trend','ot_severity'];
   if (flt || pflt) return [];
@@ -8209,7 +8215,7 @@ function isGraphKeyRelevantToCurrentMode(k){
   let pflt = (typeof PIVOT_FILTER_MODE !== 'undefined') && PIVOT_FILTER_MODE;
   let pvt = (typeof PIVOT_BUILDER_MODE !== 'undefined') && PIVOT_BUILDER_MODE;
   if (String(k).startsWith('saved_')) return true;
-  if (cmp) return k==='cmp_totals' || String(k).startsWith('cmp_cat_');
+  if (cmp) return ['cmp_totals','cmp_cpe_complaints','cmp_site_summary','cmp_site_complaint_percent_high','cmp_site_complaint_percent_low','cmp_dup_top_cust','cmp_ot_severity'].includes(k) || String(k).startsWith('cmp_cat_');
   if (dup) return k==='dup_trend' || k==='dup_top_cust';
   if (ovr) return k==='ot_trend' || k==='ot_severity';
   if (flt || pflt) return String(k).startsWith('flt_');
@@ -10869,6 +10875,102 @@ function matchPeriod(d,p){
 }
 function rowsForPeriod(p){return D.rawData.filter(r=>{let d=parseLocalDate(r[dateCol]);return d&&matchPeriod(d,p);});}
 
+function buildCompareBundleFromPeriodMaps(periodMaps){
+  let union={}, recordsByCategory={};
+  periodMaps.forEach(mp=>{
+    Object.keys(mp||{}).forEach(cat=>{
+      let obj=mp[cat] || {};
+      union[cat]=(union[cat]||0) + Number(obj.value||0);
+      if(!recordsByCategory[cat]) recordsByCategory[cat]=[];
+      if(Array.isArray(obj.records) && obj.records.length) recordsByCategory[cat]=recordsByCategory[cat].concat(obj.records);
+    });
+  });
+  let cats=Object.keys(union).sort((a,b)=>union[b]-union[a] || String(a).localeCompare(String(b)));
+  let limit=S.chartLimit||0;
+  if(limit>0) cats=cats.slice(0,limit);
+  let datasets=COMPARE_PICKS.map((p,i)=>({
+    label: periodLabel(p),
+    data: cats.map(c=>Number((periodMaps[i] && periodMaps[i][c] ? periodMaps[i][c].value : 0) || 0)),
+    backgroundColor:P[i%P.length],
+    borderRadius:4,
+    borderSkipped:false
+  }));
+  let recordsMap={};
+  COMPARE_PICKS.forEach((p,i)=>{
+    recordsMap[p]={};
+    cats.forEach(c=>{ recordsMap[p][c]=(periodMaps[i] && periodMaps[i][c] && periodMaps[i][c].records) ? periodMaps[i][c].records : []; });
+  });
+  let total=cats.reduce((s,c)=>s+Number(union[c]||0),0);
+  return { cats, union, datasets, total, recordsMap, recordsByCategory };
+}
+function renderCompareMainCard(zKey, baseTitle, periodMaps, countLabel){
+  let bundle=buildCompareBundleFromPeriodMaps(periodMaps);
+  if(!bundle.cats.length) return;
+  let title=getGraphDisplayTitle(zKey, baseTitle);
+  let area=document.getElementById('main');
+  let rowsHtml=bundle.cats.map((cat,i)=>{ let pc=bundle.total>0?((Number(bundle.union[cat]||0)/bundle.total)*100).toFixed(1):'0.0'; let fc=P[i%P.length]; return `<tr onclick="showRowsM((CHART_META['${zKey}']&&CHART_META['${zKey}'].recordsByCategory&&CHART_META['${zKey}'].recordsByCategory[${JSON.stringify(cat)}])||[],'${escapeJs(baseTitle)}: ${escapeJs(cat)}')"><td class="c-link">${escapeHtml(cat)}</td><td><span class="cnt-p">${Number(bundle.union[cat]||0).toLocaleString()}</span></td><td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td></tr>`; }).join('');
+  let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  if(isHidden(zKey)) card.style.display='none';
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[0]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[0]};">${escapeHtml(countLabel || (bundle.cats.length + ' categories'))}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;"><canvas id="${zKey}_canvas"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:60px;">Total</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
+  area.appendChild(card);
+  setTimeout(()=>{
+    let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
+    let labels=wrapAxisLabels(bundle.cats,12);
+    let datasets=bundle.datasets.map((ds,i)=>({ ...ds, backgroundColor:P[i%P.length], maxBarThickness:34, categoryPercentage:.72, barPercentage:.82 }));
+    CH[zKey+'_canvas']=createSafeChart(document.getElementById(zKey+'_canvas'),{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,animation:{duration:250},plugins:{legend:{display:true,position:'top',labels:{boxWidth:10,font:{size:11,family:'Inter'},color:tc,padding:6}},valueLabels:{display:true,fontSize:10},tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',callbacks:{title:ctx=>bundle.cats[ctx[0].dataIndex]}}},scales:{y:{grid:{color:gc},ticks:{color:tc,font:{size:10}}},x:{grid:{display:false},ticks:{color:tc,font:{size:10},maxRotation:0}}}});
+    CHART_META[zKey]={title,labels:bundle.cats,shortLabels:labels,datasets:bundle.datasets,pieLabels:bundle.cats,pieValues:bundle.cats.map(c=>bundle.union[c]),pieColors:bundle.cats.map((_,i)=>P[i%P.length]),total:bundle.total,type:'cmpCategory',columnName:null,periods:COMPARE_PICKS.slice(),recordsMap:bundle.recordsMap,recordsByCategory:bundle.recordsByCategory};
+  },30);
+}
+function getCpeComplaintCountsForRows(rows){
+  const CPE_MODELS = ['BFFA', 'BFFG', 'LCF', 'LCC', 'SCP', 'FFG', 'FFA', 'CW', 'CC', 'CR', 'CG', 'CJ', 'CK', 'CP', 'CM', 'CF'];
+  let candidateCols=[];
+  if (D && D.headers) {
+    let kw = ['cpe', 'model', 'device', 'serial', 'asset', 'equipment', 'circuit', 'description', 'issue', 'summary', 'ticket', 'note'];
+    candidateCols = D.headers.filter(h => kw.some(k => h.toLowerCase().includes(k)));
+    if (!candidateCols.length) candidateCols = D.headers.slice();
+  }
+  let seen=new Set(), out={};
+  const cpeRegex = new RegExp('(?:^|[^a-z0-9])(' + CPE_MODELS.join('|') + ')([0-9a-z_-]*)', 'i');
+  (rows||[]).forEach(r=>{
+    let foundCpe=null, foundModel=null;
+    for(let col of candidateCols){ let val=r[col]; if(val==null) continue; let str=String(val).trim(); if(!str) continue; let m=str.match(cpeRegex); if(m){ foundModel=m[1].toUpperCase(); let serial=m[2]?m[2].toUpperCase():''; foundCpe=foundModel+serial; break; } }
+    if(!foundCpe && D && D.headers){ for(let col of D.headers){ if(candidateCols.includes(col)) continue; let val=r[col]; if(val==null) continue; let str=String(val).trim(); if(!str) continue; let m=str.match(cpeRegex); if(m){ foundModel=m[1].toUpperCase(); let serial=m[2]?m[2].toUpperCase():''; foundCpe=foundModel+serial; break; } } }
+    if(foundCpe && foundModel){ if(seen.has(foundCpe)) return; seen.add(foundCpe); if(!out[foundModel]) out[foundModel]={value:0,records:[]}; out[foundModel].value++; out[foundModel].records.push(r); }
+  });
+  return out;
+}
+function getSiteTicketCountMapForRows(rows){
+  let cols=loadSiteColumnsForCurrentTab();
+  let sites=getSiteTicketCounts(rows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, (D&&D.rawData)||rows);
+  let out={};
+  sites.forEach(s=>{ out[s.site]={ value:Number(s.count||0), records:s.rows||[] }; });
+  return out;
+}
+function getSiteComplaintPercentMapForRows(rows, mode){
+  let cols=loadSiteColumnsForCurrentTab();
+  let sites=getSiteComplaintPercentData(rows, cols.siteCodeCol, cols.fullNameCol, cols.shortCodeCol, cols.activeSiteCol, cols.activeCountCol, (D&&D.rawData)||rows);
+  if(mode==='high') sites=sites.filter(s=>Number(s.activeCount||0) > 50);
+  if(mode==='low') sites=sites.filter(s=>Number(s.activeCount||0) <= 50);
+  let out={};
+  sites.forEach(s=>{ out[s.site]={ value:Number(s.percentValue||0), records:s.rows||[] }; });
+  return out;
+}
+function getDuplicateTopCustomerMapForRows(rows){
+  let cols=loadDuplicateColumnsForCurrentTab();
+  let dup=getDuplicateTicketsDataForCols(rows, cols.customerCol, cols.ticketCol);
+  let out={};
+  (dup.duplicates||[]).forEach(d=>{ out[d.customer]={ value:Number((d.tickets||[]).length||0), records:d.tickets||[] }; });
+  return out;
+}
+function getOvertimeSeverityMapForRows(rows){
+  let cols=loadOverTimeColumnsForCurrentTab();
+  let ot=getOverTimeTicketsData(rows, cols.createdCol, cols.resolvedCol, false);
+  let tiers=['lt36','36_50','50_68','gt68'];
+  let out={};
+  tiers.forEach(t=>{ out[getOverTimeTierLabel(t)]={ value:Number(ot.counts[t]||0), records:(ot.overTimeTickets||[]).filter(x=>x.tier===t).map(x=>x.row) }; });
+  return out;
+}
 function renderCompareDashboard(){
   let area=document.getElementById("main");
   area.innerHTML = '';
@@ -10882,12 +10984,14 @@ function renderCompareDashboard(){
   }
   if(D.isPivot){area.innerHTML = '<div class="empty-s"><div class="e-t">Compare is not available for pivot tabs.</div></div>';return;}
 
-  // Per-period totals card (summary chart)
   renderPeriodTotalsCard();
-
-  // For each category column, render one combined card
-  let cols=getCategoryColumns();
-  cols.forEach((col,idx)=>renderCompareCategoryCard(col,idx));
+  let periodRows=COMPARE_PICKS.map(p=>rowsForPeriod(p));
+  renderCompareMainCard('cmp_cpe_complaints', "CPE Model's Complaint Counts", periodRows.map(r=>getCpeComplaintCountsForRows(r)), 'Models');
+  renderCompareMainCard('cmp_site_summary', 'Site Ticket Counts', periodRows.map(r=>getSiteTicketCountMapForRows(r)), 'Sites');
+  renderCompareMainCard('cmp_site_complaint_percent_high', 'Complaint Percents by OPI Sites (>50 Active Count)', periodRows.map(r=>getSiteComplaintPercentMapForRows(r,'high')), '>50 Active');
+  renderCompareMainCard('cmp_site_complaint_percent_low', 'Complaint Percents by OPI Sites (≤50 Active Count)', periodRows.map(r=>getSiteComplaintPercentMapForRows(r,'low')), '≤50 Active');
+  renderCompareMainCard('cmp_dup_top_cust', 'Top Customers with Duplicate Tickets', periodRows.map(r=>getDuplicateTopCustomerMapForRows(r)), 'Customers');
+  renderCompareMainCard('cmp_ot_severity', 'OverTime Severity Distribution', periodRows.map(r=>getOvertimeSeverityMapForRows(r)), 'Severity');
 }
 
 function renderPeriodTotalsCard(){
@@ -10914,10 +11018,10 @@ function mkPeriodChart(id,type,labels,values,colors,gc,tc){
   let data;
   if(type==='doughnut'||type==='polarArea')data={labels,datasets:[{data:values,backgroundColor:colors,borderWidth:2,borderColor:S.dark?'#1a1d2e':'#fff'}]};
   else data={labels:wrapAxisLabels(labels,12),datasets:[{label:'Tickets',data:values,backgroundColor:colors,borderRadius:4}]};
-  let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},plugins:{legend:{display:type==='doughnut'||type==='polarArea'},valueLabels:{display:true,fontSize:10},tooltip:{callbacks:{title:ctx=>labels[ctx[0].dataIndex]||''}}},
+    let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},plugins:{legend:{display:type==='doughnut'||type==='polarArea'},valueLabels:{display:true,fontSize:11},tooltip:{callbacks:{title:ctx=>labels[ctx[0].dataIndex]||''}}},
     onClick:(e,el)=>{if(el&&el.length){let i=el[0].index;let p=COMPARE_PICKS[i];scheduleOpenPeriodM(p);}}
   };
-  if(type==='bar'||type==='line')opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:10}}},x:{grid:{display:false},ticks:{color:tc,font:{size:10},maxRotation:30}}};
+  if(type==='bar'||type==='line')opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:11}}},x:{grid:{display:false},ticks:{color:tc,font:{size:11},maxRotation:30}}};
   return createSafeChart(document.getElementById(id),{type,data,options:opts});
 }
 
@@ -10944,12 +11048,12 @@ function renderCompareCategoryCard(col,idx){
   setTimeout(()=>{
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
     let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},
-      plugins:{legend:{display:true,position:'top',labels:{boxWidth:10,font:{size:10,family:'Inter'},color:tc,padding:6}},
-        valueLabels:{display:true,fontSize:9},
+      plugins:{legend:{display:true,position:'top',labels:{boxWidth:10,font:{size:11,family:'Inter'},color:tc,padding:6}},
+        valueLabels:{display:true,fontSize:10},
         tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',callbacks:{title:ctx=>cats[ctx[0].dataIndex]}}},
       onClick:(e,el)=>{if(el&&el.length){let i=el[0].index,dsIdx=el[0].datasetIndex;let cat=cats[i];let p=COMPARE_PICKS[dsIdx];scheduleOpenDataM(col,cat,p);}}
     };
-    opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:9}}},x:{grid:{display:false},ticks:{color:tc,font:{size:9},maxRotation:0}}};
+    opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:10}}},x:{grid:{display:false},ticks:{color:tc,font:{size:10},maxRotation:0}}};
     CH['ccB'+idx]=createSafeChart(document.getElementById('ccB'+idx),{type:'bar',data:{labels,datasets},options:opts});
     CHART_META[zKey]={title,labels:cats,shortLabels:labels,datasets,pieLabels:cats,pieValues:cats.map(c=>union[c]),pieColors:cats.map((_,i)=>P[i%P.length]),total,type:'cmpCategory',columnName:col,periods:COMPARE_PICKS.slice()};
   },30);
@@ -13535,7 +13639,7 @@ function computeExpandedChartRowsByZKey(zKey, zd){
   let values = Array.isArray(zd.pieValues) && zd.pieValues.length ? zd.pieValues.slice() : ((zd.datasets&&zd.datasets[0]&&Array.isArray(zd.datasets[0].data)) ? zd.datasets[0].data.map(v=>typeof v==='object'&&v!==null?Number(v.y||0):Number(v||0)) : []);
   let colors = Array.isArray(zd.pieColors) && zd.pieColors.length ? zd.pieColors.slice() : labels.map((_,i)=>P[i%P.length]);
   let total = Number(zd.total || values.reduce((s,v)=>s+(Number(v)||0),0) || 0);
-  return { rows: labels.map((label,i)=>({ label, value:Number(values[i]||0), color:colors[i%colors.length], pct: total>0?((Number(values[i]||0)/total)*100).toFixed(1):'0.0' })) };
+  return { rows: labels.map((label,i)=>({ label, value:Number(values[i]||0), color:colors[i%colors.length], pct: total>0?((Number(values[i]||0)/total)*100).toFixed(1):'0.0', records:(zd && zd.recordsByCategory && Array.isArray(zd.recordsByCategory[label])) ? zd.recordsByCategory[label] : [] })) };
 }
 function getExpandedChartRows(zd){
   let computed=computeExpandedChartRowsByZKey(EXPANDED_PAGE_STATE.zKey || (zd && zd.type) || '', zd);
@@ -13565,6 +13669,9 @@ function expandedRowClick(zKey,index){
   if(zKey==='dup_top_cust'){ 
     if(item.records) return showRowsM(item.records, 'Duplicate Tickets: ' + label);
     return showDuplicateTicketsM(label);
+  }
+  if(zd.type==='cmpCategory'){
+    if(item.records) return showRowsM(item.records, (zd.title || 'Compare Graph') + ': ' + label);
   }
   if(zKey==='ot_severity' || zd.columnName==='_overtime'){
     if(item.records) return showRowsM(item.records, 'OverTime Severity: ' + label);
@@ -13910,7 +14017,12 @@ function buildZC(type){
       }else if(zd.type==='cpe_complaints'){openCpeModelModal(zd.labels[i]);}else if(zd.type==='trend_total'){
         openTrendPeriodM(TREND_GRAN, zd.keys[i], zd.labels[i]);
       }else if(zd.type==='cmpCategory'){
-        let cat=zd.labels[i];let p=zd.periods[dsIdx];scheduleOpenDataM(zd.columnName,cat,p);
+        let cat=zd.labels[i];let p=zd.periods[dsIdx];
+        if(zd.recordsMap && zd.recordsMap[p] && Array.isArray(zd.recordsMap[p][cat])){
+          showRowsM(zd.recordsMap[p][cat], (zd.title||'Compare Graph') + ' · ' + cat + ' · ' + periodLabel(p));
+        }else if(zd.columnName){
+          scheduleOpenDataM(zd.columnName,cat,p);
+        }
       }else if(zd.type==='cmpTotals'){
         let p=zd.periods[i];scheduleOpenPeriodM(p);
       }else if(zd.type==='normal'&&zd.columnName){
@@ -13966,6 +14078,7 @@ function buildZL(){
     else if(zd.type==='filter'&&zd.columnName)div.onclick=()=>openFilterDataM(zd.columnName,lb);
     else if(zd.type==='pivotFilter'&&zd.columnName)div.onclick=()=>openPivotFilterDataM(zd.columnName,lb);
     else if(zd.type==='cmpTotals')div.onclick=()=>scheduleOpenPeriodM(zd.periods[i]);
+    else if(zd.type==='cmpCategory' && zd.recordsByCategory && Array.isArray(zd.recordsByCategory[lb])) div.onclick=()=>showRowsM(zd.recordsByCategory[lb], (zd.title||'Compare Graph') + ': ' + lb);
     else if(zd.type==='cpe_complaints')div.onclick=()=>openCpeModelModal(lb);
     else if(zd.type==='trend_total')div.onclick=()=>openTrendPeriodM(TREND_GRAN, zd.keys[i], zd.labels[i]);
     else if(zd.type==='trend'&&zd.columnName)div.onclick=()=>scheduleOpenDateM(zd.labels[i]);
@@ -14229,5 +14342,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae032e689f1d1c',t:'MTc4NDAwNTczNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae50cd4898ed99',t:'MTc4NDAwODkxNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
