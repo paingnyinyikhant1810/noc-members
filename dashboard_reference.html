@@ -6337,6 +6337,12 @@ body #drInfo .dr-b {
   min-width: 0 !important;
   grid-column: 1 / -1 !important;
 }
+.ct.compare-page-stack > .cd {
+  flex: 1 1 100% !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
 .created-graphs-grid {
   width: 100% !important;
   grid-column: 1 / -1 !important;
@@ -9859,6 +9865,7 @@ function doRender(){
   setTimeout(() => { 
     if (typeof refreshAllAppSelects === 'function') refreshAllAppSelects(); 
     if (typeof applyGraphOrderToDashboard === 'function') applyGraphOrderToDashboard();
+    if (COMPARE_MODE && typeof applyCompareGraphOrderLayout === 'function') applyCompareGraphOrderLayout();
     if (EXPAND_REOPEN_AFTER_FILTER) {
       let p = EXPAND_REOPEN_AFTER_FILTER;
       EXPAND_REOPEN_AFTER_FILTER = null;
@@ -11039,6 +11046,36 @@ function getOvertimeSeverityMapForRows(rows){
   tiers.forEach(t=>{ out[getOverTimeTierLabel(t)]={ value:Number(ot.counts[t]||0), records:(ot.overTimeTickets||[]).filter(x=>x.tier===t).map(x=>x.row) }; });
   return out;
 }
+function applyCompareGraphOrderLayout(){
+  let area=document.getElementById('main');
+  if(!area) return;
+  area.classList.add('compare-page-stack');
+  let orderedKeys=['cmp_totals','cmp_cpe_complaints','cmp_site_summary','cmp_site_complaint_percent_high','cmp_site_complaint_percent_low','cmp_dup_top_cust','cmp_ot_severity'];
+  orderedKeys.forEach(k=>{
+    let card=getChartCardElement(k);
+    if(card){
+      card.style.setProperty('width','100%','important');
+      card.style.setProperty('max-width','100%','important');
+      card.style.setProperty('min-width','0','important');
+      card.style.setProperty('grid-column','1 / -1','important');
+      area.appendChild(card);
+    }
+  });
+  let heading=document.getElementById('compareCreatedGraphsHeading');
+  let grid=document.getElementById('compareCreatedGraphsGrid');
+  if(grid){
+    grid.className='compare-created-graphs-grid';
+    Array.from(area.querySelectorAll('[id^="card_cmp_saved_"]')).forEach(card=>{
+      card.style.setProperty('width','100%','important');
+      card.style.setProperty('max-width','100%','important');
+      card.style.setProperty('min-width','0','important');
+      card.style.setProperty('grid-column','1 / -1','important');
+      grid.appendChild(card);
+    });
+  }
+  if(heading) area.appendChild(heading);
+  if(grid) area.appendChild(grid);
+}
 function renderCompareDashboard(){
   let area=document.getElementById("main");
   area.innerHTML = '';
@@ -11099,6 +11136,9 @@ function renderCompareDashboard(){
       if(card) compareCreatedGrid.appendChild(card);
     }
   });
+  applyCompareGraphOrderLayout();
+  setTimeout(applyCompareGraphOrderLayout, 30);
+  setTimeout(applyCompareGraphOrderLayout, 160);
 }
 
 function renderPeriodTotalsCard(sourceKey){
@@ -14509,5 +14549,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1aea6205c5c1dd6',t:'MTc4NDAxMjQxMA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1aeab4f0a78b486',t:'MTc4NDAxMjYyMw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
