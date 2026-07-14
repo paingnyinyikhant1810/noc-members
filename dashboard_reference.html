@@ -7015,7 +7015,6 @@ async function fetchDashboardEmbedAppState(){
   if (DASH_EMBED.enabled && !getEmbedAuthHeader()) {
     await waitForEmbedAuth(2500);
   }
-  const localKey = getScopedStorageKey('noc_universal_state');
   const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/app-state';
   try {
     const res = await fetch(url, { credentials: 'same-origin', headers: getEmbedApiHeaders() });
@@ -7023,14 +7022,9 @@ async function fetchDashboardEmbedAppState(){
     let json = {};
     try { json = txt ? JSON.parse(txt) : {}; } catch(e) { throw new Error('Dashboard App State API returned non-JSON response.'); }
     if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
-    if (json && json.stateJson) {
-      try { localStorage.setItem(localKey, json.stateJson); } catch(e) {}
-    }
     return { success: true, stateJson: json.stateJson || null, mode: 'remote-dashboard-state' };
   } catch(err) {
-    let simState = null;
-    try { simState = localStorage.getItem(localKey); } catch(e) {}
-    return { success: true, stateJson: simState || null, mode: 'local-fallback-dashboard-state' };
+    return { success: false, stateJson: null, mode: 'remote-state-unavailable', error: String(err && err.message || err) };
   }
 }
 
@@ -7056,8 +7050,6 @@ async function apiCall(action, params = {}) {
         return;
       }
       if (action === 'saveAppState') {
-        const localKey = getScopedStorageKey('noc_universal_state');
-        try { localStorage.setItem(localKey, params.stateJson || ''); } catch(e) {}
         const url = '/api/dashboards/' + encodeURIComponent(DASH_EMBED.dashboardId) + '/app-state';
         fetch(url, {
           method: 'PUT',
@@ -7070,8 +7062,8 @@ async function apiCall(action, params = {}) {
           try { json = txt ? JSON.parse(txt) : {}; } catch(e) { json = {}; }
           if(!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
           resolve({ success: true, mode: 'remote-dashboard-state', result: json });
-        }).catch(() => {
-          resolve({ success: true, mode: 'local-fallback-dashboard-state' });
+        }).catch((err) => {
+          resolve({ success: false, mode: 'remote-state-unavailable', error: String(err && err.message || err) });
         });
         return;
       }
@@ -7640,7 +7632,7 @@ function renameDefaultGraph(zKey, fallbackTitle){
 function renderDashboardBackToolbar(){
   return `<div class="mode-backbar"><button class="expand-back mode-back-btn" type="button" onclick="returnToHomePageFromGraph()"><svg class="ic"><use href="#i-x"/></svg> Back to Dashboard</button></div>`;
 }
-function loadSavedCharts(){try{let raw=localStorage.getItem(getScopedStorageKey('noc_saved_charts_v1')) || localStorage.getItem('noc_saved_charts_v1');if(raw)SAVED_CHARTS=JSON.parse(raw);}catch(e){SAVED_CHARTS=[];}}
+function loadSavedCharts(){SAVED_CHARTS = Array.isArray(SAVED_CHARTS) ? SAVED_CHARTS : [];}
 function buildUniversalStateSnapshot(){
   return {
     savedCharts: typeof SAVED_CHARTS !== 'undefined' ? SAVED_CHARTS : [],
@@ -7661,17 +7653,10 @@ function buildUniversalStateSnapshot(){
   };
 }
 function persistUniversalStateLocalNow(){
-  try {
-    let stateObj = buildUniversalStateSnapshot();
-    localStorage.setItem(getScopedStorageKey('noc_universal_state'), JSON.stringify(stateObj));
-    localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'), JSON.stringify(stateObj.savedCharts));
-    localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(stateObj.savedPivots));
-    localStorage.setItem(getScopedStorageKey('noc_settings_v2'), JSON.stringify(stateObj.settings));
-    localStorage.setItem(getScopedStorageKey('noc_hidden_charts'), JSON.stringify(stateObj.hiddenCharts));
-  } catch(e) {}
+  /* Intentionally disabled for sync state.
+     Created graphs / pivots / hidden graphs / dashboard settings are stored online only. */
 }
 function saveSavedCharts(){
-  localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'),JSON.stringify(SAVED_CHARTS));
   persistUniversalStateLocalNow();
   if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'created graphs');
 }
@@ -7922,15 +7907,6 @@ function getCurrentActiveMode() {
 function saveUniversalAppStateToCloud(immediate, reason) {
   let stateObj = buildUniversalStateSnapshot();
 
-  // Immediate offline fast cache
-  try {
-    localStorage.setItem(getScopedStorageKey('noc_universal_state'), JSON.stringify(stateObj));
-    localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'), JSON.stringify(stateObj.savedCharts));
-    localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(stateObj.savedPivots));
-    localStorage.setItem(getScopedStorageKey('noc_settings_v2'), JSON.stringify(stateObj.settings));
-    localStorage.setItem(getScopedStorageKey('noc_hidden_charts'), JSON.stringify(stateObj.hiddenCharts));
-  } catch(e) {}
-
   const doSync = () => {
     if (typeof apiCall === 'function') {
       if (immediate && typeof showL === 'function') showL(reason ? ('Saving ' + reason + '…') : 'Saving…');
@@ -7966,12 +7942,10 @@ function loadUniversalAppStateFromCloud() {
           let changed = false;
           if (cloudState.savedCharts && Array.isArray(cloudState.savedCharts)) {
             SAVED_CHARTS = cloudState.savedCharts;
-            localStorage.setItem(getScopedStorageKey('noc_saved_charts_v1'), JSON.stringify(SAVED_CHARTS));
             changed = true;
           }
           if (cloudState.savedPivots && Array.isArray(cloudState.savedPivots)) {
             SAVED_PIVOT_TABLES = cloudState.savedPivots;
-            localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(SAVED_PIVOT_TABLES));
             changed = true;
           }
           if (cloudState.settings && typeof cloudState.settings === 'object') {
@@ -7979,14 +7953,12 @@ function loadUniversalAppStateFromCloud() {
             S.defaultTab='';
             S.advSummary=true;
             S.trendChart=true;
-            localStorage.setItem(getScopedStorageKey('noc_settings_v2'), JSON.stringify(S));
             if (typeof applyTheme === 'function') applyTheme();
             if (typeof buildSwatchRow === 'function') buildSwatchRow();
             changed = true;
           }
           if (cloudState.hiddenCharts && typeof cloudState.hiddenCharts === 'object') {
             HIDDEN_CHARTS = cloudState.hiddenCharts;
-            localStorage.setItem(getScopedStorageKey('noc_hidden_charts'), JSON.stringify(HIDDEN_CHARTS));
             changed = true;
           }
           
@@ -8069,7 +8041,6 @@ function testGasApiUrl() {
 }
 
 function loadSettings(){
-  try{let raw=localStorage.getItem(getScopedStorageKey('noc_settings_v2')) || localStorage.getItem('noc_settings_v2');if(raw)Object.assign(S,JSON.parse(raw));}catch(e){}
   try {
     let parentRoot = (window.parent && window.parent !== window && window.parent.document) ? window.parent.document.documentElement : null;
     let parentTheme = parentRoot ? (parentRoot.getAttribute('data-theme') || '') : '';
@@ -8085,10 +8056,9 @@ function loadSettings(){
   S.advSummary=true;
   S.trendChart=true;
   try { let savedApi = localStorage.getItem('noc_gas_api_url'); if (savedApi) GAS_WEB_APP_URL = savedApi; let inp = document.getElementById('gasApiUrlInput'); if (inp) inp.value = GAS_WEB_APP_URL; } catch(e) {}
-  try{let h=localStorage.getItem(getScopedStorageKey('noc_hidden_charts')) || localStorage.getItem('noc_hidden_charts');if(h)HIDDEN_CHARTS=JSON.parse(h);}catch(e){HIDDEN_CHARTS={};}
 }
-function saveSettings(){localStorage.setItem(getScopedStorageKey('noc_settings_v2'),JSON.stringify(S)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'dashboard settings');}
-function saveHidden(){localStorage.setItem(getScopedStorageKey('noc_hidden_charts'),JSON.stringify(HIDDEN_CHARTS)); persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'graph visibility');}
+function saveSettings(){persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'dashboard settings');}
+function saveHidden(){persistUniversalStateLocalNow(); if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'graph visibility');}
 function getGraphOrderForTab(tab){
   let t = tab || (D && D.tabName) || '';
   if (S.graphOrderByTab && Array.isArray(S.graphOrderByTab[t])) return S.graphOrderByTab[t];
@@ -8264,7 +8234,8 @@ function bindSegs(){
   });
 }
 let SETTINGS_CONTENT_HOME = null;
-function openSettings(){
+async function openSettings(){
+  try { if (typeof loadUniversalAppStateFromCloud === 'function') await loadUniversalAppStateFromCloud(); } catch(e) {}
   buildChartVisibilityList();
   let modal=document.getElementById('settingsModal');
   let dialog=modal ? modal.querySelector('.modal-dialog') : null;
@@ -11091,17 +11062,10 @@ let SAVED_PIVOT_TABLES = [];
 let LATEST_TOAST_MSG = "";
 
 function loadSavedPivotTables() {
-  try {
-    let raw = localStorage.getItem(getScopedStorageKey('noc_saved_pivots_v7')) || localStorage.getItem('noc_saved_pivots_v7');
-    if (raw) SAVED_PIVOT_TABLES = JSON.parse(raw);
-    else SAVED_PIVOT_TABLES = [];
-  } catch(e) {
-    SAVED_PIVOT_TABLES = [];
-  }
+  SAVED_PIVOT_TABLES = Array.isArray(SAVED_PIVOT_TABLES) ? SAVED_PIVOT_TABLES : [];
 }
 function saveSavedPivotTables() {
   try {
-    localStorage.setItem(getScopedStorageKey('noc_saved_pivots_v7'), JSON.stringify(SAVED_PIVOT_TABLES));
     persistUniversalStateLocalNow();
     if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud(true, 'pivot tables');
   } catch(e) {}
@@ -14153,5 +14117,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ad063df88d8965',t:'MTc4Mzk5NTM3Ng=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ad118d88788965',t:'MTc4Mzk5NTgzOQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
