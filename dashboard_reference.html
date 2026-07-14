@@ -7805,7 +7805,7 @@ const VALUE_LABEL_PLUGIN={
     opts=opts||{}; if(opts.display===false)return;
     const ctx=chart.ctx;
     ctx.save();
-    const fs=opts.fontSize||11;
+    const fs=opts.fontSize||12;
     ctx.font='800 '+fs+'px Inter, sans-serif';
     ctx.textAlign='center';
     ctx.textBaseline='middle';
@@ -9178,7 +9178,7 @@ function renderSiteTicketCountsCard(sites, cols){
   let bId='siteTicketCanvas';
   let zKey='site_summary';
   let baseTitle='Site Ticket Counts';
-  let title=getGraphDisplayTitle(sourceKey || zKey, baseTitle);
+  let title=getGraphDisplayTitle(zKey, baseTitle);
   let limit=S.chartLimit||0;
   let displaySites=limit>0?sites.slice(0,limit):sites.slice();
   let chartLabels=displaySites.map(s=>s.site);
@@ -9203,7 +9203,7 @@ function renderSiteTicketCountsCard(sites, cols){
   setTimeout(()=>{
     let colors=chartLabels.map((_,i)=>P[i%P.length]);
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
-    CH[bId]=mkChart(bId,'bar',{labels:chartLabels,datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,chartLabels,false);
+    CH[bId]=mkChart(bId,'bar',{labels:chartLabels,datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,chartLabels,false,{mode:'expand',zKey,chartType:'bar'});
     CHART_META[zKey]={ title, labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total, type:'site_summary', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[]}])) };
   },30);
 }
@@ -9244,7 +9244,7 @@ function renderSiteComplaintPercentCard(sites, cols, zKey, baseTitle, badgeText)
         animation:{duration:350},
         plugins:{
           legend:{display:false},
-          valueLabels:{display:true,fontSize:9,formatter:(val)=>Number(val||0).toFixed(1)},
+          valueLabels:{display:true,fontSize:11,formatter:(val)=>Number(val||0).toFixed(1)},
           tooltip:{
             callbacks:{
               title:(ctx)=>chartLabels[ctx[0].dataIndex]||'',
@@ -9257,9 +9257,11 @@ function renderSiteComplaintPercentCard(sites, cols, zKey, baseTitle, badgeText)
           }
         },
         scales:{
-          y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'600'}}},
-          x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:7.4,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
-        }
+          y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:11,weight:'700'}}},
+          x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:8.8,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
+        },
+        onClick:()=>{ openZoom(zKey,'bar'); },
+        onHover:(e)=>{ if(e && e.native && e.native.target) e.native.target.style.cursor='pointer'; }
       }
     });
     CHART_META[zKey]={ title, labels:chartLabels, shortLabels:chartLabels, datasets:[{data:chartValues,backgroundColor:colors,borderRadius:4,borderSkipped:false}], pieLabels:chartLabels, pieValues:chartValues, pieColors:colors, total:chartValues.reduce((s,v)=>s+Number(v||0),0), type:'site_complaint_percent', columnName:cols.siteCodeCol, fullNameCol: cols.fullNameCol, shortCodeCol: cols.shortCodeCol, activeSiteCol: cols.activeSiteCol, activeCountCol: cols.activeCountCol, siteMap:Object.fromEntries(displaySites.map(s=>[s.site,{fullName:s.fullName||'',shortCode:s.shortCode||s.site,records:s.rows||[],ratioText:s.ratioText,percentText:s.percentText,percentValue:Number(s.percentValue||0),activeCount:Number(s.activeCount||0),complaintCount:Number(s.complaintCount||0)}])) };
@@ -9750,12 +9752,12 @@ function buildTicketTrendChart(gran){
       animation:{duration:350},
       plugins:{
         legend:{display:false},
-        valueLabels:{display:true,fontSize:10},
+        valueLabels:{display:true,fontSize:11},
         tooltip:{backgroundColor:S.dark?'#252836':'#111827',cornerRadius:10,padding:12,titleFont:{family:'Inter',weight:'800'},bodyFont:{family:'Inter',weight:'600'}}
       },
       scales:{
-        y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:10,weight:'700'}}},
-        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:7.4,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
+        y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:11,weight:'700'}}},
+        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:8.8,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
       },
       onClick:(e,els)=>{
         openZoom('trend_total', 'bar');
@@ -9895,13 +9897,14 @@ function renderTrendCard(){
   let t=trendByDate();if(!t)return;
   let zKey='trend_main';let area=document.getElementById("main");
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  card.style.cssText='flex:1 1 100%;width:100%;max-width:100%;grid-column:1 / -1;';
   if(isHidden(zKey))card.style.display='none';
   card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>Tickets over time</h3></div><span class="c-tag" style="background:var(--ac);">${t.values.reduce((a,b)=>a+b,0)} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','line')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','line')"><canvas id="trC"></canvas></div></div>`;
   area.appendChild(card);
   setTimeout(()=>{
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
     let col=cssVar('--ac');
-    CH['trC']=mkChart('trC','line',{labels:t.labels,datasets:[{label:'Tickets',data:t.values,borderColor:col,backgroundColor:col+'33',fill:true,tension:.3,pointRadius:2,borderWidth:2}]},gc,tc,t.labels,false);
+    CH['trC']=mkChart('trC','line',{labels:t.labels,datasets:[{label:'Tickets',data:t.values,borderColor:col,backgroundColor:col+'33',fill:true,tension:.3,pointRadius:2,borderWidth:2}]},gc,tc,t.labels,false,{mode:'expand',zKey,chartType:'line'});
     CHART_META[zKey]={title:'Tickets over time',labels:t.labels,shortLabels:t.labels,datasets:[{data:t.values,backgroundColor:col}],pieLabels:t.labels,pieValues:t.values,pieColors:t.labels.map((_,i)=>P[i%P.length]),total:t.values.reduce((a,b)=>a+b,0),type:'trend',columnName:dateCol};
   },30);
 }
@@ -9935,7 +9938,7 @@ function pvChart(title,cols,lc,idx){
   area.appendChild(card);
   setTimeout(()=>{
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
-    CH[bId]=mkChart(bId,'bar',{labels,datasets:JSON.parse(JSON.stringify(ds))},gc,tc,full,cols.length>1);
+    CH[bId]=mkChart(bId,'bar',{labels,datasets:JSON.parse(JSON.stringify(ds))},gc,tc,full,cols.length>1,{mode:'expand',zKey,chartType:'bar'});
     CHART_META[zKey]={title,labels:full,shortLabels:labels,datasets:ds,pieLabels:pL,pieValues:pV,pieColors:P.slice(0,pL.length),total:tot,type:'pivot'};
   },30);
 }
@@ -9973,7 +9976,7 @@ function renderCategoryCard(col,idx,rows){
   setTimeout(()=>{
     let short=displayL.map(l=>l.length>15?l.substring(0,12)+'…':l),colors=displayL.map((_,i)=>P[i%P.length]);
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
-    CH[bId]=mkChart(bId,'bar',{labels:short,datasets:[{data:displayV,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,displayL,false);
+    CH[bId]=mkChart(bId,'bar',{labels:short,datasets:[{data:displayV,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,displayL,false,{mode:'expand',zKey,chartType:'bar'});
     CHART_META[zKey]={title:col,labels:sL,shortLabels:short,datasets:[{data:sV,backgroundColor:colors,borderRadius:4,borderSkipped:false}],pieLabels:sL,pieValues:sV,pieColors:colors,total:tot,type:'normal',columnName:col};
   },30);
 }
@@ -9992,14 +9995,19 @@ function mkChart(id,type,data,gc,tc,fullLabels,showLeg,clickCol){
   }
   let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},
     plugins:{
-      legend:{display:type==='doughnut'?false:!!showLeg,labels:{boxWidth:9,font:{size:10,family:'Inter'},color:tc,padding:6}},
-      valueLabels:{display:true,fontSize:9},
+      legend:{display:type==='doughnut'?false:!!showLeg,labels:{boxWidth:9,font:{size:11,family:'Inter'},color:tc,padding:6}},
+      valueLabels:{display:true,fontSize:10},
       tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',titleFont:{size:11,family:'Inter',weight:'700'},bodyFont:{size:10,family:'Inter'},cornerRadius:6,padding:8,callbacks:{title:ctx=>fullLabels[ctx[0].dataIndex]||''}}
     }};
-  if(type==='bar')opts.scales={y:{grid:{color:gc},ticks:{font:{size:10,family:'Inter',weight:'600'},color:tc}},x:{grid:{display:false},ticks:{maxRotation:90,minRotation:90,autoSkip:false,font:{size:7.4,family:'Inter',weight:'600'},color:tc,padding:2}}};
-  if(type==='line')opts.scales={y:{grid:{color:gc},ticks:{font:{size:10,family:'Inter',weight:'600'},color:tc}},x:{grid:{color:gc},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:labelCount>14?7:9,font:{size:8,family:'Inter',weight:'600'},color:tc,padding:4}}};
+  if(type==='bar')opts.scales={y:{grid:{color:gc},ticks:{font:{size:11,family:'Inter',weight:'700'},color:tc}},x:{grid:{display:false},ticks:{maxRotation:90,minRotation:90,autoSkip:false,font:{size:8.8,family:'Inter',weight:'700'},color:tc,padding:2}}};
+  if(type==='line')opts.scales={y:{grid:{color:gc},ticks:{font:{size:11,family:'Inter',weight:'700'},color:tc}},x:{grid:{color:gc},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:labelCount>14?7:9,font:{size:9,family:'Inter',weight:'700'},color:tc,padding:4}}};
   if(type==='doughnut')opts.cutout='52%';
-  if(clickCol)opts.onClick=(e,el)=>{if(el&&el.length)scheduleOpenDataM(clickCol,fullLabels[el[0].index]);};
+  if(clickCol && typeof clickCol==='object' && clickCol.mode==='expand' && clickCol.zKey){
+    opts.onClick=()=>openZoom(clickCol.zKey, clickCol.chartType || type);
+    opts.onHover=(e)=>{ if(e && e.native && e.native.target) e.native.target.style.cursor='pointer'; };
+  }else if(clickCol && typeof clickCol==='object' && clickCol.mode==='data' && clickCol.columnName){
+    opts.onClick=(e,el)=>{if(el&&el.length)scheduleOpenDataM(clickCol.columnName,fullLabels[el[0].index]);};
+  }else if(clickCol)opts.onClick=(e,el)=>{if(el&&el.length)scheduleOpenDataM(clickCol,fullLabels[el[0].index]);};
   return createSafeChart(document.getElementById(id),{type,data,options:opts});
 }
 
@@ -10363,7 +10371,7 @@ function renderDuplicateTrendCard(dupRows) {
         pointRadius: 2,
         borderWidth: 2
       }]
-    }, gc, tc, labels, false);
+    }, gc, tc, labels, false, {mode:'expand',zKey,chartType:'line'});
     CHART_META[zKey] = {
       title: title,
       labels: labels,
@@ -10470,7 +10478,7 @@ function renderTopCustomersCard(duplicates, totalDupsCount) {
         borderRadius: 4,
         borderSkipped: false
       }]
-    }, gc, tc, chartLabels, false);
+    }, gc, tc, chartLabels, false, {mode:'expand',zKey,chartType:'bar'});
     
     CHART_META[zKey] = {
       title: title,
@@ -10748,7 +10756,7 @@ function renderOverTimeTrendCard(otRowsAll) {
         pointRadius: 2,
         borderWidth: 2
       }]
-    }, gc, tc, labels, false);
+    }, gc, tc, labels, false, {mode:'expand',zKey,chartType:'line'});
     CHART_META[zKey] = {
       title: title,
       labels: labels,
@@ -10847,7 +10855,7 @@ function renderOverTimeSeverityCard(counts, totalOtCount) {
         borderRadius: 4,
         borderSkipped: false
       }]
-    }, gc, tc, chartLabels, false);
+    }, gc, tc, chartLabels, false, {mode:'expand',zKey,chartType:'bar'});
     CHART_META[zKey] = {
       title: title,
       labels: chartLabels,
@@ -10914,13 +10922,13 @@ function renderCompareMainCard(zKey, baseTitle, periodMaps, countLabel, sourceKe
   if(sourceKey && !isSourceGraphVisible(sourceKey)) return;
   let bundle=buildCompareBundleFromPeriodMaps(periodMaps);
   if(!bundle.cats.length) return;
-  let title=getGraphDisplayTitle(zKey, baseTitle);
+  let title=getGraphDisplayTitle(sourceKey || zKey, baseTitle);
   let area=document.getElementById('main');
-  let rowsHtml=bundle.cats.map((cat,i)=>{ let pc=bundle.total>0?((Number(bundle.union[cat]||0)/bundle.total)*100).toFixed(1):'0.0'; let fc=P[i%P.length]; return `<tr onclick="showRowsM((CHART_META['${zKey}']&&CHART_META['${zKey}'].recordsByCategory&&CHART_META['${zKey}'].recordsByCategory[${JSON.stringify(cat)}])||[],'${escapeJs(baseTitle)}: ${escapeJs(cat)}')"><td class="c-link">${escapeHtml(cat)}</td><td><span class="cnt-p">${Number(bundle.union[cat]||0).toLocaleString()}</span></td><td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td></tr>`; }).join('');
+  let rowsHtml=bundle.cats.map((cat,i)=>{ let pc=bundle.total>0?((Number(bundle.union[cat]||0)/bundle.total)*100).toFixed(1):'0.0'; let fc=P[i%P.length]; return `<tr onclick="showRowsM((CHART_META['${zKey}']&&CHART_META['${zKey}'].recordsByCategory&&CHART_META['${zKey}'].recordsByCategory['${escapeJs(cat)}'])||[],'${escapeJs(baseTitle)}: ${escapeJs(cat)}')"><td class="c-link">${escapeHtml(cat)}</td><td><span class="cnt-p">${Number(bundle.union[cat]||0).toLocaleString()}</span></td><td><div class="bw"><div class="btt"><div class="bf" style="width:${pc}%;background:${fc};"></div></div><span class="bn">${pc}%</span></div></td></tr>`; }).join('');
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   card.style.cssText='flex:1 1 100%;width:100%;max-width:100%;grid-column:1 / -1;';
   if(isHidden(zKey)) card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[0]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[0]};">${escapeHtml(countLabel || (bundle.cats.length + ' categories'))}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;"><canvas id="${zKey}_canvas"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:60px;">Total</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[0]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[0]};">${escapeHtml(countLabel || (bundle.cats.length + ' categories'))}</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="row g-3"><div class="col-lg-7"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="${zKey}_canvas"></canvas></div></div><div class="col-lg-5"><div style="height:340px;min-height:340px;overflow-y:auto;border:1px solid color-mix(in srgb, var(--ac) 8%, var(--border));border-radius:10px;background:color-mix(in srgb, var(--bg) 84%, #fff);"><table class="tb"><thead><tr><th>Category</th><th style="width:60px;">Total</th><th>Share</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div></div></div>`;
   card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,sourceKey || zKey,baseTitle);
   area.appendChild(card);
   setTimeout(()=>{
@@ -10935,14 +10943,16 @@ function renderCompareMainCard(zKey, baseTitle, periodMaps, countLabel, sourceKe
         maintainAspectRatio:false,
         animation:{duration:250},
         plugins:{
-          legend:{display:true,position:'top',labels:{boxWidth:10,font:{size:12,family:'Inter'},color:tc,padding:6}},
-          valueLabels:{display:true,fontSize:11},
+          legend:{display:true,position:'top',labels:{boxWidth:10,font:{size:13,family:'Inter',weight:'700'},color:tc,padding:6}},
+          valueLabels:{display:true,fontSize:12},
           tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',callbacks:{title:ctx=>bundle.cats[ctx[0].dataIndex]}}
         },
         scales:{
-          y:{grid:{color:gc},ticks:{color:tc,font:{size:11}}},
-          x:{grid:{display:false},ticks:{color:tc,font:{size:11},maxRotation:0}}
-        }
+          y:{grid:{color:gc},ticks:{color:tc,font:{size:12,weight:'700'}}},
+          x:{grid:{display:false},ticks:{color:tc,font:{size:12,weight:'700'},maxRotation:0}}
+        },
+        onClick:()=>{ openZoom(zKey,'bar'); },
+        onHover:(e)=>{ if(e && e.native && e.native.target) e.native.target.style.cursor='pointer'; }
       }
     });
     CHART_META[zKey]={title,labels:bundle.cats,shortLabels:labels,datasets:bundle.datasets,pieLabels:bundle.cats,pieValues:bundle.cats.map(c=>bundle.union[c]),pieColors:bundle.cats.map((_,i)=>P[i%P.length]),total:bundle.total,type:'cmpCategory',columnName:null,periods:COMPARE_PICKS.slice(),recordsMap:bundle.recordsMap,recordsByCategory:bundle.recordsByCategory};
@@ -11019,6 +11029,7 @@ function renderCompareDashboard(){
   renderCompareMainCard('cmp_dup_top_cust', 'Top Customers with Duplicate Tickets', periodRows.map(r=>getDuplicateTopCustomerMapForRows(r)), 'Customers', 'dup_top_cust');
   renderCompareMainCard('cmp_ot_severity', 'OverTime Severity Distribution', periodRows.map(r=>getOvertimeSeverityMapForRows(r)), 'Severity', 'ot_severity');
 
+  let renderableSaved=[];
   let visibleSaved=SAVED_CHARTS.filter(sc=>sc.tabName===(D.tabName||'') && !isHidden('saved_' + sc.id));
   visibleSaved.forEach(sc=>{
     if(sc.type!=='filter') return;
@@ -11029,6 +11040,21 @@ function renderCompareDashboard(){
       rows.forEach(r=>{ let v=r[col]; let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)'; if(!mp[k]) mp[k]={value:0,records:[]}; mp[k].value++; mp[k].records.push(r); });
       return mp;
     });
+    let bundle=buildCompareBundleFromPeriodMaps(periodMaps);
+    if(!bundle.cats.length) return;
+    renderableSaved.push({ sc, periodMaps });
+  });
+
+  if(renderableSaved.length){
+    let heading=document.createElement('div');
+    heading.className='enterprise-card';
+    heading.id='compareCreatedGraphsHeading';
+    heading.style.cssText='flex:1 1 100%;width:100%;grid-column:1 / -1;padding:0;overflow:hidden;';
+    heading.innerHTML=`<div class="enterprise-head" style="background:linear-gradient(135deg, var(--ac-bg), rgba(0,0,0,0));"><div class="enterprise-title"><div class="badge-ico" style="background:var(--ac-bg);color:var(--ac);"><svg class="ic"><use href="#i-chart"/></svg></div><div><h2>Created Graphs</h2><p>${renderableSaved.length} compare chart${renderableSaved.length>1?'s':''}</p></div></div></div>`;
+    area.appendChild(heading);
+  }
+
+  renderableSaved.forEach(({ sc, periodMaps })=>{
     renderCompareMainCard('cmp_saved_' + sc.id, sc.title, periodMaps, 'Categories', 'saved_' + sc.id);
   });
 }
@@ -11044,8 +11070,9 @@ function renderPeriodTotalsCard(sourceKey){
   let colors=COMPARE_PICKS.map((_,i)=>P[i%P.length]);
   let total=values.reduce((a,b)=>a+b,0);
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
+  card.style.cssText='flex:1 1 100%;width:100%;max-width:100%;grid-column:1 / -1;';
   if(isHidden(zKey))card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:var(--ac);">${total.toLocaleString()} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:340px;min-height:340px;"><canvas id="cmpTotB"></canvas></div><div class="mini-data-grid">${labels.map((lb,i)=>`<div class="mini-data-item"><span>${escapeHtml(lb)}</span><span>${values[i].toLocaleString()}</span></div>`).join('')}</div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:var(--ac);"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:var(--ac);">${total.toLocaleString()} total</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:340px;min-height:340px;" onclick="openZoom('${zKey}','bar')"><canvas id="cmpTotB"></canvas></div><div class="mini-data-grid">${labels.map((lb,i)=>`<div class="mini-data-item"><span>${escapeHtml(lb)}</span><span>${values[i].toLocaleString()}</span></div>`).join('')}</div></div>`;
   card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
   area.appendChild(card);
   setTimeout(()=>{
@@ -11058,10 +11085,11 @@ function mkPeriodChart(id,type,labels,values,colors,gc,tc){
   let data;
   if(type==='doughnut'||type==='polarArea')data={labels,datasets:[{data:values,backgroundColor:colors,borderWidth:2,borderColor:S.dark?'#1a1d2e':'#fff'}]};
   else data={labels:wrapAxisLabels(labels,12),datasets:[{label:'Tickets',data:values,backgroundColor:colors,borderRadius:4}]};
-    let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},plugins:{legend:{display:type==='doughnut'||type==='polarArea'},valueLabels:{display:true,fontSize:11},tooltip:{callbacks:{title:ctx=>labels[ctx[0].dataIndex]||''}}},
-    onClick:(e,el)=>{if(el&&el.length){let i=el[0].index;let p=COMPARE_PICKS[i];scheduleOpenPeriodM(p);}}
+    let opts={responsive:true,maintainAspectRatio:false,animation:{duration:250},plugins:{legend:{display:type==='doughnut'||type==='polarArea'},valueLabels:{display:true,fontSize:12},tooltip:{callbacks:{title:ctx=>labels[ctx[0].dataIndex]||''}}},
+    onClick:()=>{ openZoom('cmp_totals','bar'); },
+    onHover:(e)=>{ if(e && e.native && e.native.target) e.native.target.style.cursor='pointer'; }
   };
-  if(type==='bar'||type==='line')opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:11}}},x:{grid:{display:false},ticks:{color:tc,font:{size:11},maxRotation:30}}};
+  if(type==='bar'||type==='line')opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:12,weight:'700'}}},x:{grid:{display:false},ticks:{color:tc,font:{size:12,weight:'700'},maxRotation:30}}};
   return createSafeChart(document.getElementById(id),{type,data,options:opts});
 }
 
@@ -11082,7 +11110,7 @@ function renderCompareCategoryCard(col,idx){
 
   let card=document.createElement('div');card.className='cd';card.id='card_'+zKey;
   if(isHidden(zKey))card.style.display='none';
-  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${cats.length} categories</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;"><canvas id="ccB${idx}"></canvas></div><div class="mini-data-grid">${cats.slice(0,8).map((c,i)=>`<div class="mini-data-item"><span>${escapeHtml(c)}</span><span>${union[c].toLocaleString()}</span></div>`).join('')}</div></div>`;
+  card.innerHTML=`<div class="chd"><div class="chd-l"><div class="cd-dot" style="background:${DT[idx%DT.length]};"></div><h3>${escapeHtml(title)}</h3></div><span class="c-tag" style="background:${TG[idx%TG.length]};">${cats.length} categories</span><div class="cd-actions"><button class="btn-expand-dash" onclick="openZoom('${zKey}','bar')"><svg class="ic"><use href="#i-expand"/></svg> Expand</button></div></div><div class="cb"><div class="chb" style="height:360px;min-height:360px;" onclick="openZoom('${zKey}','bar')"><canvas id="ccB${idx}"></canvas></div><div class="mini-data-grid">${cats.slice(0,8).map((c,i)=>`<div class="mini-data-item"><span>${escapeHtml(c)}</span><span>${union[c].toLocaleString()}</span></div>`).join('')}</div></div>`;
   card.oncontextmenu=(e)=>openDefaultGraphContextMenu(e,zKey,baseTitle);
   area.appendChild(card);
   setTimeout(()=>{
@@ -11091,9 +11119,10 @@ function renderCompareCategoryCard(col,idx){
       plugins:{legend:{display:true,position:'top',labels:{boxWidth:10,font:{size:11,family:'Inter'},color:tc,padding:6}},
         valueLabels:{display:true,fontSize:10},
         tooltip:{backgroundColor:S.dark?'#252836':'#1f2937',callbacks:{title:ctx=>cats[ctx[0].dataIndex]}}},
-      onClick:(e,el)=>{if(el&&el.length){let i=el[0].index,dsIdx=el[0].datasetIndex;let cat=cats[i];let p=COMPARE_PICKS[dsIdx];scheduleOpenDataM(col,cat,p);}}
+      onClick:()=>{ openZoom(zKey,'bar'); },
+      onHover:(e)=>{ if(e && e.native && e.native.target) e.native.target.style.cursor='pointer'; }
     };
-    opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:10}}},x:{grid:{display:false},ticks:{color:tc,font:{size:10},maxRotation:0}}};
+    opts.scales={y:{grid:{color:gc},ticks:{color:tc,font:{size:12,weight:'700'}}},x:{grid:{display:false},ticks:{color:tc,font:{size:12,weight:'700'},maxRotation:0}}};
     CH['ccB'+idx]=createSafeChart(document.getElementById('ccB'+idx),{type:'bar',data:{labels,datasets},options:opts});
     CHART_META[zKey]={title,labels:cats,shortLabels:labels,datasets,pieLabels:cats,pieValues:cats.map(c=>union[c]),pieColors:cats.map((_,i)=>P[i%P.length]),total,type:'cmpCategory',columnName:col,periods:COMPARE_PICKS.slice()};
   },30);
@@ -13083,7 +13112,7 @@ function renderFilterCategoryCardInto(container,col,idx,filteredRows){
   setTimeout(()=>{
     let short=displayL.map(l=>l.length>15?l.substring(0,12)+'…':l),colors=displayL.map((_,i)=>P[i%P.length]);
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
-    CH[bId]=mkChart(bId,'bar',{labels:short,datasets:[{data:displayV,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,displayL,false);
+    CH[bId]=mkChart(bId,'bar',{labels:short,datasets:[{data:displayV,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,displayL,false,{mode:'expand',zKey,chartType:'bar'});
     CHART_META[zKey]={title:col+' (Filtered)',labels:sL,shortLabels:short,datasets:[{data:sV,backgroundColor:colors,borderRadius:4,borderSkipped:false}],pieLabels:sL,pieValues:sV,pieColors:colors,total:tot,type:'filter',columnName:col};
   },30);
 }
@@ -13235,7 +13264,7 @@ function renderSavedFilterChart(sc,idx){
   setTimeout(()=>{
     let short=displayL.map(l=>l.length>15?l.substring(0,12)+'…':l),colors=displayL.map((_,i)=>P[i%P.length]);
     let gc=S.dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)',tc=S.dark?'#94a3b8':'#6b7280';
-    CH[bId]=mkChart(bId,'bar',{labels:short,datasets:[{data:displayV,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,displayL,false);
+    CH[bId]=mkChart(bId,'bar',{labels:short,datasets:[{data:displayV,backgroundColor:colors,borderRadius:4,borderSkipped:false}]},gc,tc,displayL,false,{mode:'expand',zKey,chartType:'bar'});
     CHART_META[zKey]={title:sc.title,labels:sL,shortLabels:short,datasets:[{data:sV,backgroundColor:colors,borderRadius:4,borderSkipped:false}],pieLabels:sL,pieValues:sV,pieColors:colors,total:tot,type:'filter',columnName:col};
   },30);
 }
@@ -13781,7 +13810,7 @@ function renderExpandedDataTable(){
     let sectionHtml=periods.map((p,di)=>{
       let secRows=labels.map((lb,i)=>{ let idx=(zd.labels||[]).indexOf(lb); let val=idx>=0 ? Number((((zd.datasets||[])[di]||{}).data||[])[idx]||0) : 0; return {label:lb,value:val,records:(zd.recordsMap&&zd.recordsMap[p]&&zd.recordsMap[p][lb])?zd.recordsMap[p][lb]:[]}; }).filter(r=>r.value>0);
       let secTotal=secRows.reduce((s,r)=>s+r.value,0);
-      return `<div class="compare-breakdown-section"><div class="compare-breakdown-title">${escapeHtml(periodLabel(p))}</div><table class="expand-table expand-table-generic"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${secRows.map((r)=>`<tr onclick="showRowsM((CHART_META['${zKey}'].recordsMap['${escapeJs(p)}'][${JSON.stringify(r.label)}])||[],'${escapeJs(zd.title || 'Compare Graph')} · ${escapeJs(r.label)} · ${escapeJs(periodLabel(p))}')"><td><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${secTotal>0?((Number(r.value||0)/secTotal)*100).toFixed(1):'0.0'}%</td></tr>`).join('')}</tbody></table></div>`;
+      return `<div class="compare-breakdown-section"><div class="compare-breakdown-title">${escapeHtml(periodLabel(p))}</div><table class="expand-table expand-table-generic"><thead><tr><th>Label</th><th>Value</th><th>Share</th></tr></thead><tbody>${secRows.map((r)=>`<tr onclick="showRowsM((CHART_META['${zKey}'].recordsMap['${escapeJs(p)}']['${escapeJs(r.label)}'])||[],'${escapeJs(zd.title || 'Compare Graph')} · ${escapeJs(r.label)} · ${escapeJs(periodLabel(p))}')"><td><span class="expand-label-text">${escapeHtml(r.label)}</span></td><td class="expand-value">${Number(r.value||0).toLocaleString()}</td><td class="expand-share">${secTotal>0?((Number(r.value||0)/secTotal)*100).toFixed(1):'0.0'}%</td></tr>`).join('')}</tbody></table></div>`;
     }).join('');
     let totalRows=rows.filter(r=>Number(r.value||0)>0);
     let totalTotal=totalRows.reduce((s,r)=>s+Number(r.value||0),0);
@@ -14035,7 +14064,8 @@ function openExpandedChartPage(zKey,chartType){
   let total = (zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low')
     ? EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.complaintCount)||0),0)
     : (EXPANDED_PAGE_STATE.rows.reduce((s,r)=>s+(Number(r.value)||0),0) || Number(zd.total||0));
-  let showCalendar = !!dateCol;
+  let isCompareExpanded = !!(zd && (zd.type==='cmpCategory' || zd.type==='cmpTotals' || String(zKey||'').startsWith('cmp_')));
+  let showCalendar = !!dateCol && !isCompareExpanded;
   let page=document.createElement('div');
   page.id='expandChartPage';
   page.className='expand-page expand-page-'+zKey;
@@ -14437,5 +14467,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae824badd51dad',t:'MTc4NDAxMDk0Mw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1740cc0f8eefe11',t:'MTc4MzM5Nzk1NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ae9bc02a7ef02d',t:'MTc4NDAxMTk4NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
