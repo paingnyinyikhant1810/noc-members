@@ -9,6 +9,10 @@ let currentUser = null;
 let authHeader  = localStorage.getItem('authHeader');
 let isProcessing = false;
 let appData = { users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[] };
+const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+let inactivityTimer = null;
+let inactivityListenersBound = false;
+let lastInactivityEventAt = 0;
 
 // Learning state
 let currentFolderId     = null;
@@ -231,6 +235,7 @@ function doShowApp(){
   updateAdminUI();renderMobileInfoMenu();renderInfoDropdown();renderMobileDashboardMenu();renderDashboardDropdown();
   resetDashboardMode();
   navigateTo('home');
+  startInactivityMonitor();
   startPolling(); // begin real-time background polling
 }
 
@@ -258,15 +263,57 @@ function updateAdminUI(){
 function delay(ms){return new Promise(r=>setTimeout(r,ms));}
 async function simulateProgress(pct,status){updateProgress(pct,status);await delay(200);}
 
+function clearInactivityTimer(){
+  if(inactivityTimer){ clearTimeout(inactivityTimer); inactivityTimer=null; }
+}
+function handleAutoSignout(){
+  clearInactivityTimer();
+  if(!authHeader) return;
+  logout('inactive');
+}
+function resetInactivityTimer(evtType='activity'){
+  if(!authHeader || !currentUser) return;
+  const now = Date.now();
+  if((evtType==='mousemove' || evtType==='scroll') && now - lastInactivityEventAt < 15000) return;
+  lastInactivityEventAt = now;
+  clearInactivityTimer();
+  inactivityTimer = setTimeout(handleAutoSignout, INACTIVITY_TIMEOUT_MS);
+}
+function bindInactivityListeners(){
+  if(inactivityListenersBound) return;
+  inactivityListenersBound = true;
+  ['click','keydown','touchstart','mousedown'].forEach(type=>{
+    document.addEventListener(type, ()=>resetInactivityTimer(type), { passive:true });
+  });
+  ['mousemove','scroll'].forEach(type=>{
+    window.addEventListener(type, ()=>resetInactivityTimer(type), { passive:true });
+  });
+  window.addEventListener('message', (ev)=>{
+    try{
+      if(ev.origin !== window.location.origin) return;
+      if(ev.data && ev.data.type === 'noc-activity') resetInactivityTimer('iframe');
+    }catch(e){}
+  });
+}
+function startInactivityMonitor(){
+  bindInactivityListeners();
+  resetInactivityTimer('start');
+}
+function stopInactivityMonitor(){
+  clearInactivityTimer();
+}
+
 function showLoginPage(){
   el('mainApp').classList.add('hidden');el('loginPage').classList.remove('hidden');
   el('username').value='';el('password').value='';
 }
-function logout(){
+function logout(reason='manual'){
   stopPolling(); // stop background polling on sign-out
+  stopInactivityMonitor();
   localStorage.removeItem('authHeader');authHeader=null;currentUser=null;
   document.querySelectorAll('.modal-bd').forEach(m=>m.classList.add('hidden'));
   showLoginPage();closeMobileMenu();
+  if(reason==='inactive') showToast('Signed out automatically after 1 hour of inactivity.','info');
 }
 
 async function initApp(){
@@ -398,7 +445,7 @@ function renderInfoDropdown(){
   if(isAdmin()){
     html+=`<div class="dd-sep"></div>
       <button onclick="el('infoDropdown').classList.add('hidden');openCategoryManagerModal()" class="dd-item dd-item--setting">
-        <i class="fas fa-cog"></i> Manage Categories
+        <i class="fas fa-cog"></i> Categories Setting
       </button>`;
   }
   d.innerHTML=html;
