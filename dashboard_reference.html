@@ -6742,6 +6742,83 @@ body #drInfo .dr-b {
   }
 }
 
+
+/* ═══════════ CUSTOM DATE RANGE PATCH ═══════════ */
+.period-custom-wrap,
+.expand-custom-wrap {
+  display: none;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid rgba(226,232,240,.96);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,251,255,.98) 100%);
+}
+.period-custom-grid,
+.expand-custom-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.period-custom-field,
+.expand-custom-field {
+  display: grid;
+  gap: 5px;
+}
+.period-custom-field label,
+.expand-custom-field label {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: .35px;
+}
+.period-custom-field input,
+.expand-custom-field input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: #f8fafc;
+  color: var(--t1);
+  font-size: 11px;
+  font-weight: 700;
+  outline: none;
+}
+.period-custom-field input:focus,
+.expand-custom-field input:focus {
+  border-color: var(--ac);
+  box-shadow: 0 0 0 3px var(--ac-bg);
+}
+.period-custom-actions,
+.expand-custom-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.period-custom-apply,
+.expand-custom-apply {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--ac);
+  background: linear-gradient(135deg, var(--ac), var(--ac2));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.period-tray-tabs .tp-b[data-r="custom"],
+.expand-range-btn[data-expand-range="custom"] {
+  min-width: 72px !important;
+}
+@media (max-width: 768px) {
+  .period-custom-grid,
+  .expand-custom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 </style>
 
   </head>
@@ -6810,6 +6887,7 @@ body #drInfo .dr-b {
               <button class="tp-b" data-r="weekly" onclick="setRange('weekly')">Weekly</button>
               <button class="tp-b" data-r="monthly" onclick="setRange('monthly')">Monthly</button>
               <button class="tp-b" data-r="yearly" onclick="setRange('yearly')">Yearly</button>
+              <button class="tp-b" data-r="custom" onclick="setRange('custom')">Custom</button>
             </div>
           </div>
           <div class="period-mini-panel period-mini-panel-right">
@@ -6819,6 +6897,13 @@ body #drInfo .dr-b {
                 <select class="sp-sel" id="spSel" onchange="onSubPeriodChange()"></select>
               </div>
               <div id="periodSelectionHint" class="period-selection-hint">Choose a range above to enable date selection.</div>
+              <div id="periodCustomWrap" class="period-custom-wrap">
+                <div class="period-custom-grid">
+                  <div class="period-custom-field"><label for="customFromDate">From</label><input type="date" id="customFromDate"></div>
+                  <div class="period-custom-field"><label for="customToDate">To</label><input type="date" id="customToDate"></div>
+                </div>
+                <div class="period-custom-actions"><button type="button" class="period-custom-apply" onclick="applyCustomDateRange()">Apply Range</button></div>
+              </div>
             </div>
           </div>
         </div>
@@ -7722,6 +7807,7 @@ function returnToHomePageFromGraph() {
 
 let D={},F=[],CH={},dataModal,zoomModal2,settingsModal;
 let range='all',subPeriod='all',dateCol=null;
+let CUSTOM_RANGE_FROM='', CUSTOM_RANGE_TO='';
 let zoomCH=null,zoomD=null;
 let allDates=[];
 let CHART_META={};
@@ -8827,6 +8913,47 @@ function parseLocalDate(v){
 }
 function toLocalDateStr(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function collectDates(){allDates=[];if(!dateCol||!D.rawData)return;D.rawData.forEach(r=>{let d=parseLocalDate(r[dateCol]);if(d)allDates.push(d);});allDates.sort((a,b)=>a-b);}
+function formatDateRangeDisplay(v){
+  let d=parseLocalDate(v);
+  return d ? d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : String(v||'');
+}
+function getCustomRangeLabel(fromVal,toVal){
+  if(fromVal && toVal) return formatDateRangeDisplay(fromVal) + ' — ' + formatDateRangeDisplay(toVal);
+  return 'Custom Range';
+}
+function getDateBounds(){
+  if(!allDates || !allDates.length) return { min:'', max:'' };
+  return { min: toLocalDateStr(allDates[0]), max: toLocalDateStr(allDates[allDates.length-1]) };
+}
+function syncCustomRangeUI(){
+  let wrap=document.getElementById('periodCustomWrap');
+  let fromEl=document.getElementById('customFromDate');
+  let toEl=document.getElementById('customToDate');
+  let isCustom = range==='custom';
+  if(wrap) wrap.style.display = isCustom ? 'block' : 'none';
+  if(!fromEl || !toEl) return;
+  let bounds=getDateBounds();
+  if(bounds.min){ fromEl.min=bounds.min; toEl.min=bounds.min; }
+  if(bounds.max){ fromEl.max=bounds.max; toEl.max=bounds.max; }
+  fromEl.value = CUSTOM_RANGE_FROM || bounds.min || '';
+  toEl.value = CUSTOM_RANGE_TO || bounds.max || '';
+}
+function applyCustomDateRange(){
+  let fromEl=document.getElementById('customFromDate');
+  let toEl=document.getElementById('customToDate');
+  if(!fromEl || !toEl) return;
+  let fromVal=fromEl.value||'';
+  let toVal=toEl.value||'';
+  if(!fromVal || !toVal){ alert('Please choose both From and To dates.'); return; }
+  if(parseLocalDate(fromVal) > parseLocalDate(toVal)){ alert('From date must be earlier than or equal to To date.'); return; }
+  CUSTOM_RANGE_FROM=fromVal;
+  CUSTOM_RANGE_TO=toVal;
+  range='custom';
+  subPeriod='all';
+  togglePeriodTray(false);
+  applyFilter();
+  if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();
+}
 
 function setRange(r){
   range=r;subPeriod='all'; if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();
@@ -8837,6 +8964,13 @@ function setRange(r){
   });
   if(COMPARE_MODE){COMPARE_MODE=false;document.getElementById("cmpTab").classList.remove('on');document.getElementById("cmpStrip").classList.remove('on');}
   updateSubPeriodUI();
+  if(r==='custom'){
+    syncCustomRangeUI();
+    let fromEl=document.getElementById('customFromDate');
+    setTimeout(()=>{ if(fromEl){ try{ fromEl.focus(); }catch(e){} } }, 20);
+    if(CUSTOM_RANGE_FROM && CUSTOM_RANGE_TO) applyFilter();
+    return;
+  }
   if(PERIOD_TRAY_OPEN && r!=='all'){
     let sel=document.getElementById('spSel');
     setTimeout(()=>{ if(sel){ try{ sel.focus(); }catch(e){} } }, 20);
@@ -8853,6 +8987,7 @@ function toggleDateSortOrder() {
 function getSubPeriodOptionsForRange(){
   let opts=[];
   let asc = S.dateSortOrder === 'asc';
+  if(range==='custom') return opts;
   if(range==='yearly'){
     let years=new Set();
     allDates.forEach(d=>years.add(d.getFullYear()));
@@ -8913,11 +9048,20 @@ function chooseDefaultSubPeriodValue(rangeType, opts){
 }
 function updateSubPeriodUI(){
   let wrap=document.getElementById("spWrap"),sel=document.getElementById("spSel"),hint=document.getElementById('periodSelectionHint');
+  let customWrap=document.getElementById('periodCustomWrap');
   if(range==='all'||!dateCol||D.isPivot||allDates.length===0){
     if(wrap) wrap.style.display='none';
+    if(customWrap) customWrap.style.display='none';
     if(hint) hint.style.display='flex';
     return;
   }
+  if(range==='custom'){
+    if(wrap) wrap.style.display='none';
+    if(hint) hint.style.display='none';
+    syncCustomRangeUI();
+    return;
+  }
+  if(customWrap) customWrap.style.display='none';
   if(wrap) wrap.style.display='flex';
   if(hint) hint.style.display='none';
   let opts=getSubPeriodOptionsForRange();
@@ -8971,6 +9115,12 @@ function applyFilter(){
   else{
     F=D.rawData.filter(r=>{
       let v=r[dateCol];if(!v)return false;let d=parseLocalDate(v);if(!d)return false;
+      if(range==='custom'){
+        let fromDate=parseLocalDate(CUSTOM_RANGE_FROM), toDate=parseLocalDate(CUSTOM_RANGE_TO);
+        if(!fromDate || !toDate) return true;
+        let endDate=new Date(toDate.getFullYear(),toDate.getMonth(),toDate.getDate()+1);
+        return d>=fromDate && d<endDate;
+      }
       if(subPeriod&&subPeriod!=='all'){
         if(subPeriod.startsWith('y_'))return d.getFullYear()===+subPeriod.split('_')[1];
         if(subPeriod.startsWith('m_')){let p=subPeriod.split('_');return d.getFullYear()===+p[1]&&d.getMonth()===+p[2];}
@@ -9935,7 +10085,9 @@ function renderDR(){
   }
   if(!dateCol||D.isPivot){el.innerHTML='';return;}
   let label='All Periods';
-  if(range!=='all'){
+  if(range==='custom'){
+    label=getCustomRangeLabel(CUSTOM_RANGE_FROM, CUSTOM_RANGE_TO);
+  } else if(range!=='all'){
     let opts=getSubPeriodOptionsForRange();
     let found=opts.find(o=>o.v===subPeriod);
     label=found ? found.t : cap(range);
@@ -13671,7 +13823,7 @@ function applyOverTimeGraphSettingsFromModal(){
 
 /* ═══════════ ZOOM / EXPAND PAGE ═══════════ */
 let expandedChartInstance=null;
-let EXPANDED_PAGE_STATE={ zKey:'', chartType:'bar', rows:[], search:'', sortBy:'value', sortDir:'desc', range:'all', subPeriod:'all', runtimeMeta:null };
+let EXPANDED_PAGE_STATE={ zKey:'', chartType:'bar', rows:[], search:'', sortBy:'value', sortDir:'desc', range:'all', subPeriod:'all', rangeFrom:'', rangeTo:'', runtimeMeta:null };
 function closeExpandedChartPage(immediate){
   if(expandedChartInstance){ try{ expandedChartInstance.destroy(); }catch(e){} expandedChartInstance=null; }
   let old=document.getElementById('expandChartPage');
@@ -14033,6 +14185,7 @@ function renderExpandedChart(){
 function getExpandedPeriodPillText(){
   let exRange=EXPANDED_PAGE_STATE.range || 'all';
   if(exRange==='all' || !dateCol) return 'All Periods';
+  if(exRange==='custom') return getCustomRangeLabel(EXPANDED_PAGE_STATE.rangeFrom, EXPANDED_PAGE_STATE.rangeTo);
   let opts=getExpandedSubPeriodOptionsForRange();
   let found=opts.find(o=>o.v===EXPANDED_PAGE_STATE.subPeriod);
   return found ? found.t : (cap(exRange) + ' View');
@@ -14080,6 +14233,12 @@ function getExpandedDateFilteredRows(){
   return baseRows.filter(r=>{
     let v=r[dateCol]; if(!v) return false;
     let d=parseLocalDate(v); if(!d) return false;
+    if(exRange==='custom'){
+      let fromDate=parseLocalDate(EXPANDED_PAGE_STATE.rangeFrom), toDate=parseLocalDate(EXPANDED_PAGE_STATE.rangeTo);
+      if(!fromDate || !toDate) return true;
+      let endDate=new Date(toDate.getFullYear(),toDate.getMonth(),toDate.getDate()+1);
+      return d>=fromDate && d<endDate;
+    }
     if(exSub && exSub!=='all'){
       if(exSub.startsWith('y_')) return d.getFullYear()===+exSub.split('_')[1];
       if(exSub.startsWith('m_')){ let p=exSub.split('_'); return d.getFullYear()===+p[1] && d.getMonth()===+p[2]; }
@@ -14102,21 +14261,44 @@ function getExpandedTotalTrendGran(){
   if(exRange==='daily') return 'daily';
   return TREND_GRAN || 'weekly';
 }
+function syncExpandedCustomRangeUI(){
+  let wrap=document.getElementById('expandCustomWrap');
+  let fromEl=document.getElementById('expandFromDate');
+  let toEl=document.getElementById('expandToDate');
+  let isCustom=(EXPANDED_PAGE_STATE.range || 'all')==='custom';
+  if(wrap) wrap.style.display=isCustom ? 'block' : 'none';
+  if(!fromEl || !toEl) return;
+  let bounds=getDateBounds();
+  if(bounds.min){ fromEl.min=bounds.min; toEl.min=bounds.min; }
+  if(bounds.max){ fromEl.max=bounds.max; toEl.max=bounds.max; }
+  fromEl.value = EXPANDED_PAGE_STATE.rangeFrom || bounds.min || '';
+  toEl.value = EXPANDED_PAGE_STATE.rangeTo || bounds.max || '';
+}
 function syncExpandedCalendarUI(){
   let wrap=document.getElementById('expandSubWrap');
   let sel=document.getElementById('expandSubSel');
   let hint=document.getElementById('expandCalendarHint');
   let tray=document.getElementById('expandCalendarTray');
+  let customWrap=document.getElementById('expandCustomWrap');
   if(!tray) return;
   let exRange=EXPANDED_PAGE_STATE.range || 'all';
   let exSub=EXPANDED_PAGE_STATE.subPeriod || 'all';
   tray.querySelectorAll('[data-expand-range]').forEach(btn=>btn.classList.toggle('on', btn.getAttribute('data-expand-range')===exRange));
   if(exRange==='all'||!dateCol||D.isPivot||allDates.length===0){
     if(wrap) wrap.style.display='none';
+    if(customWrap) customWrap.style.display='none';
     if(hint) hint.style.display='flex';
     syncExpandedSummaryPills();
     return;
   }
+  if(exRange==='custom'){
+    if(wrap) wrap.style.display='none';
+    if(hint) hint.style.display='none';
+    syncExpandedCustomRangeUI();
+    syncExpandedSummaryPills();
+    return;
+  }
+  if(customWrap) customWrap.style.display='none';
   if(wrap) wrap.style.display='flex';
   if(hint) hint.style.display='none';
   let opts=getExpandedSubPeriodOptionsForRange();
@@ -14130,6 +14312,16 @@ function setExpandedCalendarRange(r){
   EXPANDED_PAGE_STATE.range=r;
   EXPANDED_PAGE_STATE.subPeriod='all';
   syncExpandedCalendarUI();
+  if(r==='custom'){
+    let fromEl=document.getElementById('expandFromDate');
+    setTimeout(()=>{ if(fromEl){ try{ fromEl.focus(); }catch(e){} } }, 20);
+    if(EXPANDED_PAGE_STATE.rangeFrom && EXPANDED_PAGE_STATE.rangeTo){
+      renderExpandedChart();
+      renderExpandedDataTable();
+    }
+    toggleExpandCalendar(true);
+    return;
+  }
   renderExpandedChart();
   renderExpandedDataTable();
   toggleExpandCalendar(true);
@@ -14137,6 +14329,23 @@ function setExpandedCalendarRange(r){
     let sel=document.getElementById('expandSubSel');
     setTimeout(()=>{ if(sel){ try{ sel.focus(); }catch(e){} } }, 20);
   }
+}
+function applyExpandedCustomDateRange(){
+  let fromEl=document.getElementById('expandFromDate');
+  let toEl=document.getElementById('expandToDate');
+  if(!fromEl || !toEl) return;
+  let fromVal=fromEl.value||'';
+  let toVal=toEl.value||'';
+  if(!fromVal || !toVal){ alert('Please choose both From and To dates.'); return; }
+  if(parseLocalDate(fromVal) > parseLocalDate(toVal)){ alert('From date must be earlier than or equal to To date.'); return; }
+  EXPANDED_PAGE_STATE.range='custom';
+  EXPANDED_PAGE_STATE.subPeriod='all';
+  EXPANDED_PAGE_STATE.rangeFrom=fromVal;
+  EXPANDED_PAGE_STATE.rangeTo=toVal;
+  renderExpandedChart();
+  renderExpandedDataTable();
+  syncExpandedCalendarUI();
+  toggleExpandCalendar(false);
 }
 function onExpandedCalendarSubChange(){
   let sel=document.getElementById('expandSubSel');
@@ -14153,7 +14362,7 @@ function openExpandedChartPage(zKey,chartType){
   let defaultExpandedSub = subPeriod || 'all';
   let defaultSortKey=(zKey==='trend_total' || zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low') ? 'natural' : 'value';
   let defaultSortDir=(zKey==='trend_total' || zKey==='site_complaint_percent' || zKey==='site_complaint_percent_high' || zKey==='site_complaint_percent_low') ? 'asc' : 'desc';
-  EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows:[], search:'', sortBy:defaultSortKey, sortDir:defaultSortDir, range: defaultExpandedRange, subPeriod: defaultExpandedSub, runtimeMeta:null };
+  EXPANDED_PAGE_STATE={ zKey, chartType: chartType||'bar', rows:[], search:'', sortBy:defaultSortKey, sortDir:defaultSortDir, range: defaultExpandedRange, subPeriod: defaultExpandedSub, rangeFrom: defaultExpandedRange==='custom' ? CUSTOM_RANGE_FROM : '', rangeTo: defaultExpandedRange==='custom' ? CUSTOM_RANGE_TO : '', runtimeMeta:null };
   let initialComputed=computeExpandedChartRowsByZKey(zKey, zd) || { rows: [] };
   EXPANDED_PAGE_STATE.rows=(initialComputed.rows||[]).slice();
   EXPANDED_PAGE_STATE.runtimeMeta=initialComputed;
@@ -14174,7 +14383,7 @@ function openExpandedChartPage(zKey,chartType){
         <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
-        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div></div></div>` : ''}
+        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button><button class="expand-range-btn ${defaultExpandedRange==='custom'?'on':''}" data-expand-range="custom" onclick="setExpandedCalendarRange('custom')">Custom</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div><div id="expandCustomWrap" class="expand-custom-wrap"><div class="expand-custom-grid"><div class="expand-custom-field"><label for="expandFromDate">From</label><input type="date" id="expandFromDate"></div><div class="expand-custom-field"><label for="expandToDate">To</label><input type="date" id="expandToDate"></div></div><div class="expand-custom-actions"><button type="button" class="expand-custom-apply" onclick="applyExpandedCustomDateRange()">Apply Range</button></div></div></div></div>` : ''}
         ${hidePeriodChip ? '' : `<div class="expand-chip" id="expandPeriodChip">${defaultExpandedRange==='all' ? 'All Periods' : cap(defaultExpandedRange)+' View'}</div>`}
         <div class="expand-chip" id="expandTotalChip">${total.toLocaleString()} total</div>
       </div>
