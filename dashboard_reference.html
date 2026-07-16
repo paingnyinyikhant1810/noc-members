@@ -7385,6 +7385,64 @@ body #drInfo .dr-b {
   color: #c7d2fe !important;
 }
 
+
+/* ═══════════ DARK CALENDAR BUTTON + DROPDOWN + LABEL PILL PATCH ═══════════ */
+[data-theme="dark"] #expandCalendarBtn,
+[data-theme="dark"] .expand-back#expandCalendarBtn,
+[data-theme="dark"] .expand-calendar-wrap .expand-back {
+  background: linear-gradient(180deg, rgba(15,23,42,.92) 0%, rgba(26,29,46,.94) 100%) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(71,85,105,.64) !important;
+  box-shadow: 0 12px 24px rgba(0,0,0,.28) !important;
+}
+[data-theme="dark"] #expandCalendarBtn .ic,
+[data-theme="dark"] .expand-calendar-wrap .expand-back .ic {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .expand-sub-select,
+[data-theme="dark"] #expandSubSel {
+  background: rgba(15,23,42,.9) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(71,85,105,.64) !important;
+}
+[data-theme="dark"] .expand-sub-select option,
+[data-theme="dark"] #expandSubSel option {
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .mod-sel-btn,
+[data-theme="dark"] .header-mod-btn {
+  background: linear-gradient(180deg, rgba(15,23,42,.92) 0%, rgba(26,29,46,.94) 100%) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(71,85,105,.62) !important;
+  box-shadow: 0 10px 22px rgba(0,0,0,.22) !important;
+}
+[data-theme="dark"] .mod-sel-btn:hover,
+[data-theme="dark"] .header-mod-btn:hover {
+  color: #fff !important;
+  border-color: rgba(129,140,248,.52) !important;
+}
+[data-theme="dark"] .mod-sel-btn .mod-sel-arrow,
+[data-theme="dark"] .header-mod-btn .mod-sel-arrow {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .mod-sel-menu {
+  background: linear-gradient(180deg, rgba(15,23,42,.98) 0%, rgba(26,29,46,.98) 100%) !important;
+  border-color: rgba(71,85,105,.62) !important;
+  box-shadow: 0 18px 38px rgba(0,0,0,.4) !important;
+}
+[data-theme="dark"] .mod-sel-item {
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .mod-sel-item:hover {
+  background: rgba(99,102,241,.16) !important;
+  color: #c7d2fe !important;
+}
+[data-theme="dark"] .mod-sel-item.selected {
+  background: rgba(99,102,241,.22) !important;
+  color: #fff !important;
+}
+
 </style>
 
   </head>
@@ -8556,17 +8614,18 @@ const VALUE_LABEL_PLUGIN={
           if(y<16)y=(el.y||pos.y)+14;
           const padX=8,padY=4,w=ctx.measureText(txt).width+(padX*2),h=fs+(padY*2);
           const gx=x-w/2, gy=y-h/2;
+          const darkTheme=document.documentElement.getAttribute('data-theme')==='dark';
           const grad=ctx.createLinearGradient(gx,gy,gx+w,gy+h);
-          // Use a high-contrast pill color, not the same color as the bar.
-          grad.addColorStop(0,opts.pillFrom||'#111827');
-          grad.addColorStop(1,opts.pillTo||'#475569');
+          // In dark mode use white pill + dark text for stronger contrast above bars.
+          grad.addColorStop(0,opts.pillFrom||(darkTheme ? '#ffffff' : '#111827'));
+          grad.addColorStop(1,opts.pillTo||(darkTheme ? '#eef2f7' : '#475569'));
           ctx.fillStyle=grad;
           roundRectPath(ctx,gx,gy,w,h,999);
           ctx.fill();
-          ctx.shadowColor='rgba(15,23,42,.18)';ctx.shadowBlur=4;ctx.shadowOffsetY=1;
+          ctx.shadowColor=darkTheme?'rgba(0,0,0,.24)':'rgba(15,23,42,.18)';ctx.shadowBlur=4;ctx.shadowOffsetY=1;
           ctx.fill();
           ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
-          ctx.fillStyle='#fff';
+          ctx.fillStyle=darkTheme?'#0f172a':'#fff';
           ctx.fillText(txt,x,y+0.5);
         }else if(chartType==='doughnut'||chartType==='polarArea'||chartType==='pie'){
           ctx.fillStyle='#fff';
