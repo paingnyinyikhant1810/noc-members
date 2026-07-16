@@ -6745,27 +6745,75 @@ body #drInfo .dr-b {
 
 /* ═══════════ CUSTOM DATE RANGE PATCH ═══════════ */
 .period-custom-wrap,
-.expand-custom-wrap {
+.expand-custom-wrap,
+.compare-custom-wrap {
   display: none;
-  margin-top: 8px;
-  padding: 10px;
-  border: 1px solid rgba(226,232,240,.96);
-  border-radius: 12px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--ac) 10%, var(--border));
+  border-radius: 14px;
   background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,251,255,.98) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
+}
+.period-custom-head,
+.expand-custom-head,
+.compare-custom-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.period-custom-title,
+.expand-custom-title,
+.compare-custom-title {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--t1);
+  letter-spacing: .2px;
+}
+.period-preset-row,
+.expand-preset-row,
+.compare-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.period-preset-btn,
+.expand-preset-btn,
+.compare-preset-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ac) 18%, var(--border));
+  background: var(--ac-bg);
+  color: var(--ac);
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.period-preset-btn:hover,
+.expand-preset-btn:hover,
+.compare-preset-btn:hover {
+  background: var(--ac);
+  color: #fff;
 }
 .period-custom-grid,
-.expand-custom-grid {
+.expand-custom-grid,
+.compare-custom-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 .period-custom-field,
-.expand-custom-field {
+.expand-custom-field,
+.compare-custom-field {
   display: grid;
   gap: 5px;
 }
 .period-custom-field label,
-.expand-custom-field label {
+.expand-custom-field label,
+.compare-custom-field label {
   font-size: 10px;
   font-weight: 800;
   color: var(--t2);
@@ -6773,48 +6821,66 @@ body #drInfo .dr-b {
   letter-spacing: .35px;
 }
 .period-custom-field input,
-.expand-custom-field input {
+.expand-custom-field input,
+.compare-custom-field input {
   width: 100%;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 10px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
   border: 1px solid rgba(226,232,240,.95);
   background: #f8fafc;
   color: var(--t1);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 11.5px;
+  font-weight: 800;
   outline: none;
+  cursor: pointer;
 }
 .period-custom-field input:focus,
-.expand-custom-field input:focus {
+.expand-custom-field input:focus,
+.compare-custom-field input:focus {
   border-color: var(--ac);
   box-shadow: 0 0 0 3px var(--ac-bg);
 }
 .period-custom-actions,
-.expand-custom-actions {
+.expand-custom-actions,
+.compare-custom-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 .period-custom-apply,
-.expand-custom-apply {
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 10px;
+.expand-custom-apply,
+.compare-custom-apply {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 12px;
   border: 1px solid var(--ac);
   background: linear-gradient(135deg, var(--ac), var(--ac2));
   color: #fff;
   font-size: 11px;
   font-weight: 800;
   cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15,23,42,.12);
 }
 .period-tray-tabs .tp-b[data-r="custom"],
 .expand-range-btn[data-expand-range="custom"] {
   min-width: 72px !important;
 }
+.compare-custom-toggle {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--ac);
+  background: var(--ac-bg);
+  color: var(--ac);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
 @media (max-width: 768px) {
   .period-custom-grid,
-  .expand-custom-grid {
+  .expand-custom-grid,
+  .compare-custom-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -6897,10 +6963,11 @@ body #drInfo .dr-b {
                 <select class="sp-sel" id="spSel" onchange="onSubPeriodChange()"></select>
               </div>
               <div id="periodSelectionHint" class="period-selection-hint">Choose a range above to enable date selection.</div>
-              <div id="periodCustomWrap" class="period-custom-wrap">
+              <div id="periodCustomWrap" class="period-custom-wrap" onclick="event.stopPropagation()">
+                <div class="period-custom-head"><div class="period-custom-title">Custom Date Range</div><div class="period-preset-row"><button type="button" class="period-preset-btn" onclick="applyDatePreset(7)">Last 7 Days</button><button type="button" class="period-preset-btn" onclick="applyDatePreset(30)">Last 30 Days</button></div></div>
                 <div class="period-custom-grid">
-                  <div class="period-custom-field"><label for="customFromDate">From</label><input type="date" id="customFromDate"></div>
-                  <div class="period-custom-field"><label for="customToDate">To</label><input type="date" id="customToDate"></div>
+                  <div class="period-custom-field"><label for="customFromDate">From</label><input type="date" id="customFromDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div>
+                  <div class="period-custom-field"><label for="customToDate">To</label><input type="date" id="customToDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div>
                 </div>
                 <div class="period-custom-actions"><button type="button" class="period-custom-apply" onclick="applyCustomDateRange()">Apply Range</button></div>
               </div>
@@ -6940,7 +7007,8 @@ body #drInfo .dr-b {
       <button data-g="year">Year</button>
     </div>
     <span class="cmp-helper-badge" id="cmpHelper" style="background:var(--ac-bg);color:var(--ac);padding:4px 12px;border-radius:8px;font-weight:700;border:1px solid var(--ac);font-size:11.5px;transition:all .2s ease;">Pick 2 or more periods below</span>
-    <div class="actions" style="display:flex;align-items:center;gap:8px;">
+    <div class="actions" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <button type="button" class="compare-custom-toggle" onclick="toggleCompareCustomEditor()" title="Add custom compare range">Custom Range</button>
       <button type="button" class="btn-cmp-clear" onclick="clearComparePicks()" title="Clear picked periods">
         <span>✕</span> <span>Clear</span>
       </button>
@@ -6950,6 +7018,14 @@ body #drInfo .dr-b {
     </div>
   </div>
   <div class="cmp-period-list" id="cmpPeriodList"></div>
+  <div id="compareCustomWrap" class="compare-custom-wrap">
+    <div class="compare-custom-head"><div class="compare-custom-title">Add Custom Compare Range</div><div class="compare-preset-row"><button type="button" class="compare-preset-btn" onclick="applyCompareCustomPreset(7)">Last 7 Days</button><button type="button" class="compare-preset-btn" onclick="applyCompareCustomPreset(30)">Last 30 Days</button></div></div>
+    <div class="compare-custom-grid">
+      <div class="compare-custom-field"><label for="compareCustomFromDate">From</label><input type="date" id="compareCustomFromDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div>
+      <div class="compare-custom-field"><label for="compareCustomToDate">To</label><input type="date" id="compareCustomToDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div>
+    </div>
+    <div class="compare-custom-actions"><button type="button" class="compare-custom-apply" onclick="addCustomCompareRange()">Add Compare Range</button></div>
+  </div>
 </div>
 
 <div class="ct" id="main"></div>
@@ -7106,6 +7182,19 @@ window.addEventListener('message', function(ev){
       EMBED_AUTH_HEADER = ev.data.authHeader;
     }
   } catch(e) {}
+});
+let LAST_PARENT_ACTIVITY_PING = 0;
+function notifyParentActivity(){
+  try {
+    if(!window.parent || window.parent === window) return;
+    let now = Date.now();
+    if(now - LAST_PARENT_ACTIVITY_PING < 12000) return;
+    LAST_PARENT_ACTIVITY_PING = now;
+    window.parent.postMessage({ type:'noc-activity', ts: now }, window.location.origin);
+  } catch(e) {}
+}
+['click','keydown','touchstart','mousedown','scroll','mousemove'].forEach(function(evtName){
+  window.addEventListener(evtName, function(){ notifyParentActivity(); }, { passive:true });
 });
 
 function getEmbedAuthHeader(){
@@ -7808,6 +7897,7 @@ function returnToHomePageFromGraph() {
 let D={},F=[],CH={},dataModal,zoomModal2,settingsModal;
 let range='all',subPeriod='all',dateCol=null;
 let CUSTOM_RANGE_FROM='', CUSTOM_RANGE_TO='';
+let COMPARE_CUSTOM_EDITOR_OPEN=false;
 let zoomCH=null,zoomD=null;
 let allDates=[];
 let CHART_META={};
@@ -8938,6 +9028,67 @@ function syncCustomRangeUI(){
   fromEl.value = CUSTOM_RANGE_FROM || bounds.min || '';
   toEl.value = CUSTOM_RANGE_TO || bounds.max || '';
 }
+function getPresetDateRange(days){
+  let end=new Date(); end.setHours(0,0,0,0);
+  let start=new Date(end); start.setDate(start.getDate()-(Math.max(1,Number(days||1))-1));
+  return { from: toLocalDateStr(start), to: toLocalDateStr(end) };
+}
+function applyDatePreset(days){
+  let r=getPresetDateRange(days);
+  CUSTOM_RANGE_FROM=r.from;
+  CUSTOM_RANGE_TO=r.to;
+  syncCustomRangeUI();
+  applyCustomDateRange();
+}
+function toggleCompareCustomEditor(forceState){
+  let wrap=document.getElementById('compareCustomWrap');
+  if(!wrap) return;
+  COMPARE_CUSTOM_EDITOR_OPEN = typeof forceState==='boolean' ? forceState : !COMPARE_CUSTOM_EDITOR_OPEN;
+  wrap.style.display = COMPARE_CUSTOM_EDITOR_OPEN ? 'block' : 'none';
+  if(COMPARE_CUSTOM_EDITOR_OPEN){
+    let bounds=getDateBounds();
+    let fromEl=document.getElementById('compareCustomFromDate');
+    let toEl=document.getElementById('compareCustomToDate');
+    if(fromEl && toEl){
+      if(bounds.min){ fromEl.min=bounds.min; toEl.min=bounds.min; }
+      if(bounds.max){ fromEl.max=bounds.max; toEl.max=bounds.max; }
+      if(!fromEl.value) fromEl.value=bounds.min || '';
+      if(!toEl.value) toEl.value=bounds.max || '';
+      setTimeout(()=>{ try{ fromEl.focus(); fromEl.showPicker&&fromEl.showPicker(); }catch(e){} }, 20);
+    }
+  }
+}
+function buildCustomCompareKey(fromVal,toVal){
+  return 'c_' + String(fromVal||'') + '__' + String(toVal||'');
+}
+function parseCustomCompareKey(v){
+  let m=String(v||'').match(/^c_(\d{4}-\d{2}-\d{2})__(\d{4}-\d{2}-\d{2})$/);
+  return m ? { from:m[1], to:m[2] } : null;
+}
+function applyCompareCustomPreset(days){
+  let r=getPresetDateRange(days);
+  let fromEl=document.getElementById('compareCustomFromDate');
+  let toEl=document.getElementById('compareCustomToDate');
+  if(fromEl) fromEl.value=r.from;
+  if(toEl) toEl.value=r.to;
+  addCustomCompareRange();
+}
+function addCustomCompareRange(){
+  let fromEl=document.getElementById('compareCustomFromDate');
+  let toEl=document.getElementById('compareCustomToDate');
+  if(!fromEl || !toEl) return;
+  let fromVal=fromEl.value||'';
+  let toVal=toEl.value||'';
+  if(!fromVal || !toVal){ alert('Please choose both From and To dates.'); return; }
+  if(parseLocalDate(fromVal) > parseLocalDate(toVal)){ alert('From date must be earlier than or equal to To date.'); return; }
+  let key=buildCustomCompareKey(fromVal,toVal);
+  if(COMPARE_PICKS.indexOf(key)===-1) COMPARE_PICKS.push(key);
+  toggleCompareCustomEditor(false);
+  buildComparePeriodList();
+  refreshComparePicksUI();
+  applyFilter();
+  if(typeof saveUniversalAppStateToCloud==='function') saveUniversalAppStateToCloud();
+}
 function applyCustomDateRange(){
   let fromEl=document.getElementById('customFromDate');
   let toEl=document.getElementById('customToDate');
@@ -8967,7 +9118,7 @@ function setRange(r){
   if(r==='custom'){
     syncCustomRangeUI();
     let fromEl=document.getElementById('customFromDate');
-    setTimeout(()=>{ if(fromEl){ try{ fromEl.focus(); }catch(e){} } }, 20);
+    setTimeout(()=>{ if(fromEl){ try{ fromEl.focus(); fromEl.showPicker&&fromEl.showPicker(); }catch(e){} } }, 20);
     if(CUSTOM_RANGE_FROM && CUSTOM_RANGE_TO) applyFilter();
     return;
   }
@@ -9102,7 +9253,9 @@ function toggleToolsTray(forceState){
 document.addEventListener('click', function(ev){
   let wrap=document.getElementById('periodLaunchWrap');
   let tWrap=document.getElementById('toolsLaunchWrap');
-  if(PERIOD_TRAY_OPEN && wrap && !wrap.contains(ev.target)) togglePeriodTray(false);
+  let activeId=document.activeElement ? document.activeElement.id : '';
+  let keepCustomOpen = range==='custom' && (activeId==='customFromDate' || activeId==='customToDate');
+  if(PERIOD_TRAY_OPEN && wrap && !wrap.contains(ev.target) && !keepCustomOpen) togglePeriodTray(false);
   if(TOOLS_TRAY_OPEN && tWrap && !tWrap.contains(ev.target)) toggleToolsTray(false);
 }, true);
 function getWeekStart(d){let dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay());dt.setHours(0,0,0,0);return dt;}
@@ -10279,6 +10432,8 @@ function getComparePeriodOptions() {
       opts.push({ v: 'd_' + ds, t: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) });
     });
   }
+  let customOpts = (COMPARE_PICKS||[]).filter(v=>String(v||'').startsWith('c_')).map(v=>{ let p=parseCustomCompareKey(v); return { v, t: p ? ('Custom (' + getCustomRangeLabel(p.from, p.to) + ')') : v }; });
+  customOpts.forEach(o=>{ if(!opts.some(x=>x.v===o.v)) opts.push(o); });
   return opts;
 }
 
@@ -10316,6 +10471,8 @@ function refreshComparePicksUI(){
 }
 function refreshCmpCount(){let cnt=document.getElementById("cmpCnt");if(cnt)cnt.textContent=COMPARE_PICKS.length;}
 function periodLabel(v){
+  let parsed=parseCustomCompareKey(v);
+  if(parsed) return 'Custom (' + getCustomRangeLabel(parsed.from, parsed.to) + ')';
   let opts=getComparePeriodOptions();let o=opts.find(x=>x.v===v);return o?o.t:v;
 }
 
@@ -11086,6 +11243,12 @@ function periodFilter(rows,picks){
   return out;
 }
 function matchPeriod(d,p){
+  let custom=parseCustomCompareKey(p);
+  if(custom){
+    let fromDate=parseLocalDate(custom.from), toDate=parseLocalDate(custom.to);
+    let endDate=new Date(toDate.getFullYear(),toDate.getMonth(),toDate.getDate()+1);
+    return !!(fromDate && toDate && d>=fromDate && d<endDate);
+  }
   if(p.startsWith('y_'))return d.getFullYear()===+p.split('_')[1];
   if(p.startsWith('m_')){let parts=p.split('_');return d.getFullYear()===+parts[1]&&d.getMonth()===+parts[2];}
   if(p.startsWith('w_')){let ws=parseLocalDate(p.substring(2));let we=new Date(ws);we.setDate(we.getDate()+7);return d>=ws&&d<we;}
@@ -13836,7 +13999,9 @@ function closeExpandedChartPage(immediate){
 document.addEventListener('click', function(ev){
   let tray=document.getElementById('expandCalendarTray');
   let wrap=document.querySelector('.expand-calendar-wrap');
-  if(tray && wrap && tray.classList.contains('open') && !wrap.contains(ev.target)){
+  let activeId=document.activeElement ? document.activeElement.id : '';
+  let keepCustomOpen = (EXPANDED_PAGE_STATE.range || 'all')==='custom' && (activeId==='expandFromDate' || activeId==='expandToDate');
+  if(tray && wrap && tray.classList.contains('open') && !wrap.contains(ev.target) && !keepCustomOpen){
     toggleExpandCalendar(false);
   }
 }, true);
@@ -14274,6 +14439,15 @@ function syncExpandedCustomRangeUI(){
   fromEl.value = EXPANDED_PAGE_STATE.rangeFrom || bounds.min || '';
   toEl.value = EXPANDED_PAGE_STATE.rangeTo || bounds.max || '';
 }
+function applyExpandedDatePreset(days){
+  let r=getPresetDateRange(days);
+  EXPANDED_PAGE_STATE.range='custom';
+  EXPANDED_PAGE_STATE.subPeriod='all';
+  EXPANDED_PAGE_STATE.rangeFrom=r.from;
+  EXPANDED_PAGE_STATE.rangeTo=r.to;
+  syncExpandedCustomRangeUI();
+  applyExpandedCustomDateRange();
+}
 function syncExpandedCalendarUI(){
   let wrap=document.getElementById('expandSubWrap');
   let sel=document.getElementById('expandSubSel');
@@ -14314,7 +14488,7 @@ function setExpandedCalendarRange(r){
   syncExpandedCalendarUI();
   if(r==='custom'){
     let fromEl=document.getElementById('expandFromDate');
-    setTimeout(()=>{ if(fromEl){ try{ fromEl.focus(); }catch(e){} } }, 20);
+    setTimeout(()=>{ if(fromEl){ try{ fromEl.focus(); fromEl.showPicker&&fromEl.showPicker(); }catch(e){} } }, 20);
     if(EXPANDED_PAGE_STATE.rangeFrom && EXPANDED_PAGE_STATE.rangeTo){
       renderExpandedChart();
       renderExpandedDataTable();
@@ -14383,7 +14557,7 @@ function openExpandedChartPage(zKey,chartType){
         <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
-        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button><button class="expand-range-btn ${defaultExpandedRange==='custom'?'on':''}" data-expand-range="custom" onclick="setExpandedCalendarRange('custom')">Custom</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div><div id="expandCustomWrap" class="expand-custom-wrap"><div class="expand-custom-grid"><div class="expand-custom-field"><label for="expandFromDate">From</label><input type="date" id="expandFromDate"></div><div class="expand-custom-field"><label for="expandToDate">To</label><input type="date" id="expandToDate"></div></div><div class="expand-custom-actions"><button type="button" class="expand-custom-apply" onclick="applyExpandedCustomDateRange()">Apply Range</button></div></div></div></div>` : ''}
+        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button><button class="expand-range-btn ${defaultExpandedRange==='custom'?'on':''}" data-expand-range="custom" onclick="setExpandedCalendarRange('custom')">Custom</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div><div id="expandCustomWrap" class="expand-custom-wrap" onclick="event.stopPropagation()"><div class="expand-custom-head"><div class="expand-custom-title">Custom Date Range</div><div class="expand-preset-row"><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(7)">Last 7 Days</button><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(30)">Last 30 Days</button></div></div><div class="expand-custom-grid"><div class="expand-custom-field"><label for="expandFromDate">From</label><input type="date" id="expandFromDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div><div class="expand-custom-field"><label for="expandToDate">To</label><input type="date" id="expandToDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div></div><div class="expand-custom-actions"><button type="button" class="expand-custom-apply" onclick="applyExpandedCustomDateRange()">Apply Range</button></div></div></div></div>` : ''}
         ${hidePeriodChip ? '' : `<div class="expand-chip" id="expandPeriodChip">${defaultExpandedRange==='all' ? 'All Periods' : cap(defaultExpandedRange)+' View'}</div>`}
         <div class="expand-chip" id="expandTotalChip">${total.toLocaleString()} total</div>
       </div>
@@ -14773,5 +14947,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1bf013aa868f8ee',t:'MTc4NDE4MzkxNA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
