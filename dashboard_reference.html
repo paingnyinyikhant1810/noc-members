@@ -6966,8 +6966,8 @@ body #drInfo .dr-b {
               <div id="periodCustomWrap" class="period-custom-wrap" onclick="event.stopPropagation()">
                 <div class="period-custom-head"><div class="period-custom-title">Custom Date Range</div><div class="period-preset-row"><button type="button" class="period-preset-btn" onclick="applyDatePreset(7)">Last 7 Days</button><button type="button" class="period-preset-btn" onclick="applyDatePreset(30)">Last 30 Days</button></div></div>
                 <div class="period-custom-grid">
-                  <div class="period-custom-field"><label for="customFromDate">From</label><input type="date" id="customFromDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div>
-                  <div class="period-custom-field"><label for="customToDate">To</label><input type="date" id="customToDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div>
+                  <div class="period-custom-field"><label for="customFromDate">From</label><input type="date" id="customFromDate" onclick="event.stopPropagation()"></div>
+                  <div class="period-custom-field"><label for="customToDate">To</label><input type="date" id="customToDate" onclick="event.stopPropagation()"></div>
                 </div>
                 <div class="period-custom-actions"><button type="button" class="period-custom-apply" onclick="applyCustomDateRange()">Apply Range</button></div>
               </div>
@@ -7021,8 +7021,8 @@ body #drInfo .dr-b {
   <div id="compareCustomWrap" class="compare-custom-wrap">
     <div class="compare-custom-head"><div class="compare-custom-title">Add Custom Compare Range</div><div class="compare-preset-row"><button type="button" class="compare-preset-btn" onclick="applyCompareCustomPreset(7)">Last 7 Days</button><button type="button" class="compare-preset-btn" onclick="applyCompareCustomPreset(30)">Last 30 Days</button></div></div>
     <div class="compare-custom-grid">
-      <div class="compare-custom-field"><label for="compareCustomFromDate">From</label><input type="date" id="compareCustomFromDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div>
-      <div class="compare-custom-field"><label for="compareCustomToDate">To</label><input type="date" id="compareCustomToDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div>
+      <div class="compare-custom-field"><label for="compareCustomFromDate">From</label><input type="date" id="compareCustomFromDate" onclick="event.stopPropagation()"></div>
+      <div class="compare-custom-field"><label for="compareCustomToDate">To</label><input type="date" id="compareCustomToDate" onclick="event.stopPropagation()"></div>
     </div>
     <div class="compare-custom-actions"><button type="button" class="compare-custom-apply" onclick="addCustomCompareRange()">Add Compare Range</button></div>
   </div>
@@ -9054,7 +9054,6 @@ function toggleCompareCustomEditor(forceState){
       if(bounds.max){ fromEl.max=bounds.max; toEl.max=bounds.max; }
       if(!fromEl.value) fromEl.value=bounds.min || '';
       if(!toEl.value) toEl.value=bounds.max || '';
-      setTimeout(()=>{ try{ fromEl.focus(); fromEl.showPicker&&fromEl.showPicker(); }catch(e){} }, 20);
     }
   }
 }
@@ -9117,9 +9116,6 @@ function setRange(r){
   updateSubPeriodUI();
   if(r==='custom'){
     syncCustomRangeUI();
-    let fromEl=document.getElementById('customFromDate');
-    setTimeout(()=>{ if(fromEl){ try{ fromEl.focus(); fromEl.showPicker&&fromEl.showPicker(); }catch(e){} } }, 20);
-    if(CUSTOM_RANGE_FROM && CUSTOM_RANGE_TO) applyFilter();
     return;
   }
   if(PERIOD_TRAY_OPEN && r!=='all'){
@@ -9253,9 +9249,8 @@ function toggleToolsTray(forceState){
 document.addEventListener('click', function(ev){
   let wrap=document.getElementById('periodLaunchWrap');
   let tWrap=document.getElementById('toolsLaunchWrap');
-  let activeId=document.activeElement ? document.activeElement.id : '';
-  let keepCustomOpen = range==='custom' && (activeId==='customFromDate' || activeId==='customToDate');
-  if(PERIOD_TRAY_OPEN && wrap && !wrap.contains(ev.target) && !keepCustomOpen) togglePeriodTray(false);
+  let customModeActive = range==='custom' && PERIOD_TRAY_OPEN;
+  if(PERIOD_TRAY_OPEN && wrap && !wrap.contains(ev.target) && !customModeActive) togglePeriodTray(false);
   if(TOOLS_TRAY_OPEN && tWrap && !tWrap.contains(ev.target)) toggleToolsTray(false);
 }, true);
 function getWeekStart(d){let dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay());dt.setHours(0,0,0,0);return dt;}
@@ -13999,9 +13994,8 @@ function closeExpandedChartPage(immediate){
 document.addEventListener('click', function(ev){
   let tray=document.getElementById('expandCalendarTray');
   let wrap=document.querySelector('.expand-calendar-wrap');
-  let activeId=document.activeElement ? document.activeElement.id : '';
-  let keepCustomOpen = (EXPANDED_PAGE_STATE.range || 'all')==='custom' && (activeId==='expandFromDate' || activeId==='expandToDate');
-  if(tray && wrap && tray.classList.contains('open') && !wrap.contains(ev.target) && !keepCustomOpen){
+  let customModeActive = (EXPANDED_PAGE_STATE.range || 'all')==='custom' && tray && tray.classList.contains('open');
+  if(tray && wrap && tray.classList.contains('open') && !wrap.contains(ev.target) && !customModeActive){
     toggleExpandCalendar(false);
   }
 }, true);
@@ -14446,7 +14440,10 @@ function applyExpandedDatePreset(days){
   EXPANDED_PAGE_STATE.rangeFrom=r.from;
   EXPANDED_PAGE_STATE.rangeTo=r.to;
   syncExpandedCustomRangeUI();
-  applyExpandedCustomDateRange();
+  renderExpandedChart();
+  renderExpandedDataTable();
+  syncExpandedCalendarUI();
+  toggleExpandCalendar(false);
 }
 function syncExpandedCalendarUI(){
   let wrap=document.getElementById('expandSubWrap');
@@ -14487,12 +14484,6 @@ function setExpandedCalendarRange(r){
   EXPANDED_PAGE_STATE.subPeriod='all';
   syncExpandedCalendarUI();
   if(r==='custom'){
-    let fromEl=document.getElementById('expandFromDate');
-    setTimeout(()=>{ if(fromEl){ try{ fromEl.focus(); fromEl.showPicker&&fromEl.showPicker(); }catch(e){} } }, 20);
-    if(EXPANDED_PAGE_STATE.rangeFrom && EXPANDED_PAGE_STATE.rangeTo){
-      renderExpandedChart();
-      renderExpandedDataTable();
-    }
     toggleExpandCalendar(true);
     return;
   }
@@ -14557,7 +14548,7 @@ function openExpandedChartPage(zKey,chartType){
         <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
-        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button><button class="expand-range-btn ${defaultExpandedRange==='custom'?'on':''}" data-expand-range="custom" onclick="setExpandedCalendarRange('custom')">Custom</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div><div id="expandCustomWrap" class="expand-custom-wrap" onclick="event.stopPropagation()"><div class="expand-custom-head"><div class="expand-custom-title">Custom Date Range</div><div class="expand-preset-row"><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(7)">Last 7 Days</button><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(30)">Last 30 Days</button></div></div><div class="expand-custom-grid"><div class="expand-custom-field"><label for="expandFromDate">From</label><input type="date" id="expandFromDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div><div class="expand-custom-field"><label for="expandToDate">To</label><input type="date" id="expandToDate" onclick="event.stopPropagation();try{this.showPicker&&this.showPicker();}catch(e){}" onfocus="try{this.showPicker&&this.showPicker();}catch(e){}"></div></div><div class="expand-custom-actions"><button type="button" class="expand-custom-apply" onclick="applyExpandedCustomDateRange()">Apply Range</button></div></div></div></div>` : ''}
+        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button><button class="expand-range-btn ${defaultExpandedRange==='custom'?'on':''}" data-expand-range="custom" onclick="setExpandedCalendarRange('custom')">Custom</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div><div id="expandCustomWrap" class="expand-custom-wrap" onclick="event.stopPropagation()"><div class="expand-custom-head"><div class="expand-custom-title">Custom Date Range</div><div class="expand-preset-row"><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(7)">Last 7 Days</button><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(30)">Last 30 Days</button></div></div><div class="expand-custom-grid"><div class="expand-custom-field"><label for="expandFromDate">From</label><input type="date" id="expandFromDate" onclick="event.stopPropagation()"></div><div class="expand-custom-field"><label for="expandToDate">To</label><input type="date" id="expandToDate" onclick="event.stopPropagation()"></div></div><div class="expand-custom-actions"><button type="button" class="expand-custom-apply" onclick="applyExpandedCustomDateRange()">Apply Range</button></div></div></div></div>` : ''}
         ${hidePeriodChip ? '' : `<div class="expand-chip" id="expandPeriodChip">${defaultExpandedRange==='all' ? 'All Periods' : cap(defaultExpandedRange)+' View'}</div>`}
         <div class="expand-chip" id="expandTotalChip">${total.toLocaleString()} total</div>
       </div>
@@ -14947,5 +14938,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1bf013aa868f8ee',t:'MTc4NDE4MzkxNA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
