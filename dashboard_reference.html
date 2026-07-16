@@ -7078,6 +7078,83 @@ body #drInfo .dr-b {
   font-weight: 900;
   cursor: pointer;
 }
+[data-theme="dark"] .period-tray,
+[data-theme="dark"] .expand-calendar-tray {
+  background: linear-gradient(180deg, rgba(19,23,34,.98) 0%, rgba(25,29,46,.98) 100%) !important;
+  border-color: rgba(71,85,105,.6) !important;
+  box-shadow: 0 16px 36px rgba(0,0,0,.38) !important;
+}
+[data-theme="dark"] .period-mini-panel,
+[data-theme="dark"] .period-selection-hint,
+[data-theme="dark"] .period-custom-wrap,
+[data-theme="dark"] .expand-custom-wrap,
+[data-theme="dark"] .compare-custom-wrap {
+  background: linear-gradient(180deg, rgba(15,23,42,.94) 0%, rgba(26,29,46,.94) 100%) !important;
+  border-color: rgba(71,85,105,.7) !important;
+  color: var(--t1) !important;
+}
+[data-theme="dark"] .period-custom-title,
+[data-theme="dark"] .expand-custom-title,
+[data-theme="dark"] .compare-custom-title,
+[data-theme="dark"] .material-date-picker-title,
+[data-theme="dark"] .material-date-picker-title-btn {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .period-preset-btn,
+[data-theme="dark"] .expand-preset-btn,
+[data-theme="dark"] .compare-preset-btn,
+[data-theme="dark"] .compare-custom-toggle,
+[data-theme="dark"] .period-tray-tabs .tp-b,
+[data-theme="dark"] .expand-range-btn {
+  background: rgba(15,23,42,.82) !important;
+  color: #cbd5e1 !important;
+  border-color: rgba(71,85,105,.72) !important;
+}
+[data-theme="dark"] .period-tray-tabs .tp-b.on,
+[data-theme="dark"] .expand-range-btn.on,
+[data-theme="dark"] .compare-custom-toggle:hover,
+[data-theme="dark"] .period-preset-btn:hover,
+[data-theme="dark"] .expand-preset-btn:hover,
+[data-theme="dark"] .compare-preset-btn:hover {
+  background: rgba(99,102,241,.24) !important;
+  color: #c7d2fe !important;
+  border-color: rgba(129,140,248,.6) !important;
+}
+[data-theme="dark"] .period-custom-field input,
+[data-theme="dark"] .expand-custom-field input,
+[data-theme="dark"] .compare-custom-field input {
+  background: rgba(15,23,42,.88) !important;
+  color: #f8fafc !important;
+  border-color: rgba(71,85,105,.72) !important;
+}
+[data-theme="dark"] .material-date-picker-card,
+[data-theme="dark"] .material-date-picker-panel {
+  background: linear-gradient(180deg, rgba(15,23,42,.99) 0%, rgba(26,29,46,.99) 100%) !important;
+  border-color: rgba(71,85,105,.72) !important;
+  box-shadow: 0 22px 48px rgba(0,0,0,.48) !important;
+}
+[data-theme="dark"] .material-date-picker-nav,
+[data-theme="dark"] .material-date-picker-month-btn,
+[data-theme="dark"] .material-date-picker-year-btn {
+  background: rgba(15,23,42,.86) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(71,85,105,.72) !important;
+}
+[data-theme="dark"] .material-date-picker-weekdays span {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .material-date-picker-day {
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] .material-date-picker-day.other {
+  color: #64748b !important;
+}
+[data-theme="dark"] .material-date-picker-day.today::after {
+  border-color: rgba(129,140,248,.48) !important;
+}
+[data-theme="dark"] .material-date-picker-link {
+  color: #a5b4fc !important;
+}
 
 </style>
 
@@ -8336,7 +8413,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     }
   }, 1200);
   
-  showL("Loading dashboard...");
+  showL("Loading dashboard from Google Sheets…");
   apiCall('getStartupBundle', { defaultTab: S.defaultTab }).then(bundle => {
     console.log("Received fast startup bundle:", bundle);
     
@@ -10368,7 +10445,7 @@ function renderTicketTrendSection(){
   let area=document.getElementById('main');
   let showManual = range==='all';
   let effectiveGran=getEffectiveTotalTrendGran(TREND_GRAN);
-  let granLabel = effectiveGran==='daily' ? 'Day by Day' : (effectiveGran==='weekly' ? 'Week by Week' : 'Month by Month');
+  let granLabel = range==='custom' ? 'Custom Range' : (effectiveGran==='daily' ? 'Day by Day' : (effectiveGran==='weekly' ? 'Week by Week' : 'Month by Month'));
   let zKey='trend_total';
   let baseTitle='Total Ticket Numbers';
   let title=getGraphDisplayTitle(zKey, baseTitle);
@@ -10386,9 +10463,15 @@ function buildTicketTrendChart(gran){
   let actualGran=getEffectiveTotalTrendGran(gran);
   let title=getGraphDisplayTitle('trend_total','Total Ticket Numbers');
   let baseRows = (typeof currentTicketPool === 'function' ? currentTicketPool() : F);
-  let a=aggregateTickets(actualGran,baseRows);
+  let a;
+  if(range==='custom'){
+    let customLabel=getCustomRangeLabel(CUSTOM_RANGE_FROM, CUSTOM_RANGE_TO);
+    a={ labels:[customLabel], displayLabels:[customLabel], values:[Array.isArray(baseRows)?baseRows.length:0], keys:['custom'] };
+  }else{
+    a=aggregateTickets(actualGran,baseRows);
+  }
   let gc=S.dark?'rgba(255,255,255,.07)':'rgba(15,23,42,.06)',tc=S.dark?'#94a3b8':'#64748b',col=cssVar('--ac');
-  let colors=a.labels.map((_,i)=>P[i%P.length]);
+  let colors=range==='custom' ? [col] : a.labels.map((_,i)=>P[i%P.length]);
   
   CHART_META['trend_total'] = {
     title: title,
@@ -10421,7 +10504,7 @@ function buildTicketTrendChart(gran){
       },
       scales:{
         y:{beginAtZero:true,grid:{color:gc},ticks:{color:tc,font:{family:'Inter',size:11,weight:'700'}}},
-        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size:8.8,weight:'700'},autoSkip:false,maxRotation:90,minRotation:90,padding:2}}
+        x:{grid:{display:false},ticks:{color:tc,font:{family:'Inter',size: range==='custom' ? 10 : 8.8,weight:'700'},autoSkip:false,maxRotation: range==='custom' ? 0 : 90,minRotation: range==='custom' ? 0 : 90,padding:2}}
       },
       onClick:(e,els)=>{
         openZoom('trend_total', 'bar');
@@ -14333,6 +14416,16 @@ function rowsForTrendPeriodFromRows(gran,key,rows){
 function computeExpandedChartRowsByZKey(zKey, zd){
   let baseRows=getExpandedDateFilteredRows();
   if(zKey==='trend_total'){
+    if((EXPANDED_PAGE_STATE.range || 'all')==='custom'){
+      let label=getCustomRangeLabel(EXPANDED_PAGE_STATE.rangeFrom, EXPANDED_PAGE_STATE.rangeTo);
+      let totalRows=Array.isArray(baseRows) ? baseRows.slice() : [];
+      return {
+        gran:'custom',
+        rows:[{ label, key:'custom', value:totalRows.length, color:cssVar('--ac') || P[0], pct:'100.0', records:totalRows }],
+        displayLabels:[label],
+        keys:['custom']
+      };
+    }
     let gran=getExpandedTotalTrendGran();
     let agg=aggregateTickets(gran, baseRows);
     let total=(agg.values||[]).reduce((s,v)=>s+Number(v||0),0);
@@ -14858,7 +14951,7 @@ function openExpandedChartPage(zKey,chartType){
       <div class="expand-title-wrap">
         <button class="expand-back" type="button" onclick="closeExpandedChartPage()"><svg class="ic"><use href="#i-x"/></svg> Back to Dashboard</button>
         <div class="expand-title-badge"><svg class="ic"><use href="#i-chart"/></svg></div>
-        <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1></div>
+        <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1><p>Lovely simple expanded view with chart + data summary</p></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
         ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button><button class="expand-range-btn ${defaultExpandedRange==='custom'?'on':''}" data-expand-range="custom" onclick="setExpandedCalendarRange('custom')">Custom</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div><div id="expandCustomWrap" class="expand-custom-wrap" onclick="event.stopPropagation()"><div class="expand-custom-head"><div class="expand-custom-title">Custom Date Range</div><div class="expand-preset-row"><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(7)">Last 7 Days</button><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(30)">Last 30 Days</button></div></div><div class="expand-custom-grid"><div class="expand-custom-field"><label for="expandFromDate">From</label><input type="text" readonly class="material-date-input" id="expandFromDate" placeholder="Select date" onclick="event.stopPropagation();openMaterialDatePicker('expandFromDate')"></div><div class="expand-custom-field"><label for="expandToDate">To</label><input type="text" readonly class="material-date-input" id="expandToDate" placeholder="Select date" onclick="event.stopPropagation();openMaterialDatePicker('expandToDate')"></div></div><div class="expand-custom-actions"><button type="button" class="expand-custom-apply" onclick="applyExpandedCustomDateRange()">Apply Range</button></div></div></div></div>` : ''}
@@ -15251,5 +15344,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1bf21c82e92f8ee',t:'MTc4NDE4NTI0OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1bf4b0e2eecfd8b',t:'MTc4NDE4NjkzOA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
