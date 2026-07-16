@@ -6802,7 +6802,7 @@ body #drInfo .dr-b {
 .expand-custom-grid,
 .compare-custom-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 .period-custom-field,
@@ -6883,6 +6883,200 @@ body #drInfo .dr-b {
   .compare-custom-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.material-date-input {
+  cursor: pointer !important;
+  user-select: none;
+  caret-color: transparent;
+  letter-spacing: .02em;
+}
+.material-date-input::placeholder {
+  color: var(--t3);
+  font-weight: 700;
+}
+.material-date-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 15050;
+  display: none;
+}
+.material-date-picker.open {
+  display: block;
+}
+.material-date-picker-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15,23,42,.18);
+  backdrop-filter: blur(2px);
+}
+.material-date-picker-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%,-50%);
+  width: min(320px, calc(100vw - 24px));
+  border-radius: 22px;
+  border: 1px solid rgba(226,232,240,.96);
+  background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,251,255,.98) 100%);
+  box-shadow: 0 28px 60px rgba(15,23,42,.22);
+  overflow: hidden;
+}
+.material-date-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 10px;
+}
+.material-date-picker-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--t1);
+  letter-spacing: -.02em;
+}
+.material-date-picker-title-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--t1);
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 12px;
+}
+.material-date-picker-title-btn:hover {
+  background: rgba(37,99,235,.08);
+}
+.material-date-picker-chevron {
+  font-size: 12px;
+  color: var(--t3);
+}
+.material-date-picker-panel {
+  position: absolute;
+  left: 50%;
+  top: 76px;
+  transform: translateX(-50%);
+  width: calc(100% - 24px);
+  max-width: 292px;
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid rgba(226,232,240,.96);
+  border-radius: 18px;
+  background: rgba(255,255,255,.99);
+  box-shadow: 0 20px 40px rgba(15,23,42,.16);
+  padding: 12px;
+  display: none;
+  z-index: 5;
+}
+.material-date-picker-panel.open {
+  display: block;
+}
+.material-date-picker-month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.material-date-picker-month-btn,
+.material-date-picker-year-btn {
+  height: 40px;
+  border: 1px solid rgba(226,232,240,.96);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--t1);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.material-date-picker-month-btn.sel,
+.material-date-picker-year-btn.sel {
+  background: linear-gradient(135deg, #1f7cff 0%, #2563eb 100%);
+  color: #fff;
+  border-color: #2563eb;
+}
+.material-date-picker-year-list {
+  display: grid;
+  gap: 8px;
+}
+.material-date-picker-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: #fff;
+  color: var(--t1);
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.material-date-picker-weekdays,
+.material-date-picker-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.material-date-picker-weekdays {
+  padding: 0 14px 6px;
+}
+.material-date-picker-weekdays span {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--t3);
+  padding: 8px 0;
+}
+.material-date-picker-days {
+  gap: 4px;
+  padding: 0 14px 14px;
+}
+.material-date-picker-day {
+  position: relative;
+  height: 40px;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--t1);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.material-date-picker-day.other {
+  color: #b2bccd;
+}
+.material-date-picker-day.today::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: 12px;
+  border: 1px solid rgba(59,130,246,.24);
+}
+.material-date-picker-day.sel {
+  background: linear-gradient(135deg, #1f7cff 0%, #2563eb 100%);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(37,99,235,.28);
+}
+.material-date-picker-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+.material-date-picker-link {
+  border: none;
+  background: transparent;
+  color: var(--ac);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 </style>
@@ -6966,8 +7160,8 @@ body #drInfo .dr-b {
               <div id="periodCustomWrap" class="period-custom-wrap" onclick="event.stopPropagation()">
                 <div class="period-custom-head"><div class="period-custom-title">Custom Date Range</div><div class="period-preset-row"><button type="button" class="period-preset-btn" onclick="applyDatePreset(7)">Last 7 Days</button><button type="button" class="period-preset-btn" onclick="applyDatePreset(30)">Last 30 Days</button></div></div>
                 <div class="period-custom-grid">
-                  <div class="period-custom-field"><label for="customFromDate">From</label><input type="date" id="customFromDate" onclick="event.stopPropagation()"></div>
-                  <div class="period-custom-field"><label for="customToDate">To</label><input type="date" id="customToDate" onclick="event.stopPropagation()"></div>
+                  <div class="period-custom-field"><label for="customFromDate">From</label><input type="text" readonly class="material-date-input" id="customFromDate" placeholder="Select date" onclick="event.stopPropagation();openMaterialDatePicker('customFromDate')"></div>
+                  <div class="period-custom-field"><label for="customToDate">To</label><input type="text" readonly class="material-date-input" id="customToDate" placeholder="Select date" onclick="event.stopPropagation();openMaterialDatePicker('customToDate')"></div>
                 </div>
                 <div class="period-custom-actions"><button type="button" class="period-custom-apply" onclick="applyCustomDateRange()">Apply Range</button></div>
               </div>
@@ -7021,14 +7215,16 @@ body #drInfo .dr-b {
   <div id="compareCustomWrap" class="compare-custom-wrap">
     <div class="compare-custom-head"><div class="compare-custom-title">Add Custom Compare Range</div><div class="compare-preset-row"><button type="button" class="compare-preset-btn" onclick="applyCompareCustomPreset(7)">Last 7 Days</button><button type="button" class="compare-preset-btn" onclick="applyCompareCustomPreset(30)">Last 30 Days</button></div></div>
     <div class="compare-custom-grid">
-      <div class="compare-custom-field"><label for="compareCustomFromDate">From</label><input type="date" id="compareCustomFromDate" onclick="event.stopPropagation()"></div>
-      <div class="compare-custom-field"><label for="compareCustomToDate">To</label><input type="date" id="compareCustomToDate" onclick="event.stopPropagation()"></div>
+      <div class="compare-custom-field"><label for="compareCustomFromDate">From</label><input type="text" readonly class="material-date-input" id="compareCustomFromDate" placeholder="Select date" onclick="event.stopPropagation();openMaterialDatePicker('compareCustomFromDate')"></div>
+      <div class="compare-custom-field"><label for="compareCustomToDate">To</label><input type="text" readonly class="material-date-input" id="compareCustomToDate" placeholder="Select date" onclick="event.stopPropagation();openMaterialDatePicker('compareCustomToDate')"></div>
     </div>
     <div class="compare-custom-actions"><button type="button" class="compare-custom-apply" onclick="addCustomCompareRange()">Add Compare Range</button></div>
   </div>
 </div>
 
 <div class="ct" id="main"></div>
+
+<div id="materialDatePicker" class="material-date-picker"></div>
 
 <!-- Data records modal -->
 <div class="modal fade" id="dModal" tabindex="-1">
@@ -9015,6 +9211,129 @@ function getDateBounds(){
   if(!allDates || !allDates.length) return { min:'', max:'' };
   return { min: toLocalDateStr(allDates[0]), max: toLocalDateStr(allDates[allDates.length-1]) };
 }
+function formatMaterialDateValue(iso){
+  let d=parseLocalDate(iso);
+  if(!d) return '';
+  return String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0') + '/' + d.getFullYear();
+}
+function setDateFieldIso(id, iso){
+  let el=document.getElementById(id);
+  if(!el) return;
+  el.dataset.iso = iso || '';
+  el.value = iso ? formatMaterialDateValue(iso) : '';
+}
+function getDateFieldIso(id){
+  let el=document.getElementById(id);
+  if(!el) return '';
+  return el.dataset.iso || '';
+}
+let MATERIAL_DATE_PICKER_STATE={ open:false, targetId:'', year:0, month:0, panel:'' };
+function ensureMaterialDatePicker(){
+  let root=document.getElementById('materialDatePicker');
+  if(!root){
+    root=document.createElement('div');
+    root.id='materialDatePicker';
+    document.body.appendChild(root);
+  }
+  root.className='material-date-picker';
+  if(!root.innerHTML.trim()){
+    root.innerHTML='<div class="material-date-picker-backdrop" onclick="closeMaterialDatePicker()"></div><div class="material-date-picker-card"><div class="material-date-picker-head"><button type="button" class="material-date-picker-nav" onclick="shiftMaterialDatePickerMonth(-1)">‹</button><div class="material-date-picker-title"><button type="button" class="material-date-picker-title-btn" id="materialDatePickerMonthBtn" onclick="toggleMaterialDatePickerPanel(\'month\')">May<span class="material-date-picker-chevron">▾</span></button><button type="button" class="material-date-picker-title-btn" id="materialDatePickerYearBtn" onclick="toggleMaterialDatePickerPanel(\'year\')">2025<span class="material-date-picker-chevron">▾</span></button></div><button type="button" class="material-date-picker-nav" onclick="shiftMaterialDatePickerMonth(1)">›</button></div><div class="material-date-picker-panel" id="materialDatePickerMonthPanel"></div><div class="material-date-picker-panel" id="materialDatePickerYearPanel"></div><div class="material-date-picker-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div><div class="material-date-picker-days" id="materialDatePickerDays"></div><div class="material-date-picker-foot"><button type="button" class="material-date-picker-link" onclick="clearMaterialDatePickerValue()">Clear</button><button type="button" class="material-date-picker-link" onclick="pickTodayMaterialDate()">Today</button></div></div>';
+  }
+  return root;
+}
+function pickTodayMaterialDate(){
+  pickMaterialDate(toLocalDateStr(new Date()));
+}
+function openMaterialDatePicker(targetId){
+  let root=ensureMaterialDatePicker();
+  MATERIAL_DATE_PICKER_STATE.targetId=targetId;
+  let seed=getDateFieldIso(targetId) || getDateBounds().max || toLocalDateStr(new Date());
+  let d=parseLocalDate(seed) || new Date();
+  MATERIAL_DATE_PICKER_STATE.year=d.getFullYear();
+  MATERIAL_DATE_PICKER_STATE.month=d.getMonth();
+  MATERIAL_DATE_PICKER_STATE.panel='';
+  MATERIAL_DATE_PICKER_STATE.open=true;
+  root.classList.add('open');
+  renderMaterialDatePicker();
+}
+function closeMaterialDatePickerPanels(){
+  MATERIAL_DATE_PICKER_STATE.panel='';
+  let mp=document.getElementById('materialDatePickerMonthPanel');
+  let yp=document.getElementById('materialDatePickerYearPanel');
+  if(mp) mp.classList.remove('open');
+  if(yp) yp.classList.remove('open');
+}
+function toggleMaterialDatePickerPanel(type){
+  MATERIAL_DATE_PICKER_STATE.panel = MATERIAL_DATE_PICKER_STATE.panel===type ? '' : type;
+  renderMaterialDatePicker();
+}
+function closeMaterialDatePicker(){
+  let root=document.getElementById('materialDatePicker');
+  if(root) root.classList.remove('open');
+  closeMaterialDatePickerPanels();
+  MATERIAL_DATE_PICKER_STATE.open=false;
+}
+function shiftMaterialDatePickerMonth(delta){
+  let d=new Date(MATERIAL_DATE_PICKER_STATE.year, MATERIAL_DATE_PICKER_STATE.month + delta, 1);
+  MATERIAL_DATE_PICKER_STATE.year=d.getFullYear();
+  MATERIAL_DATE_PICKER_STATE.month=d.getMonth();
+  closeMaterialDatePickerPanels();
+  renderMaterialDatePicker();
+}
+function pickMaterialDateMonth(monthIndex){
+  MATERIAL_DATE_PICKER_STATE.month = Number(monthIndex)||0;
+  MATERIAL_DATE_PICKER_STATE.panel='';
+  renderMaterialDatePicker();
+}
+function pickMaterialDateYear(yearVal){
+  MATERIAL_DATE_PICKER_STATE.year = Number(yearVal)||new Date().getFullYear();
+  MATERIAL_DATE_PICKER_STATE.panel='';
+  renderMaterialDatePicker();
+}
+function renderMaterialDatePicker(){
+  let monthBtn=document.getElementById('materialDatePickerMonthBtn');
+  let yearBtn=document.getElementById('materialDatePickerYearBtn');
+  let monthPanel=document.getElementById('materialDatePickerMonthPanel');
+  let yearPanel=document.getElementById('materialDatePickerYearPanel');
+  let daysWrap=document.getElementById('materialDatePickerDays');
+  if(!monthBtn || !yearBtn || !monthPanel || !yearPanel || !daysWrap) return;
+  let y=MATERIAL_DATE_PICKER_STATE.year, m=MATERIAL_DATE_PICKER_STATE.month;
+  let first=new Date(y,m,1);
+  let start=new Date(first); start.setDate(1 - first.getDay());
+  let selected=getDateFieldIso(MATERIAL_DATE_PICKER_STATE.targetId);
+  let todayIso=toLocalDateStr(new Date());
+  monthBtn.innerHTML = MONTHS[m] + '<span class="material-date-picker-chevron">▾</span>';
+  yearBtn.innerHTML = y + '<span class="material-date-picker-chevron">▾</span>';
+  let monthNames = MONTHS.slice();
+  monthPanel.innerHTML = '<div class="material-date-picker-month-grid">' + monthNames.map((nm,idx)=>'<button type="button" class="material-date-picker-month-btn ' + (idx===m?'sel':'') + '" onclick="pickMaterialDateMonth(' + idx + ')">' + nm + '</button>').join('') + '</div>';
+  let yearStart = Math.max(1970, y - 12), yearEnd = y + 12;
+  let yearHtml='';
+  for(let yy=yearStart; yy<=yearEnd; yy++) yearHtml += '<button type="button" class="material-date-picker-year-btn ' + (yy===y?'sel':'') + '" onclick="pickMaterialDateYear(' + yy + ')">' + yy + '</button>';
+  yearPanel.innerHTML = '<div class="material-date-picker-year-list">' + yearHtml + '</div>';
+  monthPanel.classList.toggle('open', MATERIAL_DATE_PICKER_STATE.panel==='month');
+  yearPanel.classList.toggle('open', MATERIAL_DATE_PICKER_STATE.panel==='year');
+  let html='';
+  for(let i=0;i<42;i++){
+    let d=new Date(start); d.setDate(start.getDate()+i);
+    let iso=toLocalDateStr(d);
+    let classes=['material-date-picker-day'];
+    if(d.getMonth()!==m) classes.push('other');
+    if(iso===todayIso) classes.push('today');
+    if(selected && iso===selected) classes.push('sel');
+    html += '<button type="button" class="' + classes.join(' ') + '" onclick="pickMaterialDate(\'' + iso + '\')">' + d.getDate() + '</button>';
+  }
+  daysWrap.innerHTML=html;
+}
+function pickMaterialDate(iso){
+  if(!MATERIAL_DATE_PICKER_STATE.targetId) return;
+  setDateFieldIso(MATERIAL_DATE_PICKER_STATE.targetId, iso);
+  closeMaterialDatePicker();
+}
+function clearMaterialDatePickerValue(){
+  if(!MATERIAL_DATE_PICKER_STATE.targetId) return;
+  setDateFieldIso(MATERIAL_DATE_PICKER_STATE.targetId, '');
+  closeMaterialDatePicker();
+}
 function syncCustomRangeUI(){
   let wrap=document.getElementById('periodCustomWrap');
   let fromEl=document.getElementById('customFromDate');
@@ -9023,10 +9342,8 @@ function syncCustomRangeUI(){
   if(wrap) wrap.style.display = isCustom ? 'block' : 'none';
   if(!fromEl || !toEl) return;
   let bounds=getDateBounds();
-  if(bounds.min){ fromEl.min=bounds.min; toEl.min=bounds.min; }
-  if(bounds.max){ fromEl.max=bounds.max; toEl.max=bounds.max; }
-  fromEl.value = CUSTOM_RANGE_FROM || bounds.min || '';
-  toEl.value = CUSTOM_RANGE_TO || bounds.max || '';
+  setDateFieldIso('customFromDate', CUSTOM_RANGE_FROM || bounds.min || '');
+  setDateFieldIso('customToDate', CUSTOM_RANGE_TO || bounds.max || '');
 }
 function getPresetDateRange(days){
   let end=new Date(); end.setHours(0,0,0,0);
@@ -9050,10 +9367,8 @@ function toggleCompareCustomEditor(forceState){
     let fromEl=document.getElementById('compareCustomFromDate');
     let toEl=document.getElementById('compareCustomToDate');
     if(fromEl && toEl){
-      if(bounds.min){ fromEl.min=bounds.min; toEl.min=bounds.min; }
-      if(bounds.max){ fromEl.max=bounds.max; toEl.max=bounds.max; }
-      if(!fromEl.value) fromEl.value=bounds.min || '';
-      if(!toEl.value) toEl.value=bounds.max || '';
+      if(!getDateFieldIso('compareCustomFromDate')) setDateFieldIso('compareCustomFromDate', bounds.min || '');
+      if(!getDateFieldIso('compareCustomToDate')) setDateFieldIso('compareCustomToDate', bounds.max || '');
     }
   }
 }
@@ -9068,16 +9383,16 @@ function applyCompareCustomPreset(days){
   let r=getPresetDateRange(days);
   let fromEl=document.getElementById('compareCustomFromDate');
   let toEl=document.getElementById('compareCustomToDate');
-  if(fromEl) fromEl.value=r.from;
-  if(toEl) toEl.value=r.to;
+  if(fromEl) setDateFieldIso('compareCustomFromDate', r.from);
+  if(toEl) setDateFieldIso('compareCustomToDate', r.to);
   addCustomCompareRange();
 }
 function addCustomCompareRange(){
   let fromEl=document.getElementById('compareCustomFromDate');
   let toEl=document.getElementById('compareCustomToDate');
   if(!fromEl || !toEl) return;
-  let fromVal=fromEl.value||'';
-  let toVal=toEl.value||'';
+  let fromVal=getDateFieldIso('compareCustomFromDate')||'';
+  let toVal=getDateFieldIso('compareCustomToDate')||'';
   if(!fromVal || !toVal){ alert('Please choose both From and To dates.'); return; }
   if(parseLocalDate(fromVal) > parseLocalDate(toVal)){ alert('From date must be earlier than or equal to To date.'); return; }
   let key=buildCustomCompareKey(fromVal,toVal);
@@ -9092,8 +9407,8 @@ function applyCustomDateRange(){
   let fromEl=document.getElementById('customFromDate');
   let toEl=document.getElementById('customToDate');
   if(!fromEl || !toEl) return;
-  let fromVal=fromEl.value||'';
-  let toVal=toEl.value||'';
+  let fromVal=getDateFieldIso('customFromDate')||'';
+  let toVal=getDateFieldIso('customToDate')||'';
   if(!fromVal || !toVal){ alert('Please choose both From and To dates.'); return; }
   if(parseLocalDate(fromVal) > parseLocalDate(toVal)){ alert('From date must be earlier than or equal to To date.'); return; }
   CUSTOM_RANGE_FROM=fromVal;
@@ -14428,10 +14743,8 @@ function syncExpandedCustomRangeUI(){
   if(wrap) wrap.style.display=isCustom ? 'block' : 'none';
   if(!fromEl || !toEl) return;
   let bounds=getDateBounds();
-  if(bounds.min){ fromEl.min=bounds.min; toEl.min=bounds.min; }
-  if(bounds.max){ fromEl.max=bounds.max; toEl.max=bounds.max; }
-  fromEl.value = EXPANDED_PAGE_STATE.rangeFrom || bounds.min || '';
-  toEl.value = EXPANDED_PAGE_STATE.rangeTo || bounds.max || '';
+  setDateFieldIso('expandFromDate', EXPANDED_PAGE_STATE.rangeFrom || bounds.min || '');
+  setDateFieldIso('expandToDate', EXPANDED_PAGE_STATE.rangeTo || bounds.max || '');
 }
 function applyExpandedDatePreset(days){
   let r=getPresetDateRange(days);
@@ -14499,8 +14812,8 @@ function applyExpandedCustomDateRange(){
   let fromEl=document.getElementById('expandFromDate');
   let toEl=document.getElementById('expandToDate');
   if(!fromEl || !toEl) return;
-  let fromVal=fromEl.value||'';
-  let toVal=toEl.value||'';
+  let fromVal=getDateFieldIso('expandFromDate')||'';
+  let toVal=getDateFieldIso('expandToDate')||'';
   if(!fromVal || !toVal){ alert('Please choose both From and To dates.'); return; }
   if(parseLocalDate(fromVal) > parseLocalDate(toVal)){ alert('From date must be earlier than or equal to To date.'); return; }
   EXPANDED_PAGE_STATE.range='custom';
@@ -14548,7 +14861,7 @@ function openExpandedChartPage(zKey,chartType){
         <div class="expand-title-text"><h1>${escapeHtml(zd.title)}</h1></div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
-        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button><button class="expand-range-btn ${defaultExpandedRange==='custom'?'on':''}" data-expand-range="custom" onclick="setExpandedCalendarRange('custom')">Custom</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div><div id="expandCustomWrap" class="expand-custom-wrap" onclick="event.stopPropagation()"><div class="expand-custom-head"><div class="expand-custom-title">Custom Date Range</div><div class="expand-preset-row"><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(7)">Last 7 Days</button><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(30)">Last 30 Days</button></div></div><div class="expand-custom-grid"><div class="expand-custom-field"><label for="expandFromDate">From</label><input type="date" id="expandFromDate" onclick="event.stopPropagation()"></div><div class="expand-custom-field"><label for="expandToDate">To</label><input type="date" id="expandToDate" onclick="event.stopPropagation()"></div></div><div class="expand-custom-actions"><button type="button" class="expand-custom-apply" onclick="applyExpandedCustomDateRange()">Apply Range</button></div></div></div></div>` : ''}
+        ${showCalendar ? `<div class="expand-calendar-wrap"><button class="expand-back" id="expandCalendarBtn" type="button" onclick="toggleExpandCalendar()"><svg class="ic"><use href="#i-calendar"/></svg> Date View</button><div class="expand-calendar-tray" id="expandCalendarTray"><div class="expand-calendar-range"><button class="expand-range-btn ${defaultExpandedRange==='all'?'on':''}" data-expand-range="all" onclick="setExpandedCalendarRange('all')">All</button><button class="expand-range-btn ${defaultExpandedRange==='daily'?'on':''}" data-expand-range="daily" onclick="setExpandedCalendarRange('daily')">Daily</button><button class="expand-range-btn ${defaultExpandedRange==='weekly'?'on':''}" data-expand-range="weekly" onclick="setExpandedCalendarRange('weekly')">Weekly</button><button class="expand-range-btn ${defaultExpandedRange==='monthly'?'on':''}" data-expand-range="monthly" onclick="setExpandedCalendarRange('monthly')">Monthly</button><button class="expand-range-btn ${defaultExpandedRange==='yearly'?'on':''}" data-expand-range="yearly" onclick="setExpandedCalendarRange('yearly')">Yearly</button><button class="expand-range-btn ${defaultExpandedRange==='custom'?'on':''}" data-expand-range="custom" onclick="setExpandedCalendarRange('custom')">Custom</button></div><div id="expandCalendarHint" class="expand-calendar-hint">Choose a range to browse dates.</div><div id="expandSubWrap" class="expand-sub-wrap" style="display:none;"><select id="expandSubSel" class="expand-sub-select" onchange="onExpandedCalendarSubChange()"></select></div><div id="expandCustomWrap" class="expand-custom-wrap" onclick="event.stopPropagation()"><div class="expand-custom-head"><div class="expand-custom-title">Custom Date Range</div><div class="expand-preset-row"><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(7)">Last 7 Days</button><button type="button" class="expand-preset-btn" onclick="applyExpandedDatePreset(30)">Last 30 Days</button></div></div><div class="expand-custom-grid"><div class="expand-custom-field"><label for="expandFromDate">From</label><input type="text" readonly class="material-date-input" id="expandFromDate" placeholder="Select date" onclick="event.stopPropagation();openMaterialDatePicker('expandFromDate')"></div><div class="expand-custom-field"><label for="expandToDate">To</label><input type="text" readonly class="material-date-input" id="expandToDate" placeholder="Select date" onclick="event.stopPropagation();openMaterialDatePicker('expandToDate')"></div></div><div class="expand-custom-actions"><button type="button" class="expand-custom-apply" onclick="applyExpandedCustomDateRange()">Apply Range</button></div></div></div></div>` : ''}
         ${hidePeriodChip ? '' : `<div class="expand-chip" id="expandPeriodChip">${defaultExpandedRange==='all' ? 'All Periods' : cap(defaultExpandedRange)+' View'}</div>`}
         <div class="expand-chip" id="expandTotalChip">${total.toLocaleString()} total</div>
       </div>
@@ -14938,5 +15251,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1bf21c82e92f8ee',t:'MTc4NDE4NTI0OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
