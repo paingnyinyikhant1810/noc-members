@@ -10,7 +10,9 @@ let authHeader  = localStorage.getItem('authHeader');
 let isProcessing = false;
 let appData = { users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[] };
 const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const LAST_ACTIVITY_STORAGE_KEY = 'noc_last_activity_at';
 let inactivityTimer = null;
+let inactivityCheckTimer = null;
 let inactivityListenersBound = false;
 let lastInactivityEventAt = 0;
 
@@ -263,21 +265,43 @@ function updateAdminUI(){
 function delay(ms){return new Promise(r=>setTimeout(r,ms));}
 async function simulateProgress(pct,status){updateProgress(pct,status);await delay(200);}
 
+function getLastActivityAt(){
+  try{ return Number(localStorage.getItem(LAST_ACTIVITY_STORAGE_KEY)||'0')||0; }catch(e){ return 0; }
+}
+function setLastActivityAt(ts){
+  try{ localStorage.setItem(LAST_ACTIVITY_STORAGE_KEY, String(ts||Date.now())); }catch(e){}
+}
 function clearInactivityTimer(){
   if(inactivityTimer){ clearTimeout(inactivityTimer); inactivityTimer=null; }
 }
+function clearInactivityCheckTimer(){
+  if(inactivityCheckTimer){ clearInterval(inactivityCheckTimer); inactivityCheckTimer=null; }
+}
 function handleAutoSignout(){
   clearInactivityTimer();
+  clearInactivityCheckTimer();
   if(!authHeader) return;
   logout('inactive');
+}
+function syncInactivityDeadline(){
+  if(!authHeader || !currentUser) return;
+  let lastAt=getLastActivityAt();
+  if(!lastAt) lastAt=Date.now();
+  let remaining=INACTIVITY_TIMEOUT_MS - (Date.now() - lastAt);
+  clearInactivityTimer();
+  if(remaining<=0){
+    handleAutoSignout();
+    return;
+  }
+  inactivityTimer = setTimeout(handleAutoSignout, remaining);
 }
 function resetInactivityTimer(evtType='activity'){
   if(!authHeader || !currentUser) return;
   const now = Date.now();
   if((evtType==='mousemove' || evtType==='scroll') && now - lastInactivityEventAt < 15000) return;
   lastInactivityEventAt = now;
-  clearInactivityTimer();
-  inactivityTimer = setTimeout(handleAutoSignout, INACTIVITY_TIMEOUT_MS);
+  setLastActivityAt(now);
+  syncInactivityDeadline();
 }
 function bindInactivityListeners(){
   if(inactivityListenersBound) return;
@@ -297,10 +321,23 @@ function bindInactivityListeners(){
 }
 function startInactivityMonitor(){
   bindInactivityListeners();
-  resetInactivityTimer('start');
+  let lastAt=getLastActivityAt();
+  if(lastAt && (Date.now() - lastAt) >= INACTIVITY_TIMEOUT_MS){
+    handleAutoSignout();
+    return;
+  }
+  if(!lastAt) setLastActivityAt(Date.now());
+  syncInactivityDeadline();
+  clearInactivityCheckTimer();
+  inactivityCheckTimer=setInterval(()=>{
+    if(!authHeader || !currentUser) return;
+    let ts=getLastActivityAt();
+    if(ts && (Date.now() - ts) >= INACTIVITY_TIMEOUT_MS) handleAutoSignout();
+  }, 60000);
 }
 function stopInactivityMonitor(){
   clearInactivityTimer();
+  clearInactivityCheckTimer();
 }
 
 function showLoginPage(){
@@ -310,6 +347,7 @@ function showLoginPage(){
 function logout(reason='manual'){
   stopPolling(); // stop background polling on sign-out
   stopInactivityMonitor();
+  try{ localStorage.removeItem(LAST_ACTIVITY_STORAGE_KEY); }catch(e){}
   localStorage.removeItem('authHeader');authHeader=null;currentUser=null;
   document.querySelectorAll('.modal-bd').forEach(m=>m.classList.add('hidden'));
   showLoginPage();closeMobileMenu();
