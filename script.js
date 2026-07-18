@@ -198,24 +198,31 @@ el('loginForm').addEventListener('submit',async function(e){
   btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Please wait...';btn.disabled=true;
   const tempAuth='Basic '+btoa(u+':'+p);
   try{
+    showLoading(true);
+    updateProgress(15,'Checking auth...');
     const res=await fetch(`${API_URL}/login`,{method:'POST',headers:{'Authorization':tempAuth}});
-    if(res.ok){
-      const data=await res.json();
-      authHeader=tempAuth;localStorage.setItem('authHeader',authHeader);
-      currentUser=data.user;
-      showLoading(false,'Opening portal...');
-      doShowApp();
-      const bgPromise=refreshData(true).then(d=>{
-        if(d && d.currentUser){
-          currentUser={...currentUser,...d.currentUser};
-          const wu=el('welcomeUser'); if(wu) wu.textContent=currentUser.accountName||currentUser.account_name||currentUser.username||u;
-        }
-      }).catch(()=>{});
-      await Promise.race([bgPromise, delay(900)]);
-      hideLoading();
-    }else throw new Error('Invalid credentials');
+    if(!res.ok) throw new Error('Invalid credentials');
+    const data=await res.json();
+    authHeader=tempAuth;localStorage.setItem('authHeader',authHeader);
+    currentUser=data.user;
+    updateProgress(45,'Loading data...');
+    const d=await refreshData(true);
+    if(!d) throw new Error('Failed to load portal data');
+    if(d.currentUser){
+      currentUser={...currentUser,...d.currentUser};
+      currentUser.accountName=currentUser.accountName||currentUser.account_name||currentUser.username||u;
+    }
+    updateProgress(85,'Preparing portal...');
+    doShowApp();
+    updateProgress(100,'Done!');
+    hideLoading();
   }catch(err){
-    hideLoading();box.classList.add('shake');showToast('Wrong username or password!');
+    hideLoading();
+    try{ localStorage.removeItem('authHeader'); }catch(e){}
+    authHeader=null;currentUser=null;
+    showLoginPage();
+    box.classList.add('shake');
+    showToast(err.message==='Invalid credentials' ? 'Wrong username or password!' : 'Failed to load portal data. Please try again.');
     setTimeout(()=>box.classList.remove('shake'),500);
   }
   btn.innerHTML='<span>Sign In</span><i class="fas fa-arrow-right"></i>';
@@ -350,14 +357,29 @@ function logout(reason='manual'){
 async function initApp(){
   loadPreferences();
   if(!authHeader){showLoginPage();return;}
-  showLoading(false,'Opening portal...');
+  showLoading(true);
+  updateProgress(20,'Checking auth...');
   const session=await fetchAPI('session',{silentFail:true});
   if(!session || !session.currentUser){hideLoading();showLoginPage();return;}
   currentUser=session.currentUser;
   currentUser.accountName=currentUser.accountName||currentUser.account_name||currentUser.username;
+  updateProgress(55,'Loading data...');
+  const d=await refreshData(true);
+  if(!d){
+    hideLoading();
+    try{ localStorage.removeItem('authHeader'); }catch(e){}
+    authHeader=null;currentUser=null;
+    showLoginPage();
+    showToast('Session expired. Please sign in again.','info');
+    return;
+  }
+  if(d.currentUser){
+    currentUser={...currentUser,...d.currentUser};
+    currentUser.accountName=currentUser.accountName||currentUser.account_name||currentUser.username;
+  }
+  updateProgress(90,'Preparing portal...');
   doShowApp();
-  const bgPromise=refreshData(true).catch(()=>{});
-  await Promise.race([bgPromise, delay(700)]);
+  updateProgress(100,'Done!');
   hideLoading();
 }
 
