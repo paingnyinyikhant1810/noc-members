@@ -101,7 +101,7 @@ const canManageInfo = () => myRank() >= ROLE_RANK.leader; // leader+ can manage 
 /* ══════════════════════════════════════════════════════════
    LOADING
 ══════════════════════════════════════════════════════════ */
-function showLoading(prog=false){
+function showLoading(prog=false,message='Please wait...'){
   const ex=document.getElementById('loadingOverlay');if(ex)ex.remove();
   const o=document.createElement('div');o.id='loadingOverlay';
   o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;';
@@ -112,9 +112,9 @@ function showLoading(prog=false){
       <div style="width:100%;background:var(--border);border-radius:50px;height:6px;overflow:hidden;"><div id="progressBar" style="background:var(--accent);height:6px;border-radius:50px;transition:width .3s;width:0%;"></div></div>
       <p style="color:var(--text3);font-size:.72rem;" id="progressPercent">0%</p></div>`;
   } else {
-    o.innerHTML=`<div style="background:var(--surface);border-radius:14px;padding:2rem;box-shadow:0 16px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;align-items:center;gap:.9rem;">
+    o.innerHTML=`<div style="background:var(--surface);border-radius:14px;padding:2rem;box-shadow:0 16px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;align-items:center;gap:.9rem;min-width:240px;max-width:90vw;">
       <div style="width:52px;height:52px;border:4px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;"></div>
-      <p style="font-weight:700;color:var(--text);">Please wait...</p></div>`;
+      <p style="font-weight:700;color:var(--text);text-align:center;">${escHtml(message||'Please wait...')}</p></div>`;
   }
   document.body.appendChild(o);
 }
@@ -203,13 +203,16 @@ el('loginForm').addEventListener('submit',async function(e){
       const data=await res.json();
       authHeader=tempAuth;localStorage.setItem('authHeader',authHeader);
       currentUser=data.user;
+      showLoading(false,'Opening portal...');
       doShowApp();
-      refreshData(true).then(d=>{
+      const bgPromise=refreshData(true).then(d=>{
         if(d && d.currentUser){
           currentUser={...currentUser,...d.currentUser};
           const wu=el('welcomeUser'); if(wu) wu.textContent=currentUser.accountName||currentUser.account_name||currentUser.username||u;
         }
       }).catch(()=>{});
+      await Promise.race([bgPromise, delay(900)]);
+      hideLoading();
     }else throw new Error('Invalid credentials');
   }catch(err){
     hideLoading();box.classList.add('shake');showToast('Wrong username or password!');
@@ -347,12 +350,15 @@ function logout(reason='manual'){
 async function initApp(){
   loadPreferences();
   if(!authHeader){showLoginPage();return;}
+  showLoading(false,'Opening portal...');
   const session=await fetchAPI('session',{silentFail:true});
-  if(!session || !session.currentUser){showLoginPage();return;}
+  if(!session || !session.currentUser){hideLoading();showLoginPage();return;}
   currentUser=session.currentUser;
   currentUser.accountName=currentUser.accountName||currentUser.account_name||currentUser.username;
   doShowApp();
-  refreshData(true).catch(()=>{});
+  const bgPromise=refreshData(true).catch(()=>{});
+  await Promise.race([bgPromise, delay(700)]);
+  hideLoading();
 }
 
 /* ══════════════════════════════════════════════════════════
