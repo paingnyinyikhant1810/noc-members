@@ -489,6 +489,14 @@ input:checked + .toggle-track::before { transform:translateX(20px); }
 .swatch[data-color="red"]    { background:#ef4444; }
 .swatch[data-color="teal"]   { background:#14b8a6; }
 .font-opt.active,.msize-opt.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.font-slider-wrap { width:min(100%, 320px); display:grid; gap:.55rem; }
+#fontSizeSlider { width:100%; accent-color:var(--accent); cursor:pointer; }
+#fontSizeSlider::-webkit-slider-runnable-track { height:6px; border-radius:999px; background:var(--border); }
+#fontSizeSlider::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:18px; height:18px; border-radius:50%; background:var(--accent); border:2px solid #fff; box-shadow:0 2px 8px rgba(0,0,0,.2); margin-top:-6px; }
+#fontSizeSlider::-moz-range-track { height:6px; border-radius:999px; background:var(--border); }
+#fontSizeSlider::-moz-range-thumb { width:18px; height:18px; border:none; border-radius:50%; background:var(--accent); box-shadow:0 2px 8px rgba(0,0,0,.2); }
+.font-slider-meta { display:flex; align-items:center; justify-content:space-between; gap:.75rem; font-size:.78rem; color:var(--text2); }
+.font-slider-meta strong { color:var(--text); font-size:.85rem; }
 
 /* ── NOC Utilities ─────────────────────────────── */
 .util-tabs { display:flex; border-bottom:1px solid var(--border); padding:0 1rem; background:var(--surface2); flex-shrink:0; overflow-x:auto; }
