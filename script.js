@@ -203,23 +203,13 @@ el('loginForm').addEventListener('submit',async function(e){
       const data=await res.json();
       authHeader=tempAuth;localStorage.setItem('authHeader',authHeader);
       currentUser=data.user;
-      showLoading(true);updateProgress(10,'Authenticating...');await delay(200);
-      updateProgress(30,'Loading data...');
-      const d=await fetchAPI('getData');
-      updateProgress(70,'Preparing...');await delay(200);
-      if(d){
-        appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[], ...d };
-        // Prefer currentUser from getData (works for all roles, not just admin)
-        if(d.currentUser){
+      doShowApp();
+      refreshData(true).then(d=>{
+        if(d && d.currentUser){
           currentUser={...currentUser,...d.currentUser};
+          const wu=el('welcomeUser'); if(wu) wu.textContent=currentUser.accountName||currentUser.account_name||currentUser.username||u;
         }
-        currentUser.accountName=currentUser.accountName||currentUser.account_name||
-          d.users.find(x=>x.username===u)?.accountName||
-          d.users.find(x=>x.username===u)?.account_name||u;
-        updateProgress(90,'Almost done...');await delay(200);
-        doShowApp();
-        updateProgress(100,'Done!');await delay(300);hideLoading();
-      }else throw new Error('Failed to load data');
+      }).catch(()=>{});
     }else throw new Error('Invalid credentials');
   }catch(err){
     hideLoading();box.classList.add('shake');showToast('Wrong username or password!');
@@ -357,30 +347,12 @@ function logout(reason='manual'){
 async function initApp(){
   loadPreferences();
   if(!authHeader){showLoginPage();return;}
-  showLoading(true);updateProgress(10,'Initializing...');await delay(200);
-  updateProgress(25,'Checking auth...');
-  const data=await fetchAPI('getData',{silentFail:true});
-  updateProgress(60,'Loading...');await delay(200);
-  if(!data){hideLoading();showLoginPage();return;}
-  updateProgress(80,'Preparing...');await delay(150);
-  appData={ users:[], updates:[], categories:[], infoCards:[], learningItems:[], folders:[], dashboardItems:[], dashboardPages:[], dashboardWidgets:[], ...data };
-  if(!currentUser){
-    // Prefer currentUser returned by getData (available for ALL roles)
-    if(data.currentUser){
-      currentUser=data.currentUser;
-      currentUser.accountName=currentUser.accountName||currentUser.account_name||currentUser.username;
-    } else {
-      // Fallback: search users list (only populated for admin)
-      const creds=atob(authHeader.split(' ')[1]).split(':'),uname=creds[0];
-      const found=appData.users.find(u=>u.username===uname);
-      currentUser=found
-        ?{...found,accountName:found.accountName||found.account_name||uname}
-        :{accountName:uname,role:'intern'};
-    }
-  }
-  updateProgress(95,'Almost ready...');await delay(150);
-  el('loginPage').classList.add('hidden');el('mainApp').classList.remove('hidden');
-  doShowApp();updateProgress(100,'Done!');await delay(300);hideLoading();
+  const session=await fetchAPI('session',{silentFail:true});
+  if(!session || !session.currentUser){showLoginPage();return;}
+  currentUser=session.currentUser;
+  currentUser.accountName=currentUser.accountName||currentUser.account_name||currentUser.username;
+  doShowApp();
+  refreshData(true).catch(()=>{});
 }
 
 /* ══════════════════════════════════════════════════════════
