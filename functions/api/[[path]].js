@@ -8,6 +8,8 @@
 // ✅ Dashboard cache + chunk storage for large JSON payloads
 // ✅ Per-dashboard settings + prefetch routes
 
+let DASHBOARD_TABLES_READY = false;
+
 export const onRequest = async (context) => {
   try {
   const { request, env } = context;
@@ -292,6 +294,7 @@ export const onRequest = async (context) => {
   };
 
   const ensureDashboardTables = async () => {
+    if (DASHBOARD_TABLES_READY) return;
     const stmts = [
       `CREATE TABLE IF NOT EXISTS dashboard_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -369,6 +372,7 @@ export const onRequest = async (context) => {
     for (const sql of stmts) {
       await env.DB.prepare(sql).run();
     }
+    DASHBOARD_TABLES_READY = true;
   };
 
   const DASHBOARD_CHUNK_SIZE = 50000;
@@ -690,9 +694,6 @@ export const onRequest = async (context) => {
               WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)}
               ORDER BY di.sort_order ASC, di.id ASC
             `).all();
-        for (const item of (dashRows.results ?? [])) {
-          await ensureDefaultDashboardPages(item.id);
-        }
         dashPageRows = isAdmin
           ? await env.DB.prepare(`SELECT * FROM dashboard_pages ORDER BY dashboard_item_id ASC, sort_order ASC, id ASC`).all()
           : await env.DB.prepare(`SELECT dp.* FROM dashboard_pages dp JOIN dashboard_items di ON di.id = dp.dashboard_item_id WHERE di.is_active = 1 AND ${rbacWhere('di.min_role_required', uRank)} ORDER BY dp.dashboard_item_id ASC, dp.sort_order ASC, dp.id ASC`).all();
