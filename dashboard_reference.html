@@ -7443,6 +7443,26 @@ body #drInfo .dr-b {
   color: #fff !important;
 }
 
+
+/* ═══════════ DASHBOARD FONT SLIDER PROPAGATION PATCH ═══════════ */
+.tb { font-size: calc(var(--fs) - 1px) !important; }
+.tb thead th { font-size: calc(var(--fs) - 3px) !important; }
+.tb td { font-size: calc(var(--fs) - 1px) !important; }
+.cnt-p { font-size: calc(var(--fs) - 2px) !important; }
+.bn { font-size: calc(var(--fs) - 3px) !important; }
+.zoom-legend-item { font-size: calc(var(--fs) - 1px) !important; }
+.zoom-legend-pct { font-size: calc(var(--fs) - 3px) !important; }
+.compare-breakdown-title { font-size: calc(var(--fs) - 1px) !important; }
+#dModal .modal-title { font-size: calc(var(--fs) + 3px) !important; }
+#dModal .modal-body, #dModal .modal-footer, #dModal .rc, #dModal .m-flt { font-size: calc(var(--fs) - 1px) !important; }
+#dModal .mtt { font-size: calc(var(--fs) - .5px) !important; }
+#dModal .mtt thead th { font-size: calc(var(--fs) - 2.5px) !important; }
+#dModal .mtt td { font-size: calc(var(--fs) - .5px) !important; }
+.expand-table { font-size: calc(var(--fs) - .5px) !important; }
+.expand-table thead th { font-size: calc(var(--fs) - 2.5px) !important; }
+.expand-table td { font-size: calc(var(--fs) - .5px) !important; }
+.expand-data-head, .expand-rows-meta, .expand-chip, .expand-back { font-size: calc(var(--fs) - 1px) !important; }
+
 </style>
 
   </head>
@@ -8710,16 +8730,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   settingsModal = createSafeModal(document.getElementById('settingsModal'));
 
   loadSettings();applyTheme();buildSwatchRow();bindSegs();loadSavedCharts();updateDashboardItemBadge();
-  setInterval(() => {
-    let prevTheme = document.documentElement.getAttribute('data-theme');
-    let prevAcc = document.documentElement.getAttribute('data-acc');
-    let prevFs = document.documentElement.getAttribute('data-fs');
-    syncPortalAppearanceFromParent();
-    if (prevTheme !== (S.dark?'dark':'light') || prevAcc !== S.accent || prevFs !== S.fontSize) {
-      applyTheme();
-      if (D && D.rawData) doRender();
-    }
-  }, 5000);
+  /* Appearance sync polling disabled for performance.
+     Dashboard appearance updates now come from parent postMessage on refresh/reopen/setting change. */
   
   showL("Loading dashboard...");
   apiCall('getStartupBundle', { defaultTab: S.defaultTab }).then(bundle => {
@@ -10549,7 +10561,7 @@ function renderCpeComplaintSection(){
         animation: { duration: 350 },
         plugins: {
           legend: { display: false },
-          valueLabels: { display: true, fontSize: 10 },
+          valueLabels: { display: true, fontSize: scaledFont(10,9) },
           tooltip: {
             backgroundColor: S.dark ? '#252836' : '#111827',
             cornerRadius: 10,
@@ -10562,8 +10574,8 @@ function renderCpeComplaintSection(){
           openZoom('cpe_complaints','bar');
         },
         scales: {
-          y: { beginAtZero: true, grid: { color: gc }, ticks: { color: tc, font: { family: 'Inter', size: 10, weight: '600' } } },
-          x: { grid: { display: false }, ticks: { color: tc, font: { family: 'Inter', size: 7.4, weight: '700' }, autoSkip:false, maxRotation:90, minRotation:90, padding:2 } }
+          y: { beginAtZero: true, grid: { color: gc }, ticks: { color: tc, font: { family: 'Inter', size: scaledFont(10,8), weight: '600' } } },
+          x: { grid: { display: false }, ticks: { color: tc, font: { family: 'Inter', size: scaledFont(7.4,8), weight: '700' }, autoSkip:false, maxRotation:90, minRotation:90, padding:2 } }
         }
       }
     });
@@ -15647,5 +15659,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1cead1d1d3c7b39',t:'MTc4NDM0ODI0MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ceb7f5be997b39',t:'MTc4NDM0ODY4NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
