@@ -1425,6 +1425,7 @@ async function showDashboardItem(id,name='Dashboard'){
     const authHeader = (()=>{ try{return localStorage.getItem('authHeader')||'';}catch(e){return '';}})();
     frame.onload = () => {
       try { if(authHeader) frame.contentWindow.postMessage({ type:'noc-auth', authHeader }, window.location.origin); } catch(e) {}
+      broadcastDashboardAppearance();
     };
     frame.src=`dashboard_reference.html?${q.toString()}`;
   }
@@ -2858,17 +2859,39 @@ function editUser(id){openUserModal(id);}
 /* ══════════════════════════════════════════════════════════
    SETTINGS
 ══════════════════════════════════════════════════════════ */
+function normalizeFontValue(v){
+  const map={sm:13,md:15,lg:17,xl:19};
+  const raw=String(v??'').trim().toLowerCase();
+  if(map[raw]) return map[raw];
+  const n=parseInt(raw,10);
+  if(Number.isFinite(n)) return Math.min(24, Math.max(12, n));
+  return 15;
+}
+function updateFontSliderPreview(v){ const out=el('fontSizeValue'); if(out) out.textContent=`${normalizeFontValue(v)}px`; }
+function broadcastDashboardAppearance(){
+  const frame=el('dashboardReferenceFrame');
+  if(!frame || !frame.contentWindow) return;
+  try{
+    frame.contentWindow.postMessage({
+      type:'noc-appearance',
+      theme: document.documentElement.getAttribute('data-theme') || 'light',
+      color: document.documentElement.getAttribute('data-color') || 'blue',
+      font : String(normalizeFontValue(document.documentElement.getAttribute('data-font') || localStorage.getItem('noc_font') || 15))
+    }, window.location.origin);
+  }catch(e){}
+}
 function openSettings(){loadPreferencesUI();el('settingsModal').classList.remove('hidden');}
 function loadPreferencesUI(){
   const p=getPrefs();
   el('darkModeToggle').checked=p.dark;
-  document.querySelectorAll('.font-opt').forEach(b=>b.classList.toggle('active',b.dataset.font===p.font));
+  const slider=el('fontSizeSlider'); if(slider) slider.value=normalizeFontValue(p.font);
+  updateFontSliderPreview(p.font);
 }
-function getPrefs(){return{dark:localStorage.getItem('noc_dark')==='1',color:localStorage.getItem('noc_color')||'blue',font:localStorage.getItem('noc_font')||'md',modal:localStorage.getItem('noc_modal')||'md'};}
+function getPrefs(){return{dark:localStorage.getItem('noc_dark')==='1',color:localStorage.getItem('noc_color')||'blue',font:normalizeFontValue(localStorage.getItem('noc_font')||15),modal:localStorage.getItem('noc_modal')||'md'};}
 function loadPreferences(){const p=getPrefs();applyDarkMode(p.dark,false);applyColor(p.color,false);applyFont(p.font,false);applyModalSize(p.modal,false);}
-function applyDarkMode(on,save=true){document.documentElement.setAttribute('data-theme',on?'dark':'light');if(save)localStorage.setItem('noc_dark',on?'1':'0');}
-function applyColor(c,save=true){document.documentElement.setAttribute('data-color',c);if(save)localStorage.setItem('noc_color',c);}
-function applyFont(f,save=true){document.documentElement.setAttribute('data-font',f);if(save)localStorage.setItem('noc_font',f);if(save)loadPreferencesUI();}
+function applyDarkMode(on,save=true){document.documentElement.setAttribute('data-theme',on?'dark':'light');if(save)localStorage.setItem('noc_dark',on?'1':'0');broadcastDashboardAppearance();}
+function applyColor(c,save=true){document.documentElement.setAttribute('data-color',c);if(save)localStorage.setItem('noc_color',c);broadcastDashboardAppearance();}
+function applyFont(f,save=true){const px=normalizeFontValue(f);document.documentElement.setAttribute('data-font',String(px));document.documentElement.style.setProperty('--font-size',`${px}px`);if(save)localStorage.setItem('noc_font',String(px));updateFontSliderPreview(px);broadcastDashboardAppearance();if(save)loadPreferencesUI();}
 function applyModalSize(m,save=true){document.documentElement.setAttribute('data-modal',m);if(save)localStorage.setItem('noc_modal',m);if(save)loadPreferencesUI();}
 
 /* ══════════════════════════════════════════════════════════
