@@ -104,14 +104,14 @@
             <!-- 6. Admin Panel + Categories Setting — admin only -->
             <div id="mobileAdminBtn" class="hidden">
                 <div class="mob-divider"></div>
-                <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn" data-page="admin">
-                    <i class="fas fa-shield-alt"></i> Admin Panel
-                </button>
                 <button onclick="closeMobileMenu();openDashboardManagerModal()" class="mob-nbtn">
                     <i class="fas fa-chart-line"></i> Manage Dashboard
                 </button>
                 <button onclick="closeMobileMenu();openCategoryManagerModal()" class="mob-nbtn">
-                    <i class="fas fa-tags"></i> Manage Categories
+                    <i class="fas fa-tags"></i> Categories Setting
+                </button>
+                <button onclick="navigateTo('admin');closeMobileMenu()" class="mob-nbtn" data-page="admin">
+                    <i class="fas fa-shield-alt"></i> Admin Panel
                 </button>
             </div>
             <!-- 7. Settings -->
@@ -540,10 +540,14 @@
             <!-- Font Size -->
             <div class="set-row set-col">
                 <div class="set-label">Font Size</div>
-                <div class="btn-group">
-                    <button onclick="applyFont('sm')" data-font="sm" class="btn-secondary font-opt">Small</button>
-                    <button onclick="applyFont('md')" data-font="md" class="btn-secondary font-opt">Medium</button>
-                    <button onclick="applyFont('lg')" data-font="lg" class="btn-secondary font-opt">Large</button>
+                <div class="set-sub">Use the slider to make all portal and dashboard text smaller or larger.</div>
+                <div class="font-slider-wrap">
+                    <input type="range" id="fontSizeSlider" min="12" max="24" step="1" oninput="applyFont(this.value);updateFontSliderPreview(this.value)">
+                    <div class="font-slider-meta">
+                        <span>12px</span>
+                        <strong id="fontSizeValue">15px</strong>
+                        <span>24px</span>
+                    </div>
                 </div>
             </div>
             <!-- Change Password -->
@@ -910,5 +914,5 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="script.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ceabeb7bf17b39',t:'MTc4NDM0ODE5Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
