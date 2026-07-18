@@ -7467,6 +7467,50 @@ body #drInfo .dr-b {
 .compare-breakdown-title { font-size: calc(var(--fs) - .7px) !important; }
 .expand-data-head, .expand-rows-meta, .expand-chip, .expand-back { font-size: calc(var(--fs) - 1px) !important; }
 
+
+/* ═══════════ EXPANDED LABEL WRAP PATCH ═══════════ */
+.expand-table tbody tr {
+  height: auto !important;
+}
+.expand-table td,
+.expand-table th {
+  vertical-align: top !important;
+}
+.expand-table th:first-child,
+.expand-table td:first-child {
+  width: 60% !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+.expand-label-text {
+  display: inline-block !important;
+  vertical-align: top !important;
+  max-width: none !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.35 !important;
+}
+.expand-data-panel-cpe .expand-table th:first-child,
+.expand-data-panel-cpe .expand-table td:first-child,
+.expand-table-cpe th:first-child,
+.expand-table-cpe td:first-child { width: 58% !important; }
+.expand-data-panel-dup .expand-table th:first-child,
+.expand-data-panel-dup .expand-table td:first-child,
+.expand-table-dup th:first-child,
+.expand-table-dup td:first-child { width: 72% !important; }
+.expand-data-panel-ot .expand-table th:first-child,
+.expand-data-panel-ot .expand-table td:first-child,
+.expand-table-ot th:first-child,
+.expand-table-ot td:first-child { width: 58% !important; }
+.expand-data-panel-trend .expand-table th:first-child,
+.expand-data-panel-trend .expand-table td:first-child,
+.expand-table-trend th:first-child,
+.expand-table-trend td:first-child { width: 60% !important; }
+
 </style>
 
   </head>
@@ -15663,5 +15707,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1cebf07f8a37b39',t:'MTc4NDM0ODk3NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
