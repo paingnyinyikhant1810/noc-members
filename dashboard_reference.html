@@ -10906,6 +10906,7 @@ function exportVisibleTableCSV(){
 }
 function hashKey(s){let h=0;for(let i=0;i<String(s).length;i++)h=((h<<5)-h)+String(s).charCodeAt(i)|0;return Math.abs(h);}
 function escapeJs(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
+function sortCategoryKeysByCountMap(mp){ return Object.keys(mp||{}).sort((a,b)=>(Number(mp[b]||0)-Number(mp[a]||0)) || String(a).localeCompare(String(b), undefined, {numeric:true,sensitivity:'base'})); }
 
 /* ═══════════ RENDER ═══════════ */
 let EXPAND_REOPEN_AFTER_FILTER = null;
@@ -14413,7 +14414,7 @@ function renderSavedFilterChart(sc,idx){
 
   let mp={},tot=0;
   filteredRows.forEach(r=>{let v=r[col];let k=(v!=null&&v.toString().trim()!=='')?v.toString().trim():'(Blank)';mp[k]=(mp[k]||0)+1;tot++;});
-  let sL=Object.keys(mp).sort((a,b)=>mp[b]-mp[a]),sV=sL.map(l=>mp[l]);
+  let sL=sortCategoryKeysByCountMap(mp),sV=sL.map(l=>mp[l]);
 
   let limit=S.chartLimit||0;
   let displayL=limit>0?sL.slice(0,limit):sL;
@@ -15707,5 +15708,5 @@ function emptyH(){return `<div class="empty-s"><div class="e-i"><svg class="ic">
   </div>
 </div>
 
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1e995c59d323686',t:'MTc4NDYzMDQwMA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
